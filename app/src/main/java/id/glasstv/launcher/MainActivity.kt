@@ -792,7 +792,7 @@ class MainActivity : Activity() {
             clipToPadding = false
             overScrollMode = View.OVER_SCROLL_NEVER
         }
-        cardScroll.addView(cardRow, HorizontalScrollView.LayoutParams(-2, dp(98)))
+        cardScroll.addView(cardRow, android.widget.FrameLayout.LayoutParams(-2, dp(98)))
         outer.addView(cardScroll, LinearLayout.LayoutParams(-1, dp(98)))
         mediaRow.addView(outer, LinearLayout.LayoutParams(0, -1, 1.85f))
     }
