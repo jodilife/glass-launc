@@ -84,7 +84,7 @@ internal object DashboardServices {
                 val temp = "${weather.optDouble("temperature_2m").toInt()}°C"
                 val condition = describeWeather(weather.optInt("weather_code"))
                 val timestamp = System.currentTimeMillis() / 1000L
-                val prayerUrl = "https://api.aladhan.com/v1/timings/$timestamp?latitude=${city.lat}&longitude=${city.lon}&method=20&timezonestring=Asia%2FJakarta&tune=2,0,2,2,0,2,2,0,0"
+                val prayerUrl = "https://api.aladhan.com/v1/timings/$timestamp?latitude=${city.lat}&longitude=${city.lon}&method=20&timezonestring=Asia%2FJakarta&tune=0,2,0,2,2,2,0,2,0"
                 val prayer = JSONObject(get(prayerUrl)).getJSONObject("data")
                     .getJSONObject("timings")
                 val times = prayerKeys.map { key ->
