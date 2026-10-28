@@ -74,6 +74,7 @@ class MainActivity : Activity() {
     }
     private val prayerTimeLabels = mutableListOf<TextView>()
     private var headerTimeLabel: TextView? = null
+    private var dashboardGreetingLabel: TextView? = null
     private var dashboardClockLabel: TextView? = null
     private var dashboardDateLabel: TextView? = null
     private var dashboardLocationLabel: TextView? = null
@@ -225,10 +226,12 @@ class MainActivity : Activity() {
             }
         }
         val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
-        dashboardClockLabel = label("--:--", 29, Color.WHITE, true)
-        left.addView(dashboardClockLabel)
+        dashboardGreetingLabel = label("Selamat malam", 13, Color.WHITE, true)
+        left.addView(dashboardGreetingLabel)
         dashboardDateLabel = label("--", 11, Color.rgb(174, 192, 216), false)
         left.addView(dashboardDateLabel)
+        dashboardClockLabel = label("--:--", 26, Color.WHITE, true)
+        left.addView(dashboardClockLabel)
         dashboardLocationLabel = label("📍 Jakarta Timur", 12, accent, true).apply {
             setPadding(0, dp(3), 0, 0)
             isFocusable = true
@@ -297,8 +300,9 @@ class MainActivity : Activity() {
 
     private fun updateDashboardClock() {
         val now = Date()
-        dashboardClockLabel?.text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(now)
+        dashboardGreetingLabel?.text = currentGreeting()
         dashboardDateLabel?.text = SimpleDateFormat("EEEE, dd MMMM yyyy", Locale("id", "ID")).format(now)
+        dashboardClockLabel?.text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(now)
         headerTimeLabel?.text = SimpleDateFormat("EEE, dd MMM  •  HH:mm", Locale("id", "ID")).format(now)
     }
 
@@ -1171,6 +1175,46 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun currentGreeting(): String {
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val salutation = when {
+            hour < 11 -> "Selamat pagi"
+            hour < 15 -> "Selamat siang"
+            hour < 18 -> "Selamat sore"
+            else -> "Selamat malam"
+        }
+        val name = getSharedPreferences("glass_tv", MODE_PRIVATE)
+            .getString("greeting_name", "").orEmpty().trim()
+        return if (name.isBlank()) salutation else "$salutation, $name"
+    }
+
+    private fun showGreetingEditor() {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val nameInput = EditText(this).apply {
+            hint = "Nama (boleh dikosongkan)"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setText(prefs.getString("greeting_name", "").orEmpty())
+            setSelection(text.length)
+        }
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(4))
+            addView(label("Nama untuk sapaan di layar utama", 12, Color.rgb(185, 199, 219), true))
+            addView(nameInput, LinearLayout.LayoutParams(-1, -2))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Sapaan GlassTV")
+            .setView(form)
+            .setPositiveButton("Simpan") { _, _ ->
+                prefs.edit().putString("greeting_name", nameInput.text.toString().trim()).apply()
+                dashboardGreetingLabel?.text = currentGreeting()
+                toast("Sapaan disimpan")
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
     private fun showSettings() {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val soundOn = prefs.getBoolean("ui_sound_enabled", true)
@@ -1184,6 +1228,7 @@ class MainActivity : Activity() {
             "Uji suara azan",
             "Wallpaper berikutnya",
             "Wallpaper otomatis: ${if (wallpaperAuto) "AKTIF" else "MATI"}",
+            "Edit nama sapaan",
             "Info GlassTV"
         )
         AlertDialog.Builder(this).setTitle("Pengaturan GlassTV")
@@ -1211,7 +1256,8 @@ class MainActivity : Activity() {
                         scheduleWallpaperRotation()
                         toast("Wallpaper otomatis ${if (!wallpaperAuto) "diaktifkan" else "dimatikan"}")
                     }
-                    7 -> AlertDialog.Builder(this).setTitle("GlassTV Launcher")
+                    7 -> showGreetingEditor()
+                    8 -> AlertDialog.Builder(this).setTitle("GlassTV Launcher")
                         .setMessage(
                             "Dashboard cuaca dan jadwal salat dengan lokasi manual.\n\n" +
                             "• Cuaca: prakiraan BMKG\n" +
