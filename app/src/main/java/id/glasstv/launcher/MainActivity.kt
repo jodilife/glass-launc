@@ -177,7 +177,7 @@ class MainActivity : Activity() {
         }
         brand.addView(label("GLASS", 25, Color.WHITE, true))
         brand.addView(label("TV", 25, accent, true))
-        brand.addView(label("  /  HOME ENTERTAINMENT", 10, Color.rgb(128, 148, 174), true))
+
         header.addView(brand)
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         val time = SimpleDateFormat("EEE, dd MMM  •  HH:mm", Locale.getDefault()).format(Date())
@@ -469,6 +469,9 @@ class MainActivity : Activity() {
         }
         val resultScroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
+            clipChildren = false
+            clipToPadding = false
+            setPadding(dp(8), dp(8), dp(8), dp(8))
             addView(resultList, FrameLayout.LayoutParams(-1, -2))
         }
         panel.addView(resultScroll, LinearLayout.LayoutParams(-1, dp(270)))
@@ -546,9 +549,10 @@ class MainActivity : Activity() {
         render(DashboardServices.cities)
         dialog.show()
         dialog.window?.setLayout(
-            minOf(dp(600), (resources.displayMetrics.widthPixels * 0.88f).toInt()),
+            minOf(dp(650), (resources.displayMetrics.widthPixels * 0.90f).toInt()),
             -2
         )
+        dialog.window?.decorView?.setPadding(dp(8), dp(4), dp(8), dp(4))
     }
 
     private fun checkForAzan() {
@@ -946,10 +950,12 @@ class MainActivity : Activity() {
                             applyContinueWatchingBackdrop(artworkFile)
                         } else {
                             view.post {
-                                if (!view.hasFocus() && !isFinishing &&
-                                    (continueWatchingCard?.hasFocus() != true ||
-                                     continueWatchingCard !== view)) {
-                                    applyWallpaper(wallpaperTarget)
+                                if (!view.hasFocus() && !isFinishing) {
+                                    val focusedView = root.findFocus()
+                                    val description = focusedView?.contentDescription?.toString().orEmpty()
+                                    if (!description.startsWith("Lanjutkan menonton", ignoreCase = true)) {
+                                        applyWallpaper(wallpaperTarget)
+                                    }
                                 }
                             }
                         }
@@ -1401,12 +1407,26 @@ class MainActivity : Activity() {
     }
 
     private fun launchTvApp(packageName: String, activityName: String) {
+        // Prefer package launch intent; also supports apps without a Leanback entry.
+        try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            if (launchIntent != null) {
+                startActivity(launchIntent)
+                return
+            }
+        } catch (_: Exception) { }
         try {
             startActivity(Intent(Intent.ACTION_MAIN)
                 .addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
                 .setClassName(packageName, activityName))
         } catch (_: Exception) {
-            toast("Aplikasi tidak dapat dibuka. Coba jalankan dari menu sistem TV.")
+            try {
+                startActivity(Intent(Intent.ACTION_MAIN)
+                    .addCategory(Intent.CATEGORY_LAUNCHER)
+                    .setClassName(packageName, activityName))
+            } catch (_: Exception) {
+                toast("Aplikasi tidak dapat dibuka. Coba jalankan dari menu sistem TV.")
+            }
         }
     }
 
@@ -1578,6 +1598,7 @@ class MainActivity : Activity() {
             isVerticalScrollBarEnabled = false
             clipChildren = false
             clipToPadding = false
+            setPadding(dp(8), dp(8), dp(8), dp(8))
         }
         val rows = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1585,7 +1606,7 @@ class MainActivity : Activity() {
             clipToPadding = false
         }
         scroll.addView(rows, FrameLayout.LayoutParams(-1, -2))
-        content.addView(scroll, LinearLayout.LayoutParams(-1, dp(420)))
+        content.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         val allCards = mutableListOf<Triple<String, android.graphics.drawable.Drawable?, (() -> Unit)>>()
         apps.forEach { app ->
             val info = app.activityInfo
@@ -1666,9 +1687,10 @@ class MainActivity : Activity() {
         dialog.show()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialog.window?.setLayout(
-            minOf(dp(780), (resources.displayMetrics.widthPixels * 0.88f).toInt()),
-            (resources.displayMetrics.heightPixels * 0.82f).toInt()
+            minOf(dp(900), (resources.displayMetrics.widthPixels * 0.90f).toInt()),
+            (resources.displayMetrics.heightPixels * 0.88f).toInt()
         )
+        dialog.window?.decorView?.setPadding(dp(8), dp(4), dp(8), dp(4))
     }
 
     private fun manageEntertainmentApps() {
@@ -1685,6 +1707,9 @@ class MainActivity : Activity() {
         }
         val scroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
+            clipChildren = false
+            clipToPadding = false
+            setPadding(dp(8), dp(8), dp(8), dp(8))
             addView(list, FrameLayout.LayoutParams(-1, -2))
         }
         val dialog = AlertDialog.Builder(this)
@@ -1769,9 +1794,10 @@ class MainActivity : Activity() {
         }
         dialog.show()
         dialog.window?.setLayout(
-            minOf(dp(650), (resources.displayMetrics.widthPixels * 0.88f).toInt()),
-            (resources.displayMetrics.heightPixels * 0.78f).toInt()
+            minOf(dp(780), (resources.displayMetrics.widthPixels * 0.90f).toInt()),
+            (resources.displayMetrics.heightPixels * 0.86f).toInt()
         )
+        dialog.window?.decorView?.setPadding(dp(8), dp(4), dp(8), dp(4))
     }
 
     private fun currentGreeting(): String {
@@ -2203,7 +2229,8 @@ class MainActivity : Activity() {
             }
         }
         dialog.show()
-        dialog.window?.setLayout(dp(650), (resources.displayMetrics.heightPixels * 0.78f).toInt())
+        dialog.window?.setLayout(minOf(dp(780), (resources.displayMetrics.widthPixels * 0.90f).toInt()), (resources.displayMetrics.heightPixels * 0.86f).toInt())
+        dialog.window?.decorView?.setPadding(dp(8), dp(4), dp(8), dp(4))
     }
 
     private fun openGoogleAmbientSettings() {
