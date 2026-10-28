@@ -77,6 +77,29 @@ class MainActivity : Activity() {
     }
 
     private val favoriteDockTiles = mutableListOf<View>()
+    private val idleHandler = Handler(Looper.getMainLooper())
+    private var idleMode = false
+    private var homeHeaderView: View? = null
+    private var dashboardPanelView: View? = null
+    private var weatherPanelView: View? = null
+    private var prayerPanelView: View? = null
+    private var prayerRowView: View? = null
+    private var favoriteDockView: View? = null
+    private var backgroundAudioRowView: View? = null
+    private var actionMenuView: View? = null
+    private var videoWallpaperPlayer: ExoPlayer? = null
+    private var videoWallpaperView: PlayerView? = null
+    private val idleTimeoutMs = 60_000L
+    private val idleTimeout = object : Runnable {
+        override fun run() { enterIdleMode() }
+    }
+    private val wallpaperVideoRequestCode = 7142
+    private fun resetIdleTimer() {
+        idleHandler.removeCallbacks(idleTimeout)
+        if (getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("idle_compact_mode", true)) {
+            idleHandler.postDelayed(idleTimeout, idleTimeoutMs)
+        }
+    }
     private lateinit var root: LinearLayout
     private lateinit var wallpaperTarget: FrameLayout
     private val actions = mutableListOf<View>()
@@ -138,10 +161,10 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         refreshOnResume = true
-        // Keep the lightweight clock/prayer watcher alive while another TV app is in front.
-        // CCTV preview players are still released to save memory.
         releaseHomePreviewPlayers()
+        releaseVideoWallpaperPlayer()
         wallpaperHandler.removeCallbacks(wallpaperCycle)
+        idleHandler.removeCallbacks(idleTimeout)
         super.onPause()
     }
 
@@ -152,14 +175,37 @@ class MainActivity : Activity() {
             showHome()
         } else if (!dashboardLoopStarted) {
             startDashboardUpdates()
+            if (::wallpaperTarget.isInitialized) setupVideoWallpaper(wallpaperTarget)
+        } else if (::wallpaperTarget.isInitialized) {
+            setupVideoWallpaper(wallpaperTarget)
         }
         scheduleWallpaperRotation()
+        resetIdleTimer()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            if (idleMode) exitIdleMode()
+            resetIdleTimer()
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private fun showHome() {
         releaseHomePreviewPlayers()
+        releaseVideoWallpaperPlayer()
+        idleMode = false
+        idleHandler.removeCallbacks(idleTimeout)
         actions.clear()
         favoriteDockTiles.clear()
+        homeHeaderView = null
+        dashboardPanelView = null
+        weatherPanelView = null
+        prayerPanelView = null
+        prayerRowView = null
+        favoriteDockView = null
+        backgroundAudioRowView = null
+        actionMenuView = null
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(32), dp(10), dp(32), dp(10))
@@ -189,6 +235,11 @@ class MainActivity : Activity() {
             clipToPadding = false
             descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         }
+        val videoUri = getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_video_uri", null)
+        if (videoUri != null) {
+            wallpaperTarget.setBackgroundColor(Color.rgb(5, 8, 14))
+            setupVideoWallpaper(wallpaperTarget)
+        }
         homeScroll.addView(root, FrameLayout.LayoutParams(-1, -2))
         wallpaperTarget.addView(homeScroll, FrameLayout.LayoutParams(-1, -1))
         applyWallpaper(wallpaperTarget)
@@ -210,6 +261,7 @@ class MainActivity : Activity() {
         val time = SimpleDateFormat("EEE, dd MMM  •  HH:mm", Locale.getDefault()).format(Date())
         headerTimeLabel = label(time, 15, Color.rgb(185, 199, 219), false)
         header.addView(headerTimeLabel)
+        homeHeaderView = header
         root.addView(header, LinearLayout.LayoutParams(-1, dp(40)))
 
         addDashboardPanel()
@@ -249,6 +301,7 @@ class MainActivity : Activity() {
         addAction(row, "All Apps", "Semua aplikasi TV") { openAllApps() }
         addAction(row, "Kamera CCTV", "2 kamera • RTSP") { showCameras() }
         addAction(row, "Pengaturan", "Preferensi GlassTV") { showSettings() }
+        actionMenuView = row
         root.addView(row, LinearLayout.LayoutParams(-1, dp(76)))
         setContentView(wallpaperTarget)
         root.post {
@@ -263,6 +316,7 @@ class MainActivity : Activity() {
         }
         dashboardSnapshot = DashboardServices.cached(this)
         renderDashboardSnapshot(dashboardSnapshot, null)
+        resetIdleTimer()
         startDashboardUpdates()
     }
 
@@ -320,8 +374,9 @@ class MainActivity : Activity() {
             setLineSpacing(dp(1).toFloat(), 1.0f)
         }
         left.addView(dashboardWeatherLabel)
-        panel.addView(left, LinearLayout.LayoutParams(dp(270), -1).apply {
-            rightMargin = dp(10)
+        weatherPanelView = left
+        panel.addView(left, LinearLayout.LayoutParams(0, -1, 1f).apply {
+            rightMargin = dp(6)
         })
 
         val prayerPanel = LinearLayout(this).apply {
@@ -353,6 +408,7 @@ class MainActivity : Activity() {
             setPadding(dp(9), dp(5), dp(9), dp(5))
             isFocusable = true
             isClickable = true
+            tag = "azan_quick_button"
             setOnFocusChangeListener { view, focused ->
                 if (focused) playNavigationSound()
                 view.elevation = if (focused) dp(7).toFloat() else dp(1).toFloat()
@@ -402,7 +458,10 @@ class MainActivity : Activity() {
             prayerRow.addView(item, LinearLayout.LayoutParams(0, -2, 1f))
         }
         prayerPanel.addView(prayerRow, LinearLayout.LayoutParams(-1, -2))
-        panel.addView(prayerPanel, LinearLayout.LayoutParams(0, -2, 1f))
+        prayerRowView = prayerRow
+        prayerPanelView = prayerPanel
+        panel.addView(prayerPanel, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(6) })
+        dashboardPanelView = panel
         root.addView(panel, LinearLayout.LayoutParams(-1, dp(120)).apply { bottomMargin = dp(7) })
     }
 
@@ -1153,6 +1212,7 @@ class MainActivity : Activity() {
         })
         row.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
         row.addView(label("BUKA PEMUTAR  ›", 10, accent, true))
+        backgroundAudioRowView = row
         container.addView(row, LinearLayout.LayoutParams(-1, dp(72)).apply { topMargin = dp(5) })
     }
 
@@ -2036,8 +2096,36 @@ class MainActivity : Activity() {
         settingRow("Uji suara azan", "Putar contoh audio untuk memastikan suara berfungsi") {
             dialog.dismiss(); playAzan()
         }
+        settingRow("Wallpaper video", "Pilih video lokal sebagai latar bergerak tanpa suara") {
+            dialog.dismiss()
+            val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "video/*"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+            }
+            try { startActivityForResult(pick, wallpaperVideoRequestCode) }
+            catch (_: Exception) { toast("Pemilih video tidak tersedia di TV ini.") }
+        }
+        settingRow("Gunakan wallpaper foto", "Kembali ke wallpaper foto otomatis") {
+            getSharedPreferences("glass_tv", MODE_PRIVATE).edit().remove("wallpaper_video_uri").apply()
+            releaseVideoWallpaperPlayer()
+            applyWallpaper(wallpaperTarget)
+            scheduleWallpaperRotation()
+            dialog.dismiss()
+            toast("Wallpaper foto diaktifkan")
+        }
+        val compactIdle = prefs.getBoolean("idle_compact_mode", true)
+        settingRow("Tampilan saat tidak digunakan", "Ringkas setelah 1 menit tanpa tombol remote", if (compactIdle) "AKTIF" else "MATI") {
+            prefs.edit().putBoolean("idle_compact_mode", !compactIdle).apply()
+            if (compactIdle) {
+                idleHandler.removeCallbacks(idleTimeout)
+                exitIdleMode()
+            } else resetIdleTimer()
+            dialog.dismiss()
+            showSettings()
+        }
         val wallpaperAuto = prefs.getBoolean("wallpaper_auto", true)
-        settingRow("Wallpaper otomatis", "Ganti wallpaper secara berkala", if (wallpaperAuto) "AKTIF" else "MATI") {
+        settingRow("Wallpaper otomatis", "Ganti wallpaper foto secara berkala", if (wallpaperAuto) "AKTIF" else "MATI") {
             prefs.edit().putBoolean("wallpaper_auto", !wallpaperAuto).apply()
             scheduleWallpaperRotation()
             reopen("Wallpaper otomatis ${if (!wallpaperAuto) "diaktifkan" else "dimatikan"}")
@@ -2178,6 +2266,7 @@ class MainActivity : Activity() {
             addView(dock, ViewGroup.LayoutParams(-2, dp(48)))
         }
         section.addView(dockScroll, LinearLayout.LayoutParams(-1, dp(48)))
+        favoriteDockView = section
         container.addView(section, LinearLayout.LayoutParams(-1, dp(68)))
     }
 
@@ -2415,6 +2504,8 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         dashboardHandler.removeCallbacksAndMessages(null)
         wallpaperHandler.removeCallbacksAndMessages(null)
+        idleHandler.removeCallbacksAndMessages(null)
+        releaseVideoWallpaperPlayer()
         try { toneGenerator?.release() } catch (_: Exception) { }
         toneGenerator = null
         try { azanPlayer?.release() } catch (_: Exception) { }
@@ -2422,14 +2513,138 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
+    private fun enterIdleMode() {
+        if (idleMode || isFinishing || !::root.isInitialized || !hasWindowFocus()) {
+            resetIdleTimer()
+            return
+        }
+        idleMode = true
+        homeHeaderView?.visibility = View.GONE
+        favoriteDockView?.visibility = View.GONE
+        backgroundAudioRowView?.visibility = View.GONE
+        actionMenuView?.visibility = View.GONE
+        weatherPanelView?.visibility = View.GONE
+        prayerRowView?.visibility = View.GONE
+        prayerPanelView?.let { panel ->
+            panel.findViewWithTag<View>("azan_quick_button")?.visibility = View.GONE
+            panel.layoutParams = (panel.layoutParams as? LinearLayout.LayoutParams)?.apply {
+                width = ViewGroup.LayoutParams.MATCH_PARENT
+                weight = 0f
+                leftMargin = 0
+            }
+        }
+        dashboardPanelView?.let { view ->
+            view.layoutParams = view.layoutParams.apply { height = dp(54) }
+            view.requestLayout()
+        }
+        dashboardNextPrayerLabel?.text = dashboardSnapshot?.let {
+            val nextPrayer = DashboardServices.nextPrayer(it)
+            "${nextPrayer.first.uppercase(Locale.getDefault())}  ·  ${nextPrayer.second}"
+        } ?: "JADWAL SALAT"
+        dashboardNextPrayerLabel?.textSize = 14f
+        dashboardNextPrayerLabel?.setTextColor(Color.WHITE)
+        dashboardPanelView?.requestLayout()
+        root.requestFocus()
+    }
+
+    private fun exitIdleMode() {
+        if (!idleMode) return
+        idleMode = false
+        homeHeaderView?.visibility = View.VISIBLE
+        favoriteDockView?.visibility = View.VISIBLE
+        backgroundAudioRowView?.visibility = View.VISIBLE
+        actionMenuView?.visibility = View.VISIBLE
+        weatherPanelView?.visibility = View.VISIBLE
+        prayerRowView?.visibility = View.VISIBLE
+        prayerPanelView?.let { panel ->
+            panel.findViewWithTag<View>("azan_quick_button")?.visibility = View.VISIBLE
+            panel.layoutParams = (panel.layoutParams as? LinearLayout.LayoutParams)?.apply {
+                width = 0
+                weight = 1f
+                leftMargin = dp(6)
+            }
+        }
+        dashboardPanelView?.let { view ->
+            view.layoutParams = view.layoutParams.apply { height = dp(120) }
+            view.requestLayout()
+        }
+        dashboardNextPrayerLabel?.textSize = 11f
+        dashboardSnapshot?.let { renderDashboardSnapshot(it, null) }
+        dashboardPanelView?.requestLayout()
+        val target = actions.firstOrNull { it.contentDescription?.toString()?.startsWith(lastFocusedTitle) == true }
+            ?: continueWatchingCard ?: actions.firstOrNull()
+        target?.requestFocus()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != wallpaperVideoRequestCode || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: Exception) { }
+        getSharedPreferences("glass_tv", MODE_PRIVATE).edit()
+            .putString("wallpaper_video_uri", uri.toString())
+            .putBoolean("wallpaper_auto", false)
+            .apply()
+        showHome()
+        toast("Wallpaper video diaktifkan tanpa suara")
+    }
+
+    private fun setupVideoWallpaper(target: FrameLayout) {
+        val rawUri = getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_video_uri", null) ?: return
+        if (videoWallpaperPlayer != null && videoWallpaperView?.parent === target) return
+        releaseVideoWallpaperPlayer()
+        try {
+            val view = PlayerView(this).apply {
+                useController = false
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                setShutterBackgroundColor(Color.rgb(5, 8, 14))
+                setBackgroundColor(Color.rgb(5, 8, 14))
+                alpha = 0.92f
+                isFocusable = false
+                isClickable = false
+            }
+            val player = ExoPlayer.Builder(this).build().apply {
+                volume = 0f
+                repeatMode = Player.REPEAT_MODE_ONE
+                setMediaItem(MediaItem.fromUri(Uri.parse(rawUri)))
+                prepare()
+                playWhenReady = true
+            }
+            view.player = player
+            target.addView(view, 0, FrameLayout.LayoutParams(-1, -1))
+            videoWallpaperView = view
+            videoWallpaperPlayer = player
+            target.setBackgroundColor(Color.rgb(5, 8, 14))
+        } catch (_: Exception) {
+            releaseVideoWallpaperPlayer()
+            toast("Video wallpaper tidak dapat dibuka. Pilih video MP4 lain.")
+        }
+    }
+
+    private fun releaseVideoWallpaperPlayer() {
+        try { videoWallpaperView?.player = null } catch (_: Exception) { }
+        try { videoWallpaperPlayer?.release() } catch (_: Exception) { }
+        videoWallpaperPlayer = null
+        (videoWallpaperView?.parent as? ViewGroup)?.removeView(videoWallpaperView)
+        videoWallpaperView = null
+    }
+
     private fun scheduleWallpaperRotation() {
         wallpaperHandler.removeCallbacks(wallpaperCycle)
-        if (getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("wallpaper_auto", true)) {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (prefs.getString("wallpaper_video_uri", null) == null &&
+            prefs.getBoolean("wallpaper_auto", true)) {
             wallpaperHandler.postDelayed(wallpaperCycle, 8 * 60 * 1000L)
         }
     }
 
     private fun applyWallpaper(target: FrameLayout) {
+        if (getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_video_uri", null) != null) {
+            target.setBackgroundColor(Color.rgb(5, 8, 14))
+            return
+        }
         if (target === wallpaperTarget && continueWatchingCard?.hasFocus() != true) {
             root.setBackgroundColor(Color.TRANSPARENT)
         }
