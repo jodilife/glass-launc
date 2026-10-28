@@ -211,9 +211,10 @@ class MainActivity : Activity() {
             clipChildren = false
             clipToPadding = false
         }
-        root.addView(mediaRow, LinearLayout.LayoutParams(-1, dp(142)))
+        root.addView(mediaRow, LinearLayout.LayoutParams(-1, dp(158)))
         addContinueWatching(mediaRow)
         addHomeCctvPreview(mediaRow)
+        addBackgroundAudioRow(root)
         setContentView(wallpaperTarget)
         root.post {
             if (lastFocusedTitle == "LANJUTKAN MENONTON") {
@@ -355,20 +356,118 @@ class MainActivity : Activity() {
 
     private fun showLocationPicker() {
         val current = DashboardServices.selectedCity(this)
-        val cities = DashboardServices.cities
-        AlertDialog.Builder(this)
-            .setTitle("Pilih lokasi cuaca & waktu salat")
-            .setSingleChoiceItems(cities.map { if (it.name == current.name) "✓  ${it.name}" else it.name }.toTypedArray(),
-                cities.indexOfFirst { it.name == current.name }) { dialog, which ->
-                DashboardServices.selectCity(this, cities[which])
-                dashboardSnapshot = null
-                lastDashboardFetchAttempt = 0L
-                dialog.dismiss()
-                showHome()
-                toast("Lokasi diubah ke ${cities[which].name}")
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+        }
+        panel.addView(label("Cari kota atau kabupaten di Indonesia", 12, Color.rgb(180, 198, 220), true))
+        val query = EditText(this).apply {
+            hint = "Contoh: Bandung, Surabaya, Yogyakarta"
+            singleLine = true
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.rgb(125, 145, 171))
+            textSize = 16f
+            isFocusable = true
+            isFocusableInTouchMode = true
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.rgb(25, 35, 50))
+                setStroke(dp(1), Color.argb(150, 126, 190, 255))
             }
-            .setNegativeButton("Batal", null)
-            .show()
+        }
+        panel.addView(query, LinearLayout.LayoutParams(-1, dp(48)))
+        val search = TextView(this).apply {
+            text = "CARI LOKASI"
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.rgb(45, 77, 112))
+                setStroke(dp(1), Color.argb(180, 126, 190, 255))
+            }
+            isFocusable = true
+            isClickable = true
+            setOnFocusChangeListener { view, focused -> if (focused) playNavigationSound(); view.alpha = if (focused) 1f else 0.92f }
+        }
+        panel.addView(search, LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(8) })
+        val resultList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(8), 0, 0)
+        }
+        val resultScroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(resultList, ScrollView.LayoutParams(-1, -2))
+        }
+        panel.addView(resultScroll, LinearLayout.LayoutParams(-1, dp(270)))
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Lokasi cuaca & waktu salat")
+            .setView(panel)
+            .setNegativeButton("Tutup", null)
+            .create()
+        fun choose(city: DashboardServices.City) {
+            DashboardServices.selectCity(this, city)
+            dashboardSnapshot = null
+            lastDashboardFetchAttempt = 0L
+            dialog.dismiss()
+            showHome()
+            toast("Lokasi diubah ke \${city.name}")
+        }
+        fun render(items: List<DashboardServices.City>, message: String? = null) {
+            resultList.removeAllViews()
+            if (message != null) resultList.addView(label(message, 12, Color.rgb(225, 205, 165), false))
+            items.forEach { city ->
+                val item = TextView(this).apply {
+                    text = (if (city.name == current.name) "✓  " else "") + city.name
+                    textSize = 14f
+                    setTextColor(Color.WHITE)
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(12), dp(9), dp(12), dp(9))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(9).toFloat()
+                        setColor(Color.argb(120, 30, 43, 62))
+                        setStroke(dp(1), Color.argb(65, 153, 194, 255))
+                    }
+                    isFocusable = true
+                    isClickable = true
+                    setOnFocusChangeListener { view, focused ->
+                        view.alpha = if (focused) 1f else 0.9f
+                        if (focused) playNavigationSound()
+                    }
+                    setOnClickListener { playSelectSound(); choose(city) }
+                    setOnKeyListener { view, keyCode, event ->
+                        if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                            keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                            view.performClick(); true
+                        } else false
+                    }
+                }
+                resultList.addView(item, LinearLayout.LayoutParams(-1, dp(42)).apply { bottomMargin = dp(5) })
+            }
+        }
+        search.setOnClickListener {
+            val term = query.text?.toString()?.trim().orEmpty()
+            if (term.length < 2) render(emptyList(), "Ketik minimal 2 karakter untuk mencari.")
+            else {
+                render(emptyList(), "Mencari lokasi…")
+                DashboardServices.searchCities(this@MainActivity, term) { found, error ->
+                    if (!dialog.isShowing) return@searchCities
+                    if (found.isEmpty()) render(emptyList(), error?.let { "Pencarian gagal: $it" } ?: "Lokasi tidak ditemukan. Coba nama kota lain.")
+                    else render(found, "Pilih lokasi untuk memperbarui cuaca dan waktu salat.")
+                }
+            }
+        }
+        search.setOnKeyListener { view, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                view.performClick(); true
+            } else false
+        }
+        render(DashboardServices.cities)
+        dialog.show()
+        dialog.window?.setLayout(dp(600), -2)
     }
 
     private fun checkForAzan() {
@@ -781,7 +880,7 @@ class MainActivity : Activity() {
                         catch (_: Exception) { }
                     }
                 }
-                card.addView(thumb, LinearLayout.LayoutParams(-1, dp(42)))
+                card.addView(thumb, LinearLayout.LayoutParams(-1, dp(56)))
                 card.addView(label(title, 10, Color.WHITE, true).apply {
                     maxLines = 2
                     minHeight = dp(26)
@@ -807,7 +906,7 @@ class MainActivity : Activity() {
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     setPadding(0, dp(3), 0, 0)
                 })
-                val lp = LinearLayout.LayoutParams(dp(104), dp(92))
+                val lp = LinearLayout.LayoutParams(dp(126), dp(112))
                 lp.setMargins(0, 0, if (index == count - 1 || index == watchItems.take(count).lastIndex) 0 else dp(7), 0)
                 cardRow.addView(card, lp)
             }
@@ -818,9 +917,81 @@ class MainActivity : Activity() {
             clipToPadding = false
             overScrollMode = View.OVER_SCROLL_NEVER
         }
-        cardScroll.addView(cardRow, android.widget.FrameLayout.LayoutParams(-2, dp(98)))
-        outer.addView(cardScroll, LinearLayout.LayoutParams(-1, dp(98)))
-        mediaRow.addView(outer, LinearLayout.LayoutParams(0, -1, 1.85f))
+        cardScroll.addView(cardRow, android.widget.FrameLayout.LayoutParams(-2, dp(118)))
+        outer.addView(cardScroll, LinearLayout.LayoutParams(-1, dp(118)))
+        mediaRow.addView(outer, LinearLayout.LayoutParams(0, -1, 1.75f))
+    }
+
+    private fun addBackgroundAudioRow(container: LinearLayout) {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val candidates = prefs.all.keys.filter { it.startsWith("audio_title_") }.mapNotNull { key ->
+            val pkg = key.removePrefix("audio_title_")
+            val title = prefs.getString(key, null)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val updated = prefs.getLong("audio_updated_$pkg", 0L)
+            val state = prefs.getInt("audio_state_$pkg", 0)
+            if (updated <= 0L || System.currentTimeMillis() - updated > 6 * 60 * 60 * 1000L ||
+                (state != 3 && state != 2)) null else Triple(pkg, title, updated)
+        }.sortedByDescending { it.third }
+        val item = candidates.firstOrNull() ?: return
+        val (pkg, title, _) = item
+        val artist = prefs.getString("audio_artist_$pkg", "").orEmpty().ifBlank { "Audio dari aplikasi lain" }
+        val album = prefs.getString("audio_album_$pkg", "").orEmpty()
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(8), dp(14), dp(8))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(Color.argb(155, 18, 28, 43))
+                setStroke(dp(1), Color.argb(100, 153, 194, 255))
+            }
+            isFocusable = true
+            isClickable = true
+            contentDescription = "Sedang diputar: $title, $artist"
+            setOnFocusChangeListener { view, focused ->
+                view.background = GradientDrawable().apply {
+                    cornerRadius = dp(14).toFloat()
+                    setColor(if (focused) Color.argb(230, 42, 65, 92) else Color.argb(155, 18, 28, 43))
+                    setStroke(dp(if (focused) 2 else 1), if (focused) accent else Color.argb(100, 153, 194, 255))
+                }
+                if (focused) playNavigationSound()
+            }
+            setOnClickListener { playSelectSound(); openContinueWatchingApp(pkg) }
+            setOnKeyListener { view, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                    keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                    view.performClick(); true
+                } else false
+            }
+        }
+        val artworkName = prefs.getString("watch_artwork_$pkg", null)
+        val artwork = artworkName?.let { File(filesDir, it) }?.takeIf { it.isFile && it.length() > 0L }
+        val image = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = GradientDrawable().apply { cornerRadius = dp(8).toFloat(); setColor(Color.rgb(24, 34, 49)) }
+            clipToOutline = true
+            if (artwork != null) {
+                try { setImageBitmap(BitmapFactory.decodeFile(artwork.absolutePath)) } catch (_: Exception) { }
+            }
+            if (drawable == null) {
+                try { setImageDrawable(packageManager.getApplicationIcon(pkg)); scaleType = ImageView.ScaleType.FIT_CENTER } catch (_: Exception) { }
+            }
+        }
+        row.addView(image, LinearLayout.LayoutParams(dp(52), dp(52)))
+        val textCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, dp(8), 0)
+        }
+        textCol.addView(label("SEDANG DIPUTAR", 9, accent, true))
+        textCol.addView(label(title, 13, Color.WHITE, true).apply {
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        textCol.addView(label(if (album.isBlank()) artist else "$artist  •  $album", 10, Color.rgb(176, 193, 215), false).apply {
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        row.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
+        row.addView(label("BUKA PEMUTAR  ›", 10, accent, true))
+        container.addView(row, LinearLayout.LayoutParams(-1, dp(72)).apply { topMargin = dp(5) })
     }
 
     /**
@@ -1239,68 +1410,133 @@ class MainActivity : Activity() {
 
     private fun showSettings() {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        val soundOn = prefs.getBoolean("ui_sound_enabled", true)
-        val azanOn = prefs.getBoolean("azan_enabled", true)
-        val wallpaperAuto = prefs.getBoolean("wallpaper_auto", true)
-        val entries = arrayOf(
-            "Lokasi cuaca & waktu salat",
-            "Pilih aplikasi untuk Entertainment",
-            "Suara navigasi ala konsol: ${if (soundOn) "AKTIF" else "MATI"}",
-            "Azan otomatis: ${if (azanOn) "AKTIF" else "MATI"}",
-            "Uji suara azan",
-            "Wallpaper berikutnya",
-            "Wallpaper otomatis: ${if (wallpaperAuto) "AKTIF" else "MATI"}",
-            "Edit nama sapaan",
-            "Info GlassTV",
-            "Atur dock aplikasi favorit",
-            "Google Ambient / Art Gallery"
-        )
-        AlertDialog.Builder(this).setTitle("Pengaturan GlassTV")
-            .setItems(entries) { _, which ->
-                when (which) {
-                    0 -> showLocationPicker()
-                    1 -> manageEntertainmentApps()
-                    2 -> {
-                        prefs.edit().putBoolean("ui_sound_enabled", !soundOn).apply()
-                        toast("Suara navigasi ${if (!soundOn) "diaktifkan" else "dimatikan"}")
-                    }
-                    3 -> {
-                        val enable = !azanOn
-                        prefs.edit().putBoolean("azan_enabled", enable).apply()
-                        if (!enable) {
-                            try { azanPlayer?.stop() } catch (_: Exception) { }
-                            try { azanPlayer?.release() } catch (_: Exception) { }
-                            azanPlayer = null
-                        }
-                        toast("Azan otomatis ${if (enable) "diaktifkan" else "dimatikan"}")
-                    }
-                    4 -> playAzan()
-                    5 -> {
-                        val next = (prefs.getInt("wallpaper_index", 0) + 1) % wallpaperUrls.size
-                        prefs.edit().putInt("wallpaper_index", next).apply()
-                        applyWallpaper(wallpaperTarget)
-                        toast("Wallpaper diganti")
-                    }
-                    6 -> {
-                        prefs.edit().putBoolean("wallpaper_auto", !wallpaperAuto).apply()
-                        scheduleWallpaperRotation()
-                        toast("Wallpaper otomatis ${if (!wallpaperAuto) "diaktifkan" else "dimatikan"}")
-                    }
-                    7 -> showGreetingEditor()
-                    8 -> AlertDialog.Builder(this).setTitle("GlassTV Launcher")
-                        .setMessage(
-                            "Dashboard cuaca dan jadwal salat dengan lokasi manual.\n\n" +
-                            "• Cuaca: prakiraan BMKG\n" +
-                            "• Jadwal salat: AlAdhan, metode 20°/18° dengan penyesuaian 2 menit\n" +
-                            "• Wallpaper fotografis berganti otomatis, dapat diatur\n" +
-                            "• Efek navigasi lokal, dapat dimatikan\n" +
-                            "• Suara azan melalui internet saat dashboard aktif\n\n" +
-                            "Data cuaca dan azan memerlukan internet. Launcher tidak meminta izin lokasi perangkat."
-                        ).setPositiveButton("OK", null).show()
-                    9 -> manageFavoriteDock()
-                    10 -> openGoogleAmbientSettings()
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+        }
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(panel, ScrollView.LayoutParams(-1, -2))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("GLASSTV  /  PENGATURAN")
+            .setView(scroll)
+            .setNegativeButton("Tutup", null)
+            .create()
+        fun settingRow(title: String, detail: String, state: String? = null, action: () -> Unit) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(8), dp(14), dp(8))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(12).toFloat()
+                    setColor(Color.argb(135, 25, 36, 53))
+                    setStroke(dp(1), Color.argb(70, 153, 194, 255))
                 }
-            }.setNegativeButton("Tutup", null).show()
+                isFocusable = true
+                isClickable = true
+                setOnFocusChangeListener { view, focused ->
+                    view.background = GradientDrawable().apply {
+                        cornerRadius = dp(12).toFloat()
+                        setColor(if (focused) Color.argb(225, 46, 70, 101) else Color.argb(135, 25, 36, 53))
+                        setStroke(dp(if (focused) 2 else 1), if (focused) accent else Color.argb(70, 153, 194, 255))
+                    }
+                    view.scaleX = if (focused) 1.015f else 1f
+                    view.scaleY = if (focused) 1.015f else 1f
+                    if (focused) playNavigationSound()
+                }
+                setOnClickListener { playSelectSound(); action() }
+                setOnKeyListener { view, keyCode, event ->
+                    if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                        keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                        view.performClick(); true
+                    } else false
+                }
+            }
+            val textColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            textColumn.addView(label(title, 14, Color.WHITE, true))
+            textColumn.addView(label(detail, 10, Color.rgb(170, 189, 213), false).apply {
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(0, dp(3), 0, 0)
+            })
+            row.addView(textColumn, LinearLayout.LayoutParams(0, -2, 1f))
+            if (state != null) {
+                row.addView(label(state, 10, accent, true).apply {
+                    gravity = Gravity.CENTER
+                    setPadding(dp(8), dp(5), dp(8), dp(5))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(8).toFloat()
+                        setColor(Color.argb(80, 126, 190, 255))
+                    }
+                })
+            } else row.addView(label("›", 23, accent, false))
+            panel.addView(row, LinearLayout.LayoutParams(-1, dp(58)).apply { bottomMargin = dp(7) })
+        }
+        fun reopen(message: String) {
+            dialog.dismiss()
+            toast(message)
+            showSettings()
+        }
+        settingRow("Lokasi cuaca & waktu salat", "Cari kota di Indonesia atau pilih lokasi tersimpan", DashboardServices.selectedCity(this).name) {
+            dialog.dismiss(); showLocationPicker()
+        }
+        settingRow("Aplikasi Entertainment", "Pilih aplikasi yang muncul di bagian hiburan") {
+            dialog.dismiss(); manageEntertainmentApps()
+        }
+        settingRow("Dock aplikasi favorit", "Atur ikon aplikasi favorit dan urutannya") {
+            dialog.dismiss(); manageFavoriteDock()
+        }
+        val soundOn = prefs.getBoolean("ui_sound_enabled", true)
+        settingRow("Suara navigasi", "Bunyi singkat saat fokus dan memilih kartu", if (soundOn) "AKTIF" else "MATI") {
+            prefs.edit().putBoolean("ui_sound_enabled", !soundOn).apply()
+            reopen("Suara navigasi \${if (!soundOn) "diaktifkan" else "dimatikan"}")
+        }
+        val azanOn = prefs.getBoolean("azan_enabled", true)
+        settingRow("Azan otomatis", "Putar azan saat waktu salat tiba", if (azanOn) "AKTIF" else "MATI") {
+            val enable = !azanOn
+            prefs.edit().putBoolean("azan_enabled", enable).apply()
+            if (!enable) {
+                try { azanPlayer?.stop() } catch (_: Exception) { }
+                try { azanPlayer?.release() } catch (_: Exception) { }
+                azanPlayer = null
+            }
+            reopen("Azan otomatis \${if (enable) "diaktifkan" else "dimatikan"}")
+        }
+        settingRow("Uji suara azan", "Putar contoh audio untuk memastikan suara berfungsi") {
+            dialog.dismiss(); playAzan()
+        }
+        val wallpaperAuto = prefs.getBoolean("wallpaper_auto", true)
+        settingRow("Wallpaper otomatis", "Ganti wallpaper secara berkala", if (wallpaperAuto) "AKTIF" else "MATI") {
+            prefs.edit().putBoolean("wallpaper_auto", !wallpaperAuto).apply()
+            scheduleWallpaperRotation()
+            reopen("Wallpaper otomatis \${if (!wallpaperAuto) "diaktifkan" else "dimatikan"}")
+        }
+        settingRow("Wallpaper berikutnya", "Ganti ke foto latar berikutnya") {
+            val next = (prefs.getInt("wallpaper_index", 0) + 1) % wallpaperUrls.size
+            prefs.edit().putInt("wallpaper_index", next).apply()
+            applyWallpaper(wallpaperTarget)
+            dialog.dismiss(); toast("Wallpaper diganti")
+        }
+        settingRow("Google Ambient / Art Gallery", "Buka pengaturan screensaver Android TV") {
+            dialog.dismiss(); openGoogleAmbientSettings()
+        }
+        settingRow("Edit nama sapaan", "Ubah sapaan di panel jam dan cuaca") {
+            dialog.dismiss(); showGreetingEditor()
+        }
+        settingRow("Info GlassTV", "Sumber cuaca, jadwal salat, wallpaper, dan izin yang digunakan") {
+            dialog.dismiss()
+            AlertDialog.Builder(this).setTitle("GlassTV Launcher")
+                .setMessage(
+                    "• Cuaca: BMKG untuk lokasi pilihan Jakarta Timur; Open-Meteo untuk kota hasil pencarian\n" +
+                    "• Jadwal salat: AlAdhan, metode 20°/18° dengan penyesuaian 2 menit\n" +
+                    "• Wallpaper fotografis berganti otomatis\n" +
+                    "• Suara navigasi dan azan dapat dimatikan\n\n" +
+                    "Data memerlukan internet. Launcher tidak meminta izin lokasi perangkat."
+                ).setPositiveButton("Kembali") { _, _ -> showSettings() }.show()
+        }
+        dialog.show()
+        dialog.window?.setLayout(dp(640), (resources.displayMetrics.heightPixels * 0.82f).toInt())
     }
 
     private fun favoritePackages(): List<String> {
