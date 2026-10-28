@@ -36,7 +36,7 @@ class MainActivity : Activity() {
         actions.clear()
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(38), dp(24), dp(38), dp(26))
+            setPadding(dp(42), dp(26), dp(42), dp(28))
             setBackgroundColor(bg)
             isFocusableInTouchMode = true
             clipChildren = false
@@ -61,14 +61,14 @@ class MainActivity : Activity() {
 
         val subtitle = label("YOUR SCREEN. YOUR SPACE.", 12, accent, true).apply {
             setLetterSpacing(0.12f)
-            setPadding(0, dp(4), 0, dp(18))
+            setPadding(0, dp(3), 0, dp(10))
         }
         root.addView(subtitle)
 
         val hero = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(28), dp(22), dp(28), dp(22))
+            setPadding(dp(26), dp(18), dp(26), dp(18))
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
                 intArrayOf(Color.rgb(28, 47, 72), Color.rgb(16, 24, 38), Color.rgb(13, 19, 30))
@@ -81,18 +81,18 @@ class MainActivity : Activity() {
         hero.addView(label("GLASS INTERFACE   /   ANDROID TV", 12, accent, true).apply {
             setLetterSpacing(0.08f)
         })
-        hero.addView(label("Selamat datang kembali", 28, Color.WHITE, true).apply {
-            setPadding(0, dp(12), 0, dp(8))
+        hero.addView(label("Selamat datang kembali", 24, Color.WHITE, true).apply {
+            setPadding(0, dp(8), 0, dp(6))
         })
         hero.addView(label(
             "Pilih aplikasi, buka kamera CCTV, atau putar video dari URL.\nPemutaran menggunakan aplikasi eksternal yang kompatibel.",
-            15, Color.rgb(202, 214, 231), false
+            13, Color.rgb(202, 214, 231), false
         ).apply {
             maxLines = 3
             setLineSpacing(dp(3).toFloat(), 1f)
         })
-        root.addView(hero, LinearLayout.LayoutParams(-1, 0, 1f).apply {
-            bottomMargin = dp(18)
+        root.addView(hero, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = dp(26)
         })
 
         val section = LinearLayout(this).apply {
@@ -102,12 +102,12 @@ class MainActivity : Activity() {
         section.addView(label("AKSES CEPAT", 12, Color.rgb(160, 178, 201), true))
         section.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         section.addView(label("Pilih dengan remote  •  OK untuk membuka", 11, Color.rgb(133, 151, 174), false))
-        root.addView(section, LinearLayout.LayoutParams(-1, dp(24)))
+        root.addView(section, LinearLayout.LayoutParams(-1, dp(22)))
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, dp(8), 0, dp(4))
+            setPadding(0, dp(4), 0, dp(2))
             clipChildren = false
             clipToPadding = false
         }
@@ -116,13 +116,13 @@ class MainActivity : Activity() {
         addAction(row, "Kamera CCTV", "4 slot kamera • RTSP") { showCameras() }
         addAction(row, "Sumber video", "Buka URL HTTP(S)") { askVideoUrl() }
         addAction(row, "Pengaturan", "Info launcher") { showSettings() }
-        root.addView(row, LinearLayout.LayoutParams(-1, dp(96)))
+        root.addView(row, LinearLayout.LayoutParams(-1, dp(78)))
         setContentView(root)
         if (actions.isNotEmpty()) root.post { actions.firstOrNull()?.requestFocus() }
     }
 
     private fun addAction(row: LinearLayout, title: String, desc: String, click: () -> Unit) {
-        val cornerRadius = dp(14).toFloat()
+        val cornerRadius = dp(12).toFloat()
 
         fun cardBackground(focused: Boolean): GradientDrawable =
             GradientDrawable().apply {
@@ -136,7 +136,7 @@ class MainActivity : Activity() {
         val card = LinearLayout(this)
         card.orientation = LinearLayout.VERTICAL
         card.gravity = Gravity.CENTER_VERTICAL
-        card.setPadding(dp(18), dp(14), dp(14), dp(14))
+        card.setPadding(dp(13), dp(10), dp(10), dp(10))
         card.background = cardBackground(false)
         card.isFocusable = true
         card.isFocusableInTouchMode = true
@@ -173,8 +173,8 @@ class MainActivity : Activity() {
             }
         }
 
-        card.addView(label(title, 18, Color.WHITE, true))
-        card.addView(label(desc, 12, Color.rgb(200, 215, 235), false))
+        card.addView(label(title, 15, Color.WHITE, true))
+        card.addView(label(desc, 10, Color.rgb(200, 215, 235), false))
 
         val lp = LinearLayout.LayoutParams(0, -1, 1f)
         lp.setMargins(0, 0, dp(12), 0)
@@ -373,7 +373,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("GlassTV Launcher — prototipe")
             .setMessage(
-                "Versi 0.2.0 (Entertainment Dashboard)\n\n" +
+                "Versi 0.2.1 (Compact Dashboard)\n\n" +
                 "• Target: Android TV 11\n" +
                 "• Live TV: membuka aplikasi tuner bawaan Xiaomi/MediaTek\n" +
                 "• Entertainment: daftar aplikasi TV yang terpasang dan dapat diluncurkan\n" +
