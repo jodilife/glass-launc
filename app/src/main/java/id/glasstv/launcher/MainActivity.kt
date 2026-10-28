@@ -5,15 +5,15 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import java.text.SimpleDateFormat
@@ -22,10 +22,8 @@ import java.util.Locale
 
 class MainActivity : Activity() {
     private val bg = Color.rgb(9, 13, 22)
-    private val panel = Color.argb(205, 28, 38, 55)
     private val accent = Color.rgb(126, 190, 255)
     private lateinit var root: LinearLayout
-    private var focusIndex = 0
     private val actions = mutableListOf<View>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -43,6 +41,8 @@ class MainActivity : Activity() {
             setBackgroundColor(bg)
             isFocusableInTouchMode = true
         }
+
+        // Header Layout
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -55,10 +55,12 @@ class MainActivity : Activity() {
         header.addView(label(time, 17, Color.LTGRAY, false))
         root.addView(header, LinearLayout.LayoutParams(-1, dp(52)))
 
+        // Subtitle Layout
         val subtitle = label("Your screen. Your space.", 16, Color.rgb(185, 199, 219), false)
         subtitle.setPadding(0, dp(2), 0, dp(18))
         root.addView(subtitle)
 
+        // Hero Content Layout
         val hero = TextView(this).apply {
             text = "LIVE BACKGROUND  •  GLASS INTERFACE\n\nWelcome home\n\nPilih sumber video atau buka kamera untuk memulai. Akses tuner TV internal perlu diuji pada firmware MiTV."
             textSize = 20f
@@ -70,6 +72,7 @@ class MainActivity : Activity() {
         }
         root.addView(hero, LinearLayout.LayoutParams(-1, 0, 1f))
 
+        // Action Buttons Row Layout
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -79,6 +82,7 @@ class MainActivity : Activity() {
         addAction(row, "Kamera CCTV", "RTSP / ONVIF") { showCameras() }
         addAction(row, "Sumber video", "Pilih URL video") { askVideoUrl() }
         addAction(row, "Pengaturan", "Informasi & konfigurasi") { showSettings() }
+        
         root.addView(row, LinearLayout.LayoutParams(-1, dp(110)))
         setContentView(root)
 
@@ -89,21 +93,41 @@ class MainActivity : Activity() {
     }
 
     private fun addAction(row: LinearLayout, title: String, desc: String, click: () -> Unit) {
+        // Latar belakang standar kartu: Efek Kaca Semi-Transparan (Glassmorphism)
+        const val CORNER_RADIUS = 14f
+        val glassBackground = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(CORNER_RADIUS.toInt()).toFloat()
+            setColor(Color.argb(160, 22, 32, 48)) // Semi-transparan gelap
+            setStroke(dp(1), Color.argb(90, 126, 190, 255)) // Garis tepi kaca tipis bercahaya
+        }
+
+        // Latar belakang saat kartu disorot remote (Fokus aktif)
+        val glassFocusBackground = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(CORNER_RADIUS.toInt()).toFloat()
+            setColor(Color.argb(220, 38, 58, 88)) // Lebih terang saat fokus
+            setStroke(dp(2), accent) // Garis tepi aksen penuh
+        }
+
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(12), dp(12), dp(12))
-            setBackgroundColor(panel)
+            setPadding(dp(18), dp(14), dp(14), dp(14))
+            background = glassBackground
             isFocusable = true
             isFocusableInTouchMode = true
             isClickable = true
             setOnClickListener { click() }
+            
+            // Perubahan visual saat fokus remote berpindah
             setOnFocusChangeListener { v, focused ->
-                v.setBackgroundColor(if (focused) Color.rgb(48, 76, 108) else panel)
+                v.background = if (focused) glassFocusBackground else glassBackground
                 v.scaleX = if (focused) 1.05f else 1.0f
                 v.scaleY = if (focused) 1.05f else 1.0f
             }
-            // Mendukung tombol OK / Enter pada remote TV fisik
+            
+            // Dukungan tombol OK / Enter pada remote TV fisik
             setOnKeyListener { _, keyCode, event ->
                 if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
                     click()
@@ -113,10 +137,12 @@ class MainActivity : Activity() {
                 }
             }
         }
+        
         card.addView(label(title, 18, Color.WHITE, true))
-        card.addView(label(desc, 12, Color.LTGRAY, false))
+        card.addView(label(desc, 12, Color.rgb(200, 215, 235), false))
+        
         val lp = LinearLayout.LayoutParams(0, -1, 1f)
-        lp.setMargins(0, 0, dp(10), 0)
+        lp.setMargins(0, 0, dp(12), 0)
         row.addView(card, lp)
         actions.add(card)
     }
@@ -131,7 +157,7 @@ class MainActivity : Activity() {
     }
 
     private fun askRtsp(number: Int) {
-        val input = android.widget.EditText(this).apply {
+        val input = EditText(this).apply {
             hint = "rtsp://alamat-kamera/stream"
             setSingleLine(true)
             setText("rtsp://")
@@ -150,7 +176,7 @@ class MainActivity : Activity() {
     }
 
     private fun askVideoUrl() {
-        val input = android.widget.EditText(this).apply {
+        val input = EditText(this).apply {
             hint = "https://.../video.mp4"
             setSingleLine(true)
         }
@@ -199,9 +225,9 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("GlassTV Launcher — prototipe")
             .setMessage(
-                "Versi 0.1.0\n\n" +
+                "Versi 0.1.1 (Glass Border)\n\n" +
                 "• Target: Android TV 11\n" +
-                "• Navigasi remote: fokus D-pad dasar\n" +
+                "• Navigasi remote: fokus D-pad aktif\n" +
                 "• Kamera: membuka stream melalui pemutar eksternal\n" +
                 "• Live TV internal: belum terintegrasi; perlu inventarisasi perangkat/vendor API\n\n" +
                 "Jangan jadikan launcher default sebelum pengujian ADB dan tombol Home berhasil."
