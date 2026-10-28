@@ -139,10 +139,11 @@ Batasan:
 - Akses notifikasi bersifat opsional dan harus diaktifkan pengguna secara manual.
 - Tidak semua build YouTube/SmartTube mempublikasikan judul, durasi, atau posisi dengan cara yang dapat dibaca launcher.
 - Jika tidak ada data yang kompatibel, kartu tetap menampilkan petunjuk aktivasi, bukan data tontonan palsu.
-- Fitur ini belum diverifikasi di perangkat MiTV-MOSR1 secara langsung.
+- **Uji perangkat (28 Oktober 2026):** pengguna mengonfirmasi kartu berfungsi pada MiTV-MOSR1 Android 11 menggunakan build debug terpisah. Log menunjukkan `Saved real thumbnail for org.smarttube.stable using metadata_uri (640x360)`; pengguna juga mengonfirmasi dashboard menampilkan gambar setelah kembali dari SmartTube.
+- Hasil uji ini berlaku untuk kombinasi perangkat, firmware, dan versi SmartTube yang dicoba; aplikasi/firmware lain dapat menerbitkan metadata yang berbeda.
 
 ## Roadmap
 
-1. Uji pengambilan sesi media YouTube dan SmartTube di MiTV-MOSR1.
-2. Perbaiki navigasi remote dan tata letak berdasarkan screenshot TV aktual.
+1. Rapikan dan verifikasi alur rilis untuk paket utama `id.glasstv.launcher` tanpa kehilangan data dari instalasi bertanda tangan berbeda.
+2. Perbaiki navigasi remote dan tata letak berdasarkan screenshot TV aktual bila ditemukan masalah lanjutan.
 3. Evaluasi Watch Next Android TV bila firmware/aplikasi menyediakan data yang dapat diakses launcher.
