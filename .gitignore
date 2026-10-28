@@ -1,0 +1,22 @@
+# Gradle and Android build outputs
+.gradle/
+**/build/
+local.properties
+.idea/
+*.iml
+
+# Generated installers and captures
+*.apk
+*.aab
+captures/
+
+# Local camera endpoints and credentials — never commit real values
+config.local.xml
+camera-config.local.xml
+*.local.xml
+
+# Signing keys and certificates
+*.jks
+*.keystore
+*.pem
+*.p12
