@@ -81,8 +81,8 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         refreshOnResume = true
-        dashboardHandler.removeCallbacks(dashboardTick)
-        dashboardLoopStarted = false
+        // Keep the lightweight clock/prayer watcher alive while another TV app is in front.
+        // CCTV preview players are still released to save memory.
         releaseHomePreviewPlayers()
         super.onPause()
     }
