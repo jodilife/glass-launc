@@ -81,7 +81,11 @@ class MainActivity : Activity() {
         addAction(row, "Pengaturan", "Informasi & konfigurasi") { showSettings() }
         root.addView(row, LinearLayout.LayoutParams(-1, dp(110)))
         setContentView(root)
-        root.requestFocus()
+
+        // Alihkan fokus awal ke kartu pertama agar remote langsung merespons
+        if (actions.isNotEmpty()) {
+            actions[0].requestFocus()
+        }
     }
 
     private fun addAction(row: LinearLayout, title: String, desc: String, click: () -> Unit) {
@@ -91,10 +95,22 @@ class MainActivity : Activity() {
             setPadding(dp(16), dp(12), dp(12), dp(12))
             setBackgroundColor(panel)
             isFocusable = true
+            isFocusableInTouchMode = true
             isClickable = true
             setOnClickListener { click() }
             setOnFocusChangeListener { v, focused ->
                 v.setBackgroundColor(if (focused) Color.rgb(48, 76, 108) else panel)
+                v.scaleX = if (focused) 1.05f else 1.0f
+                v.scaleY = if (focused) 1.05f else 1.0f
+            }
+            // Mendukung tombol OK / Enter pada remote TV fisik
+            setOnKeyListener { _, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
+                    click()
+                    true
+                } else {
+                    false
+                }
             }
         }
         card.addView(label(title, 18, Color.WHITE, true))
