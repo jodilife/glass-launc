@@ -3,6 +3,7 @@ package id.glasstv.launcher
 import android.content.ComponentName
 import android.media.MediaMetadata
 import android.media.session.MediaController
+import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -38,7 +39,8 @@ class PlaybackListenerService : NotificationListenerService() {
 
     private fun refreshSessions() {
         try {
-            val sessions = getActiveSessions(ComponentName(this, PlaybackListenerService::class.java))
+            val manager = getSystemService(MediaSessionManager::class.java)
+            val sessions = manager.getActiveSessions(ComponentName(this, PlaybackListenerService::class.java))
             val activePackages = sessions.map { it.packageName }.toSet()
             controllers.keys.filter { it !in activePackages }.toList().forEach { removeController(it) }
 
