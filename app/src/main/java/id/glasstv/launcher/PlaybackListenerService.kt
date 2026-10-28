@@ -236,7 +236,7 @@ class PlaybackListenerService : NotificationListenerService() {
         val fileName = "watch_art_" + pkg.replace(Regex("[^A-Za-z0-9_.-]"), "_") + ".jpg"
         val target = File(filesDir, fileName)
         if (source == null || sourceType == null) {
-            Log.d(TAG, "No actual thumbnail available for $pkg; metadataKeys=\${try { metadata.keySet() } catch (_: Exception) { emptySet<String>() }}, artUris=\${artworkUris.isNotEmpty()}, mediaUri=\${!mediaUri.isNullOrBlank()}, mediaId=\${!mediaId.isNullOrBlank()}, notificationPicture=\${notificationArtwork.containsKey(pkg)}")
+            Log.d(TAG, "No actual thumbnail available for $pkg; metadataKeys=${try { metadata.keySet() } catch (_: Exception) { emptySet<String>() }}, artUris=${artworkUris.isNotEmpty()}, mediaUri=${!mediaUri.isNullOrBlank()}, mediaId=${!mediaId.isNullOrBlank()}, notificationPicture=${notificationArtwork.containsKey(pkg)}")
             // Remove any legacy app-logo image so the UI falls back to the correctly sized app icon.
             if (!oldName.isNullOrBlank()) File(filesDir, oldName).delete()
             prefs.edit()
@@ -268,7 +268,7 @@ class PlaybackListenerService : NotificationListenerService() {
                 .putString("watch_artwork_title_$pkg", title)
                 .putString("watch_artwork_source_$pkg", sourceType)
                 .apply()
-            Log.d(TAG, "Saved real thumbnail for $pkg using $sourceType (\${source.width}x\${source.height})")
+            Log.d(TAG, "Saved real thumbnail for $pkg using $sourceType (${source.width}x${source.height})")
         } catch (e: Exception) {
             target.delete()
             Log.i(TAG, "Could not persist thumbnail for $pkg", e)
@@ -305,7 +305,7 @@ class PlaybackListenerService : NotificationListenerService() {
                 else -> null
             }
         } catch (_: Exception) {
-            Log.d(TAG, "Artwork URI could not be loaded (\${value.substringBefore(':')})")
+            Log.d(TAG, "Artwork URI could not be loaded (${value.substringBefore(':')})")
             null
         }
     }
