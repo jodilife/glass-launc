@@ -323,10 +323,39 @@ class CctvActivity : Activity() {
     }
 
     private fun showCameraEditor(index: Int) {
+        val currentUrl = cameraUrls[index]
+        val parsed = try { android.net.Uri.parse(currentUrl) } catch (_: Exception) { null }
+        val userInfo = try {
+            parsed?.encodedUserInfo?.let { android.net.Uri.decode(it) }.orEmpty()
+        } catch (_: Exception) { "" }
+        val credentials = userInfo.split(":", limit = 2)
+        val currentUser = credentials.getOrNull(0).orEmpty()
+        val currentPass = credentials.getOrNull(1).orEmpty()
+        val currentHost = parsed?.host.orEmpty()
         val form = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(6), dp(20), dp(4))
         }
+
+        fun addField(title: String, hintText: String, initial: String, password: Boolean = false): EditText {
+            form.addView(label(title, 12, Color.rgb(185, 199, 219), true).apply {
+                setPadding(0, dp(8), 0, dp(2))
+            })
+            val field = EditText(this).apply {
+                hint = hintText
+                setSingleLine(true)
+                inputType = if (password) {
+                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                } else {
+                    InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                }
+                setText(initial)
+                setSelection(text.length)
+            }
+            form.addView(field, LinearLayout.LayoutParams(-1, -2))
+            return field
+        }
+
         form.addView(label("Nama kamera", 12, Color.rgb(185, 199, 219), true))
         val nameInput = EditText(this).apply {
             hint = "Contoh: Pintu depan"
@@ -337,33 +366,31 @@ class CctvActivity : Activity() {
         }
         form.addView(nameInput, LinearLayout.LayoutParams(-1, -2))
 
-        form.addView(
-            label("URL RTSP (disimpan hanya di TV)", 12, Color.rgb(185, 199, 219), true)
-                .apply { setPadding(0, dp(12), 0, 0) }
-        )
-        val urlInput = EditText(this).apply {
-            hint = "rtsp://user:pass@192.168.1.9:8554/Streaming/Channels/102"
-            setSingleLine(true)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setText(cameraUrls[index])
-            setSelection(text.length)
-        }
-        form.addView(urlInput, LinearLayout.LayoutParams(-1, -2))
+        val userInput = addField("Username RTSP", "user", currentUser)
+        val passInput = addField("Password RTSP", "pass", currentPass, password = true)
+        val ipInput = addField("IP kamera", "192.168.1.9", currentHost)
+
+        form.addView(label("Format otomatis: rtsp://user:pass@IP:8554/Streaming/Channels/102", 10,
+            Color.rgb(145, 169, 199), false).apply { setPadding(0, dp(8), 0, 0) })
 
         AlertDialog.Builder(this)
             .setTitle("Kamera ${index + 1}")
             .setView(form)
             .setPositiveButton("Simpan") { _, _ ->
                 val name = nameInput.text.toString().trim().ifBlank { "Kamera ${index + 1}" }
-                val url = urlInput.text.toString().trim()
-                if (url.isNotBlank() &&
-                    !url.startsWith("rtsp://", true) &&
-                    !url.startsWith("rtsps://", true)
-                ) {
-                    toast("URL kamera harus diawali rtsp:// atau rtsps://")
-                } else {
-                    saveCamera(index, name, url)
+                val user = userInput.text.toString().trim()
+                val pass = passInput.text.toString()
+                val host = ipInput.text.toString().trim()
+                if (user.isBlank() || pass.isBlank() || host.isBlank()) {
+                    toast("Isi username, password, dan IP kamera.")
+                    return@setPositiveButton
                 }
+                if (host.contains("/") || host.contains("@") || host.contains(" ")) {
+                    toast("IP/host tidak valid. Masukkan IP saja, tanpa rtsp:// atau path.")
+                    return@setPositiveButton
+                }
+                val url = "rtsp://${android.net.Uri.encode(user)}:${android.net.Uri.encode(pass)}@${host}:8554/Streaming/Channels/102"
+                saveCamera(index, name, url)
             }
             .setNeutralButton("Hapus URL") { _, _ ->
                 saveCamera(index, nameInput.text.toString().trim().ifBlank { "Kamera ${index + 1}" }, "")
