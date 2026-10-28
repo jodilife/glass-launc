@@ -182,28 +182,55 @@ class MainActivity : Activity() {
     }
 
     private fun showCameras() {
-        val items = arrayOf("Kamera 1 — masukkan URL RTSP", "Kamera 2 — masukkan URL RTSP", "Kamera 3 — masukkan URL RTSP", "Kamera 4 — masukkan URL RTSP")
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val items = (1..4).map { number ->
+            val configured = !prefs.getString("camera_$number", null).isNullOrBlank()
+            "Kamera $number  •  " + if (configured) "URL tersimpan" else "Belum dikonfigurasi"
+        }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Kamera CCTV")
-            .setItems(items) { _, which -> askRtsp(which + 1) }
+            .setItems(items) { _, which -> manageCamera(which + 1) }
+            .setNegativeButton("Kembali", null)
+            .show()
+    }
+
+    private fun manageCamera(number: Int) {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val savedUrl = prefs.getString("camera_$number", null)
+        if (savedUrl.isNullOrBlank()) {
+            askRtsp(number)
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Kamera $number")
+            .setMessage("URL RTSP tersimpan di perangkat:\n$savedUrl")
+            .setPositiveButton("Buka") { _, _ -> openExternalStream(savedUrl) }
+            .setNeutralButton("Edit URL") { _, _ -> askRtsp(number) }
             .setNegativeButton("Kembali", null)
             .show()
     }
 
     private fun askRtsp(number: Int) {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val input = EditText(this).apply {
             hint = "rtsp://alamat-kamera/stream"
             setSingleLine(true)
-            setText("rtsp://")
+            setText(prefs.getString("camera_$number", "rtsp://"))
+            setSelection(text.length)
         }
         AlertDialog.Builder(this)
             .setTitle("URL Kamera $number")
-            .setMessage("Untuk prototipe ini, stream dibuka melalui aplikasi pemutar eksternal yang mendukung RTSP (mis. VLC).")
+            .setMessage("URL disimpan lokal di TV. Stream dibuka melalui aplikasi pemutar eksternal yang mendukung RTSP (mis. VLC).")
             .setView(input)
-            .setPositiveButton("Buka") { _, _ ->
+            .setPositiveButton("Simpan & buka") { _, _ ->
                 val url = input.text.toString().trim()
-                if (url.startsWith("rtsp://") || url.startsWith("rtsps://")) openExternalStream(url)
-                else toast("URL harus diawali rtsp:// atau rtsps://")
+                if (url.startsWith("rtsp://", ignoreCase = true) ||
+                    url.startsWith("rtsps://", ignoreCase = true)) {
+                    prefs.edit().putString("camera_$number", url).apply()
+                    openExternalStream(url)
+                } else {
+                    toast("URL harus diawali rtsp:// atau rtsps://")
+                }
             }
             .setNegativeButton("Batal", null)
             .show()
@@ -272,7 +299,7 @@ class MainActivity : Activity() {
                 "Versi 0.1.2 (Glass Border Fix)\n\n" +
                 "• Target: Android TV 11\n" +
                 "• Navigasi remote: fokus D-pad aktif\n" +
-                "• Kamera: membuka stream melalui pemutar eksternal\n" +
+                "• Kamera: 4 URL RTSP tersimpan lokal; stream via pemutar eksternal\n" +
                 "• Live TV internal: belum terintegrasi; perlu inventarisasi perangkat/vendor API\n\n" +
                 "Jangan jadikan launcher default sebelum pengujian ADB dan tombol Home berhasil."
             )
