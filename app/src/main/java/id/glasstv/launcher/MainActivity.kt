@@ -94,7 +94,6 @@ class MainActivity : Activity() {
     private var actionMenuView: View? = null
     private var videoWallpaperPlayer: ExoPlayer? = null
     private var videoWallpaperView: PlayerView? = null
-    private val idleTimeoutMs = 60_000L
     private val idleTimeout = object : Runnable {
         override fun run() { enterIdleMode() }
     }
@@ -2347,7 +2346,9 @@ class MainActivity : Activity() {
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_DOWN -> {
-                            val target = actions.firstOrNull() ?: return@setOnKeyListener false
+                            val target = backgroundAudioRowView?.takeIf { it.isFocusable }
+                                ?: actions.firstOrNull()
+                                ?: return@setOnKeyListener false
                             target.requestFocus()
                             true
                         }
@@ -2644,7 +2645,8 @@ class MainActivity : Activity() {
         favoriteDockView?.visibility = View.GONE
         backgroundAudioRowView?.visibility = View.GONE
         actionMenuView?.visibility = View.GONE
-        dashboardPanelView?.visibility = View.GONE
+        // Keep the dashboard's layout slot transparent so media content does not jump upward.
+        dashboardPanelView?.visibility = View.INVISIBLE
         headerPrayerMetaLabel?.visibility = View.VISIBLE
         headerNextPrayerLabel?.visibility = View.VISIBLE
         homeMediaRowView?.animate()?.translationY(dp(10).toFloat())?.setDuration(260L)?.start()
