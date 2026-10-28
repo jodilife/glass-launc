@@ -92,50 +92,60 @@ class MainActivity : Activity() {
     }
 
     private fun addAction(row: LinearLayout, title: String, desc: String, click: () -> Unit) {
-        val cornerRadius = 14f
-        val glassBackground = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(cornerRadius.toInt()).toFloat()
-            setColor(Color.argb(160, 22, 32, 48))
-            setStroke(dp(1), Color.argb(90, 126, 190, 255))
-        }
+        val cornerRadius = dp(14).toFloat()
 
-        val glassFocusBackground = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(cornerRadius.toInt()).toFloat()
-            setColor(Color.argb(220, 38, 58, 88))
-            setStroke(dp(2), accent)
-        }
-
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(18), dp(14), dp(14), dp(14))
-            background = glassBackground
-            isFocusable = true
-            isFocusableInTouchMode = true
-            isClickable = true
-            setOnClickListener { click() }
-            
-            setOnFocusChangeListener { view, focused ->
-                view.background = if (focused) glassFocusBackground else glassBackground
-                view.scaleX = if (focused) 1.05f else 1.0f
-                view.scaleY = if (focused) 1.05f else 1.0f
+        fun cardBackground(focused: Boolean): GradientDrawable =
+            GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                this.cornerRadius = cornerRadius
+                setColor(if (focused) Color.argb(235, 38, 58, 88) else Color.argb(190, 22, 32, 48))
+                setStroke(if (focused) dp(2) else dp(1),
+                    if (focused) accent else Color.argb(130, 126, 190, 255))
             }
-            
-            setOnKeyListener { _, keyCode, event ->
-                if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
-                    click()
-                    true
-                } else {
-                    false
+
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.gravity = Gravity.CENTER_VERTICAL
+        card.setPadding(dp(18), dp(14), dp(14), dp(14))
+        card.background = cardBackground(false)
+        card.isFocusable = true
+        card.isFocusableInTouchMode = true
+        card.isClickable = true
+        card.contentDescription = "$title. $desc"
+        card.setOnClickListener { click() }
+        card.setOnFocusChangeListener { view, focused ->
+            view.setBackground(cardBackground(focused))
+            view.setScaleX(if (focused) 1.04f else 1.0f)
+            view.setScaleY(if (focused) 1.04f else 1.0f)
+        }
+        card.setOnKeyListener { view, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) {
+                false
+            } else {
+                val index = actions.indexOf(view)
+                when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        if (index > 0) actions[index - 1].requestFocus()
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        if (index >= 0 && index < actions.lastIndex) actions[index + 1].requestFocus()
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_CENTER,
+                    KeyEvent.KEYCODE_ENTER,
+                    KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                        view.performClick()
+                        true
+                    }
+                    else -> false
                 }
             }
         }
-        
+
         card.addView(label(title, 18, Color.WHITE, true))
         card.addView(label(desc, 12, Color.rgb(200, 215, 235), false))
-        
+
         val lp = LinearLayout.LayoutParams(0, -1, 1f)
         lp.setMargins(0, 0, dp(12), 0)
         row.addView(card, lp)
