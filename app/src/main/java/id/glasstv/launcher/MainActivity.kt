@@ -1819,9 +1819,9 @@ class MainActivity : Activity() {
                     setPadding(dp(12), 0, dp(8), 0)
                 }
                 texts.addView(label(resolve.loadLabel(packageManager).toString(), 13, Color.WHITE, true))
-                texts.addView(label(if (order >= 0) "Favorit ke-\${order + 1}" else "Ketuk untuk menambahkan", 10, Color.rgb(170, 189, 213), false))
+                texts.addView(label(if (order >= 0) "Favorit ke-${order + 1}" else "Ketuk untuk menambahkan", 10, Color.rgb(170, 189, 213), false))
                 row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
-                row.addView(label(if (order >= 0) "\${order + 1}" else "+", 17, if (order >= 0) accent else Color.rgb(160, 178, 201), true))
+                row.addView(label(if (order >= 0) "${order + 1}" else "+", 17, if (order >= 0) accent else Color.rgb(160, 178, 201), true))
                 list.addView(row, LinearLayout.LayoutParams(-1, dp(58)).apply { bottomMargin = dp(6) })
             }
         }
