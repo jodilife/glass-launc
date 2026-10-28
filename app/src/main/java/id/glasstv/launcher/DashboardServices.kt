@@ -11,12 +11,13 @@ import java.util.Calendar
 import java.util.Locale
 
 /**
- * Small dashboard data source. Location is explicitly selected by the user; no device location
- * permission is requested. Weather is from Open-Meteo; prayer times use AlAdhan's Singapore
- * calculation (Fajr 20°, Isha 18°) with a two-minute precaution adjustment.
+ * Small dashboard data source. Weather forecasts are provided by BMKG at kelurahan level.
+ * Location is explicitly selected by the user; no device location permission is requested.
+ * Prayer times use AlAdhan's Singapore calculation (Fajr 20°, Isha 18°) with a two-minute
+ * precaution adjustment.
  */
 internal object DashboardServices {
-    data class City(val name: String, val lat: Double, val lon: Double)
+    data class City(val name: String, val lat: Double, val lon: Double, val bmkgCode: String)
     data class Snapshot(
         val city: String,
         val temperature: String,
@@ -26,27 +27,10 @@ internal object DashboardServices {
         val fetchedAt: Long
     )
 
+    // BMKG adm4 codes correspond to kelurahan-level forecast pages.
     val cities = listOf(
-        City("Jakarta Timur", -6.2250, 106.9000),
-        City("Jakarta Pusat", -6.1862, 106.8341),
-        City("Jakarta Selatan", -6.2615, 106.8106),
-        City("Jakarta Barat", -6.1683, 106.7588),
-        City("Jakarta Utara", -6.1384, 106.8639),
-        City("Bekasi", -6.2383, 106.9756),
-        City("Depok", -6.4025, 106.7942),
-        City("Bogor", -6.5971, 106.8060),
-        City("Bandung", -6.9175, 107.6191),
-        City("Semarang", -6.9667, 110.4167),
-        City("Yogyakarta", -7.7956, 110.3695),
-        City("Surabaya", -7.2575, 112.7521),
-        City("Medan", 3.5952, 98.6722),
-        City("Makassar", -5.1477, 119.4327),
-        City("Denpasar", -8.6705, 115.2126),
-        City("Palembang", -2.9761, 104.7754),
-        City("Padang", -0.9471, 100.4172),
-        City("Pontianak", -0.0263, 109.3425),
-        City("Balikpapan", -1.2379, 116.8529),
-        City("Manado", 1.4748, 124.8421)
+        City("Pondok Kelapa", -6.2250, 106.9330, "31.75.07.1004"),
+        City("Duren Sawit", -6.2290, 106.9160, "31.75.07.1001")
     )
 
     private val prayerKeys = listOf("Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha")
@@ -54,7 +38,7 @@ internal object DashboardServices {
 
     fun selectedCity(context: Context): City {
         val prefs = context.getSharedPreferences("glass_tv", Context.MODE_PRIVATE)
-        val name = prefs.getString("dashboard_city", "Jakarta Timur") ?: "Jakarta Timur"
+        val name = prefs.getString("dashboard_city", "Pondok Kelapa") ?: "Pondok Kelapa"
         return cities.firstOrNull { it.name == name } ?: cities.first()
     }
 
@@ -79,10 +63,12 @@ internal object DashboardServices {
         val city = selectedCity(app)
         Thread({
             try {
-                val weatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&current=temperature_2m,weather_code&timezone=Asia%2FJakarta"
-                val weather = JSONObject(get(weatherUrl)).getJSONObject("current")
-                val temp = "${weather.optDouble("temperature_2m").toInt()}°C"
-                val condition = describeWeather(weather.optInt("weather_code"))
+                val weatherUrl = "https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=${city.bmkgCode}"
+                val weather = latestBmkgForecast(JSONObject(get(weatherUrl)))
+                val temp = "${weather.optInt("t", Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE }?.let { "$it°C" } ?: "Suhu --"}"
+                val condition = weather.optString("weather_desc", "").takeIf { it.isNotBlank() }
+                    ?: weather.optString("weather_desc_en", "").takeIf { it.isNotBlank() }
+                    ?: "Cuaca terkini"
                 val timestamp = System.currentTimeMillis() / 1000L
                 val prayerUrl = "https://api.aladhan.com/v1/timings/$timestamp?latitude=${city.lat}&longitude=${city.lon}&method=20&timezonestring=Asia%2FJakarta&tune=0,2,0,2,2,2,0,2,0"
                 val prayer = JSONObject(get(prayerUrl)).getJSONObject("data")
@@ -127,25 +113,38 @@ internal object DashboardServices {
         return -1
     }
 
-    private fun describeWeather(code: Int): String = when (code) {
-        0 -> "Cerah"
-        1 -> "Cerah berawan"
-        2 -> "Berawan sebagian"
-        3 -> "Mendung"
-        45, 48 -> "Berkabut"
-        in 51..57 -> "Gerimis"
-        in 61..67 -> "Hujan"
-        in 71..77 -> "Salju"
-        in 80..82 -> "Hujan lokal"
-        in 95..99 -> "Badai petir"
-        else -> "Cuaca terkini"
+    private fun latestBmkgForecast(root: JSONObject): JSONObject {
+        val data = root.optJSONArray("data") ?: throw IllegalStateException("Format data BMKG tidak dikenal")
+        val area = data.optJSONObject(0) ?: throw IllegalStateException("Prakiraan BMKG kosong")
+        val days = area.optJSONArray("cuaca") ?: throw IllegalStateException("Data cuaca BMKG tidak tersedia")
+        val forecasts = mutableListOf<JSONObject>()
+        for (dayIndex in 0 until days.length()) {
+            val day = days.optJSONArray(dayIndex)
+            if (day != null) {
+                for (itemIndex in 0 until day.length()) {
+                    day.optJSONObject(itemIndex)?.let { forecasts.add(it) }
+                }
+            } else {
+                days.optJSONObject(dayIndex)?.let { forecasts.add(it) }
+            }
+        }
+        if (forecasts.isEmpty()) throw IllegalStateException("Prakiraan BMKG kosong")
+        val now = System.currentTimeMillis()
+        val format = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).apply {
+            timeZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
+        }
+        return forecasts.minByOrNull { forecast ->
+            val localDate = forecast.optString("local_datetime", "")
+            val parsed = try { format.parse(localDate)?.time } catch (_: Exception) { null }
+            if (parsed == null) Long.MAX_VALUE else kotlin.math.abs(parsed - now)
+        } ?: forecasts.first()
     }
 
     private fun get(url: String): String {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = 10000
         conn.readTimeout = 12000
-        conn.setRequestProperty("User-Agent", "GlassTVLauncher/0.4")
+        conn.setRequestProperty("User-Agent", "GlassTVLauncher/0.5")
         return try {
             if (conn.responseCode != 200) throw IllegalStateException("HTTP ${conn.responseCode}")
             conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
