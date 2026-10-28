@@ -592,7 +592,7 @@ class MainActivity : Activity() {
         if (android.os.Build.VERSION.SDK_INT < 24) return "Kalender Hijriyah"
         return try {
             val cal = android.icu.util.IslamicCalendar().apply {
-                timeZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
+                timeZone = android.icu.util.TimeZone.getTimeZone("Asia/Jakarta")
                 time = date
             }
             val months = arrayOf("Muharam", "Safar", "Rabiulawal", "Rabiulakhir", "Jumadilawal", "Jumadilakhir",
