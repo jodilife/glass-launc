@@ -342,7 +342,7 @@ class CctvActivity : Activity() {
                 .apply { setPadding(0, dp(12), 0, 0) }
         )
         val urlInput = EditText(this).apply {
-            hint = "rtsp://alamat-kamera/stream"
+            hint = "rtsp://user:pass@192.168.1.9:8554/Streaming/Channels/102"
             setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             setText(cameraUrls[index])
