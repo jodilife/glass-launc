@@ -498,7 +498,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("GlassTV Launcher — prototipe")
             .setMessage(
-                "Versi 0.2.1 (Compact Dashboard)\n\n" +
+                "Versi 0.3.0 (Continue Watching preview)\n\n" +
                 "• Target: Android TV 11\n" +
                 "• Live TV: membuka aplikasi tuner bawaan Xiaomi/MediaTek\n" +
                 "• Entertainment: daftar aplikasi TV yang terpasang dan dapat diluncurkan\n" +
