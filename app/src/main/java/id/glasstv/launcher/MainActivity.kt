@@ -103,8 +103,8 @@ class MainActivity : Activity() {
         actions.clear()
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(34), dp(14), dp(34), dp(14))
-            setBackgroundColor(bg)
+            setPadding(dp(32), dp(10), dp(32), dp(10))
+            setBackgroundColor(Color.rgb(7, 10, 17))
             isFocusableInTouchMode = true
             clipChildren = false
             clipToPadding = false
@@ -118,14 +118,15 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        brand.addView(label("GLASS", 29, Color.WHITE, true))
-        brand.addView(label("TV", 29, accent, true))
+        brand.addView(label("GLASS", 25, Color.WHITE, true))
+        brand.addView(label("TV", 25, accent, true))
+        brand.addView(label("  /  HOME ENTERTAINMENT", 10, Color.rgb(128, 148, 174), true))
         header.addView(brand)
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         val time = SimpleDateFormat("EEE, dd MMM  •  HH:mm", Locale.getDefault()).format(Date())
         headerTimeLabel = label(time, 15, Color.rgb(185, 199, 219), false)
         header.addView(headerTimeLabel)
-        root.addView(header, LinearLayout.LayoutParams(-1, dp(46)))
+        root.addView(header, LinearLayout.LayoutParams(-1, dp(40)))
 
         addDashboardPanel()
 
@@ -133,10 +134,10 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        section.addView(label("AKSES CEPAT", 12, Color.rgb(160, 178, 201), true))
+        section.addView(label("JELAJAHI TV", 11, Color.rgb(168, 188, 214), true))
         section.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        section.addView(label("Pilih dengan remote  •  OK untuk membuka", 11, Color.rgb(133, 151, 174), false))
-        root.addView(section, LinearLayout.LayoutParams(-1, dp(18)))
+        section.addView(label("Gunakan tombol arah dan OK", 10, Color.rgb(112, 131, 155), false))
+        root.addView(section, LinearLayout.LayoutParams(-1, dp(17)))
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -150,7 +151,7 @@ class MainActivity : Activity() {
         addAction(row, "Kamera CCTV", "2 kamera • RTSP") { showCameras() }
         addAction(row, "Sumber video", "Buka URL HTTP(S)") { askVideoUrl() }
         addAction(row, "Pengaturan", "Info launcher") { showSettings() }
-        root.addView(row, LinearLayout.LayoutParams(-1, dp(66)))
+        root.addView(row, LinearLayout.LayoutParams(-1, dp(72)))
         addHomeCctvPreview()
         addContinueWatching()
         setContentView(root)
@@ -173,13 +174,13 @@ class MainActivity : Activity() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(10), dp(14), dp(10))
+            setPadding(dp(18), dp(9), dp(16), dp(9))
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(28, 43, 64), Color.rgb(15, 23, 36), Color.rgb(12, 18, 29))
+                intArrayOf(Color.rgb(24, 34, 51), Color.rgb(14, 20, 31), Color.rgb(10, 15, 24))
             ).apply {
-                cornerRadius = dp(18).toFloat()
-                setStroke(dp(1), Color.argb(115, 126, 190, 255))
+                cornerRadius = dp(20).toFloat()
+                setStroke(dp(1), Color.argb(76, 153, 194, 255))
             }
         }
         val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
@@ -230,7 +231,7 @@ class MainActivity : Activity() {
         }
         prayerPanel.addView(prayerRow, LinearLayout.LayoutParams(-1, -2))
         panel.addView(prayerPanel, LinearLayout.LayoutParams(0, -2, 1f))
-        root.addView(panel, LinearLayout.LayoutParams(-1, dp(112)).apply { bottomMargin = dp(8) })
+        root.addView(panel, LinearLayout.LayoutParams(-1, dp(104)).apply { bottomMargin = dp(7) })
     }
 
     private fun startDashboardUpdates() {
@@ -466,65 +467,100 @@ class MainActivity : Activity() {
     }
 
     private fun addAction(row: LinearLayout, title: String, desc: String, click: () -> Unit) {
-        val cornerRadius = dp(12).toFloat()
+        val cornerRadius = dp(14).toFloat()
+        val iconText = when (title) {
+            "Live TV" -> "▶"
+            "Entertainment" -> "✦"
+            "Kamera CCTV" -> "◉"
+            "Sumber video" -> "↗"
+            else -> "⚙"
+        }
 
         fun cardBackground(focused: Boolean): GradientDrawable =
-            GradientDrawable().apply {
+            GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                if (focused)
+                    intArrayOf(Color.rgb(39, 59, 86), Color.rgb(23, 36, 55))
+                else
+                    intArrayOf(Color.rgb(22, 30, 44), Color.rgb(14, 20, 30))
+            ).apply {
                 shape = GradientDrawable.RECTANGLE
                 this.cornerRadius = cornerRadius
-                setColor(if (focused) Color.argb(235, 38, 58, 88) else Color.argb(190, 22, 32, 48))
                 setStroke(if (focused) dp(2) else dp(1),
-                    if (focused) accent else Color.argb(130, 126, 190, 255))
+                    if (focused) Color.rgb(155, 207, 255) else Color.argb(70, 158, 190, 230))
             }
 
-        val card = LinearLayout(this)
-        card.orientation = LinearLayout.VERTICAL
-        card.gravity = Gravity.CENTER_VERTICAL
-        card.setPadding(dp(13), dp(10), dp(10), dp(10))
-        card.background = cardBackground(false)
-        card.isFocusable = true
-        card.isFocusableInTouchMode = true
-        card.isClickable = true
-        card.contentDescription = "$title. $desc"
-        card.setOnClickListener { click() }
-        card.setOnFocusChangeListener { view, focused ->
-            if (focused) playNavigationSound()
-            view.setBackground(cardBackground(focused))
-            view.setScaleX(if (focused) 1.04f else 1.0f)
-            view.setScaleY(if (focused) 1.04f else 1.0f)
-            if (focused) lastFocusedTitle = title
-        }
-        card.setOnKeyListener { view, keyCode, event ->
-            if (event.action != KeyEvent.ACTION_DOWN) {
-                false
-            } else {
-                val index = actions.indexOf(view)
-                when (keyCode) {
-                    KeyEvent.KEYCODE_DPAD_LEFT -> {
-                        if (index > 0) actions[index - 1].requestFocus()
-                        true
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), dp(7), dp(8), dp(7))
+            background = cardBackground(false)
+            isFocusable = true
+            isFocusableInTouchMode = true
+            isClickable = true
+            contentDescription = "$title. $desc"
+            setOnClickListener { click() }
+            setOnFocusChangeListener { view, focused ->
+                if (focused) playNavigationSound()
+                view.setBackground(cardBackground(focused))
+                view.scaleX = if (focused) 1.025f else 1f
+                view.scaleY = if (focused) 1.025f else 1f
+                if (focused) lastFocusedTitle = title
+            }
+            setOnKeyListener { view, keyCode, event ->
+                if (event.action != KeyEvent.ACTION_DOWN) {
+                    false
+                } else {
+                    val index = actions.indexOf(view)
+                    when (keyCode) {
+                        KeyEvent.KEYCODE_DPAD_LEFT -> {
+                            if (index > 0) actions[index - 1].requestFocus()
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            if (index >= 0 && index < actions.lastIndex) actions[index + 1].requestFocus()
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_ENTER,
+                        KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                            playSelectSound()
+                            view.performClick()
+                            true
+                        }
+                        else -> false
                     }
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        if (index >= 0 && index < actions.lastIndex) actions[index + 1].requestFocus()
-                        true
-                    }
-                    KeyEvent.KEYCODE_DPAD_CENTER,
-                    KeyEvent.KEYCODE_ENTER,
-                    KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                        playSelectSound()
-                        view.performClick()
-                        true
-                    }
-                    else -> false
                 }
             }
         }
 
-        card.addView(label(title, 15, Color.WHITE, true))
-        card.addView(label(desc, 10, Color.rgb(200, 215, 235), false))
+        val icon = label(iconText, 20, if (title == "Live TV") Color.rgb(173, 215, 255) else Color.rgb(194, 211, 235), true).apply {
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(if (title == "Live TV") Color.argb(36, 116, 181, 255) else Color.argb(24, 165, 193, 229))
+                setStroke(dp(1), Color.argb(54, 164, 198, 240))
+            }
+        }
+        card.addView(icon, LinearLayout.LayoutParams(dp(32), dp(32)).apply { rightMargin = dp(9) })
+
+        val textColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        textColumn.addView(label(title, 13, Color.WHITE, true).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        textColumn.addView(label(desc, 9, Color.rgb(157, 177, 203), false).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(0, dp(3), 0, 0)
+        })
+        card.addView(textColumn, LinearLayout.LayoutParams(0, -2, 1f))
 
         val lp = LinearLayout.LayoutParams(0, -1, 1f)
-        lp.setMargins(0, 0, dp(12), 0)
+        lp.setMargins(0, 0, dp(8), 0)
         row.addView(card, lp)
         actions.add(card)
     }
