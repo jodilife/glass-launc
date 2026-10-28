@@ -1131,7 +1131,7 @@ class MainActivity : Activity() {
                 val image = BitmapDrawable(resources, bitmap).apply { gravity = Gravity.FILL }
                 val scrim = GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM,
-                    intArrayOf(Color.argb(168, 4, 8, 16), Color.argb(178, 5, 9, 17), Color.argb(210, 4, 7, 13))
+                    intArrayOf(Color.argb(118, 4, 8, 16), Color.argb(145, 5, 9, 17), Color.argb(185, 4, 7, 13))
                 )
                 runOnUiThread {
                     if (!isFinishing && target === root) target.background = LayerDrawable(arrayOf(image, scrim))
