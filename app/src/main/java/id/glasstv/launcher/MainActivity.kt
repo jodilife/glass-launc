@@ -545,7 +545,10 @@ class MainActivity : Activity() {
         }
         render(DashboardServices.cities)
         dialog.show()
-        dialog.window?.setLayout(dp(600), -2)
+        dialog.window?.setLayout(
+            minOf(dp(600), (resources.displayMetrics.widthPixels * 0.88f).toInt()),
+            -2
+        )
     }
 
     private fun checkForAzan() {
