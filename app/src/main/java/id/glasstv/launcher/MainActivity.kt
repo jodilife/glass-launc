@@ -293,8 +293,10 @@ class MainActivity : Activity() {
         val key = String.format(Locale.ROOT, "%04d-%03d-%04d-%d",
             now.get(Calendar.YEAR), now.get(Calendar.DAY_OF_YEAR),
             now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE), index)
-        if (key == lastAzanKey) return
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (key == lastAzanKey || key == prefs.getString("last_azan_key", "")) return
         lastAzanKey = key
+        prefs.edit().putString("last_azan_key", key).apply()
         playAzan()
     }
 
