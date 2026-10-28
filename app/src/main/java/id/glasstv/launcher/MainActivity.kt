@@ -49,6 +49,7 @@ class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private val actions = mutableListOf<View>()
     private var continueWatchingCard: View? = null
+    private var continueBackdropArtwork: File? = null
     private var lastFocusedTitle: String = "Live TV"
     private var refreshOnResume = false
     private val homePreviewPlayers = mutableListOf<ExoPlayer>()
@@ -617,6 +618,7 @@ class MainActivity : Activity() {
      */
     private fun addContinueWatching(mediaRow: LinearLayout) {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        continueBackdropArtwork = null
         val titleKeys = prefs.all.keys.filter { it.startsWith("watch_title_") }
         val latestPackage = titleKeys.mapNotNull { key ->
             val pkg = key.removePrefix("watch_title_")
@@ -646,11 +648,18 @@ class MainActivity : Activity() {
             isClickable = true
             background = continueCardBackground(false)
             setOnFocusChangeListener { view, focused ->
-                if (focused) playNavigationSound()
+                if (focused) {
+                    playNavigationSound()
+                    lastFocusedTitle = "LANJUTKAN MENONTON"
+                    applyContinueWatchingBackdrop(continueBackdropArtwork)
+                } else {
+                    view.post {
+                        if (!view.hasFocus() && !isFinishing) applyWallpaper(root)
+                    }
+                }
                 view.background = continueCardBackground(focused)
                 view.scaleX = if (focused) 1.015f else 1f
                 view.scaleY = if (focused) 1.015f else 1f
-                if (focused) lastFocusedTitle = "LANJUTKAN MENONTON"
             }
             setOnKeyListener { view, keyCode, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) {
@@ -695,6 +704,7 @@ class MainActivity : Activity() {
             val (pkg, title, _) = latestPackage
             val artworkName = prefs.getString("watch_artwork_$pkg", null)
             val artworkFile = artworkName?.let { File(filesDir, it) }
+            continueBackdropArtwork = artworkFile?.takeIf { it.isFile && it.length() > 0L }
             val thumbnail = ImageView(this).apply {
                 // Real video thumbnails are wide (16:9) and should fill the frame.
                 // App icons and square/poster art should keep their proportions instead of being cropped.
@@ -772,6 +782,37 @@ class MainActivity : Activity() {
 
         outer.addView(card, LinearLayout.LayoutParams(-1, dp(78)))
         mediaRow.addView(outer, LinearLayout.LayoutParams(0, -1, 1f))
+    }
+
+    /**
+     * When Continue Watching receives remote focus, use that title's own artwork as
+     * a soft, darkened backdrop. A small decoded bitmap is intentionally enlarged to
+     * create a blur-like effect that also works on Android 11 (API 30).
+     */
+    private fun applyContinueWatchingBackdrop(artworkFile: File?) {
+        if (artworkFile == null || !artworkFile.isFile || artworkFile.length() <= 0L) return
+        Thread({
+            try {
+                val options = BitmapFactory.Options().apply { inSampleSize = 8 }
+                val bitmap = BitmapFactory.decodeFile(artworkFile.absolutePath, options) ?: return@Thread
+                val image = BitmapDrawable(resources, bitmap).apply { gravity = Gravity.FILL }
+                val blurScrim = GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    intArrayOf(
+                        Color.argb(145, 4, 8, 16),
+                        Color.argb(175, 5, 9, 17),
+                        Color.argb(205, 4, 7, 13)
+                    )
+                )
+                runOnUiThread {
+                    if (!isFinishing && continueWatchingCard?.hasFocus() == true) {
+                        root.background = LayerDrawable(arrayOf(image, blurScrim))
+                    } else {
+                        bitmap.recycle()
+                    }
+                }
+            } catch (_: Exception) { }
+        }, "glasstv-watch-backdrop").start()
     }
 
     private fun continueCardBackground(focused: Boolean) = GradientDrawable().apply {
