@@ -90,7 +90,8 @@ Jika APK diunduh dari GitHub Actions, instal secara manual:
 
 ```powershell
 adb -s 192.168.1.50:5555 install -r .\app-debug.apk
-adb -s 192.168.1.50:5555 shell monkey -p id.glasstv.launcher.preview 1
+adb -s 192.168.1.50:5555 shell cmd notification allow_listener id.glasstv.launcher.preview/id.glasstv.launcher.PlaybackListenerService 0
+adb -s 192.168.1.50:5555 shell am start -n id.glasstv.launcher.preview/.MainActivity
 ```
 
 Screenshot:
