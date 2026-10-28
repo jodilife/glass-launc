@@ -504,14 +504,6 @@ class MainActivity : Activity() {
 
     private fun addAction(row: LinearLayout, title: String, desc: String, click: () -> Unit) {
         val cornerRadius = dp(14).toFloat()
-        val iconText = when (title) {
-            "Live TV" -> "▶"
-            "Entertainment" -> "✦"
-            "Kamera CCTV" -> "◉"
-            "Sumber video" -> "↗"
-            else -> "⚙"
-        }
-
         fun cardBackground(focused: Boolean): GradientDrawable =
             GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
@@ -527,9 +519,9 @@ class MainActivity : Activity() {
             }
 
         val card = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), dp(7), dp(8), dp(7))
+            setPadding(dp(12), dp(6), dp(10), dp(6))
             background = cardBackground(false)
             isFocusable = true
             isFocusableInTouchMode = true
@@ -570,30 +562,38 @@ class MainActivity : Activity() {
             }
         }
 
-        val icon = label(iconText, 20, if (title == "Live TV") Color.rgb(173, 215, 255) else Color.rgb(194, 211, 235), true).apply {
-            gravity = Gravity.CENTER
+        val number = (actions.size + 1).toString().padStart(2, '0')
+        val category = when (title) {
+            "Live TV" -> "ANTENA DIGITAL"
+            "Entertainment" -> "APLIKASI & MEDIA"
+            "Kamera CCTV" -> "PANTAU LANGSUNG"
+            "Sumber video" -> "STREAMING URL"
+            else -> "PREFERENSI"
+        }
+        card.addView(label("$number  /  $category", 8, Color.rgb(164, 183, 208), true).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setLetterSpacing(0.055f)
+        })
+        val accentLine = View(this).apply {
             background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(if (title == "Live TV") Color.argb(36, 116, 181, 255) else Color.argb(24, 165, 193, 229))
-                setStroke(dp(1), Color.argb(54, 164, 198, 240))
+                cornerRadius = dp(2).toFloat()
+                setColor(Color.rgb(199, 185, 153))
             }
         }
-        card.addView(icon, LinearLayout.LayoutParams(dp(32), dp(32)).apply { rightMargin = dp(9) })
-
-        val textColumn = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        textColumn.addView(label(title, 13, Color.WHITE, true).apply {
+        card.addView(accentLine, LinearLayout.LayoutParams(dp(25), dp(2)).apply {
+            topMargin = dp(4)
+            bottomMargin = dp(4)
+        })
+        card.addView(label(title, 13, Color.WHITE, true).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         })
-        textColumn.addView(label(desc, 9, Color.rgb(157, 177, 203), false).apply {
+        card.addView(label(desc, 9, Color.rgb(166, 183, 205), false).apply {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(0, dp(3), 0, 0)
+            setPadding(0, dp(2), 0, 0)
         })
-        card.addView(textColumn, LinearLayout.LayoutParams(0, -2, 1f))
 
         val lp = LinearLayout.LayoutParams(0, -1, 1f)
         lp.setMargins(0, 0, dp(8), 0)
