@@ -3,11 +3,13 @@ package id.glasstv.launcher
 import android.content.ComponentName
 import android.app.Notification
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.Drawable
+import android.graphics.BitmapFactory
+import android.net.Uri
 import java.io.File
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
@@ -24,8 +26,9 @@ import android.util.Log
 class PlaybackListenerService : NotificationListenerService() {
     private val controllers = mutableMapOf<String, MediaController>()
     private val callbacks = mutableMapOf<String, MediaController.Callback>()
-    // Store only image payloads from supported apps' notifications; notification text is never read.
-    private val notificationArtwork = mutableMapOf<String, Bitmap>()
+    // Only notification picture payloads are candidates; notification/app large icons are not thumbnails.
+    private val notificationArtwork = ConcurrentHashMap<String, Bitmap>()
+    private val artworkAttempts = ConcurrentHashMap<String, String>()
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -114,83 +117,133 @@ class PlaybackListenerService : NotificationListenerService() {
      * Try image-only notification extras when the media session has no artwork bitmap.
      * This intentionally does not read notification title/text.
      */
+    /**
+     * A notification's large icon is usually the SmartTube app logo, not the video image.
+     * Only use EXTRA_PICTURE, which is intended for actual picture payloads.
+     */
     private fun extractNotificationArtwork(notification: Notification): Bitmap? {
-        val extras = notification.extras
-        try {
-            val picture = extras.getParcelable(Notification.EXTRA_PICTURE) as? Bitmap
-            if (picture != null && !picture.isRecycled) return picture
-        } catch (_: Exception) { }
-
-        try {
-            val largeIconBitmap = extras.getParcelable(Notification.EXTRA_LARGE_ICON) as? Bitmap
-            if (largeIconBitmap != null && !largeIconBitmap.isRecycled) return largeIconBitmap
-        } catch (_: Exception) { }
-
         return try {
-            drawableToBitmap(notification.getLargeIcon()?.loadDrawable(this))
+            val picture = notification.extras.getParcelable(Notification.EXTRA_PICTURE) as? Bitmap
+            picture?.takeIf { !it.isRecycled }
         } catch (_: Exception) {
             null
         }
     }
 
-    private fun drawableToBitmap(drawable: Drawable?): Bitmap? {
-        if (drawable == null) return null
-        if (drawable is BitmapDrawable) {
-            return drawable.bitmap.takeIf { !it.isRecycled }
-        }
-        val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 320
-        val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 180
-        val ratio = minOf(1280f / width, 720f / height, 1f)
-        val bitmap = Bitmap.createBitmap(
-            (width * ratio).toInt().coerceAtLeast(1),
-            (height * ratio).toInt().coerceAtLeast(1),
-            Bitmap.Config.ARGB_8888
-        )
-        val canvas = Canvas(bitmap)
-        drawable.setBounds(0, 0, canvas.width, canvas.height)
-        drawable.draw(canvas)
-        return bitmap
-    }
-
     /**
-     * Persist media-session artwork locally. Not all players expose artwork; the UI
-     * falls back to notification artwork, then the installed player's app icon.
+     * Try every image source SmartTube/YouTube may publish. Do file/network work off the
+     * notification listener callback thread so a remote image cannot freeze the TV UI.
      */
     private fun saveArtwork(pkg: String, title: String, metadata: MediaMetadata) {
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        val oldTitle = prefs.getString("watch_artwork_title_$pkg", null)
-        val oldName = prefs.getString("watch_artwork_$pkg", null)
-        if (oldTitle == title && !oldName.isNullOrBlank() && File(filesDir, oldName).isFile) return
-
-        var source: Bitmap? = null
-        val artworkKeys = arrayOf(
+        val artworkUriKeys = arrayOf(
+            MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI,
+            MediaMetadata.METADATA_KEY_ART_URI,
+            MediaMetadata.METADATA_KEY_ALBUM_ART_URI
+        )
+        val bitmapKeys = arrayOf(
             MediaMetadata.METADATA_KEY_ART,
             MediaMetadata.METADATA_KEY_ALBUM_ART,
             MediaMetadata.METADATA_KEY_DISPLAY_ICON
         )
-        for (key in artworkKeys) {
+        val bitmapAvailable = bitmapKeys.any { key ->
+            try { metadata.getBitmap(key) != null } catch (_: Exception) { false }
+        }
+        val artworkUris = artworkUriKeys.mapNotNull { key ->
+            try { metadata.getString(key)?.takeIf { it.isNotBlank() } } catch (_: Exception) { null }
+        }
+        val mediaUri = try { metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_URI) } catch (_: Exception) { null }
+        val mediaId = try { metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID) } catch (_: Exception) { null }
+        val signature = listOf(title, bitmapAvailable.toString(), artworkUris.joinToString(","), mediaUri.orEmpty(), mediaId.orEmpty()).joinToString("|")
+        synchronized(artworkAttempts) {
+            if (artworkAttempts[pkg] == signature) return
+            artworkAttempts[pkg] = signature
+        }
+
+        Thread({
             try {
-                source = metadata.getBitmap(key)
-            } catch (_: Exception) {
-                source = null
+                persistArtwork(pkg, title, metadata, artworkUris, mediaUri, mediaId)
+            } catch (e: Exception) {
+                Log.i(TAG, "Artwork lookup failed for $pkg", e)
             }
-            if (source != null) break
+        }, "GlassTVArtwork").start()
+    }
+
+    private fun persistArtwork(
+        pkg: String,
+        title: String,
+        metadata: MediaMetadata,
+        artworkUris: List<String>,
+        mediaUri: String?,
+        mediaId: String?
+    ) {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val oldTitle = prefs.getString("watch_artwork_title_$pkg", null)
+        val oldName = prefs.getString("watch_artwork_$pkg", null)
+        val oldSource = prefs.getString("watch_artwork_source_$pkg", null)
+        // Do not trust thumbnails saved by the prior build: it could save the app logo as artwork.
+        val trustedSources = setOf("metadata_bitmap", "metadata_uri", "youtube_thumbnail", "notification_picture")
+        if (oldTitle == title && oldSource in trustedSources &&
+            !oldName.isNullOrBlank() && File(filesDir, oldName).isFile) return
+
+        var source: Bitmap? = null
+        var sourceType: String? = null
+        val bitmapKeys = arrayOf(
+            MediaMetadata.METADATA_KEY_ART,
+            MediaMetadata.METADATA_KEY_ALBUM_ART,
+            MediaMetadata.METADATA_KEY_DISPLAY_ICON
+        )
+        for (key in bitmapKeys) {
+            try { source = metadata.getBitmap(key) } catch (_: Exception) { source = null }
+            if (source != null && !source.isRecycled) {
+                sourceType = "metadata_bitmap"
+                break
+            }
+            source = null
+        }
+
+        if (source == null) {
+            for (uri in artworkUris) {
+                source = loadArtworkUri(uri)
+                if (source != null) {
+                    sourceType = "metadata_uri"
+                    break
+                }
+            }
+        }
+
+        if (source == null) {
+            val videoId = extractYoutubeVideoId(mediaUri) ?: extractYoutubeVideoId(mediaId)
+            if (videoId != null) {
+                val candidateUrls = listOf(
+                    "https://i.ytimg.com/vi/$videoId/maxresdefault.jpg",
+                    "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+                )
+                for (url in candidateUrls) {
+                    source = loadArtworkUri(url)
+                    if (source != null) {
+                        sourceType = "youtube_thumbnail"
+                        break
+                    }
+                }
+            }
+        }
+
+        if (source == null) {
+            source = notificationArtwork[pkg]?.takeUnless { it.isRecycled }
+            if (source != null) sourceType = "notification_picture"
         }
 
         val fileName = "watch_art_" + pkg.replace(Regex("[^A-Za-z0-9_.-]"), "_") + ".jpg"
         val target = File(filesDir, fileName)
-        if (source == null) {
-            source = notificationArtwork[pkg]?.takeUnless { it.isRecycled }
-        }
-        if (source == null) {
-            Log.d(TAG, "No media-session or notification artwork available for $pkg")
-            if (oldTitle != title) {
-                if (!oldName.isNullOrBlank()) File(filesDir, oldName).delete()
-                prefs.edit()
-                    .remove("watch_artwork_$pkg")
-                    .remove("watch_artwork_title_$pkg")
-                    .apply()
-            }
+        if (source == null || sourceType == null) {
+            Log.d(TAG, "No actual thumbnail available for $pkg; metadataKeys=\${try { metadata.keySet() } catch (_: Exception) { emptySet<String>() }}, artUris=\${artworkUris.isNotEmpty()}, mediaUri=\${!mediaUri.isNullOrBlank()}, mediaId=\${!mediaId.isNullOrBlank()}, notificationPicture=\${notificationArtwork.containsKey(pkg)}")
+            // Remove any legacy app-logo image so the UI falls back to the correctly sized app icon.
+            if (!oldName.isNullOrBlank()) File(filesDir, oldName).delete()
+            prefs.edit()
+                .remove("watch_artwork_$pkg")
+                .remove("watch_artwork_title_$pkg")
+                .remove("watch_artwork_source_$pkg")
+                .apply()
             return
         }
 
@@ -213,16 +266,62 @@ class PlaybackListenerService : NotificationListenerService() {
             prefs.edit()
                 .putString("watch_artwork_$pkg", fileName)
                 .putString("watch_artwork_title_$pkg", title)
+                .putString("watch_artwork_source_$pkg", sourceType)
                 .apply()
+            Log.d(TAG, "Saved real thumbnail for $pkg using $sourceType (\${source.width}x\${source.height})")
         } catch (e: Exception) {
             target.delete()
-            Log.i(TAG, "Media session did not provide usable artwork for $pkg", e)
-            if (oldTitle != title) {
-                prefs.edit().remove("watch_artwork_$pkg").remove("watch_artwork_title_$pkg").apply()
-            }
+            Log.i(TAG, "Could not persist thumbnail for $pkg", e)
+            if (!oldName.isNullOrBlank()) File(filesDir, oldName).delete()
+            prefs.edit()
+                .remove("watch_artwork_$pkg")
+                .remove("watch_artwork_title_$pkg")
+                .remove("watch_artwork_source_$pkg")
+                .apply()
         } finally {
             scaled?.recycle()
         }
+    }
+
+    private fun loadArtworkUri(value: String): Bitmap? {
+        return try {
+            val uri = Uri.parse(value)
+            when (uri.scheme?.lowercase()) {
+                "http", "https" -> {
+                    val connection = (URL(value).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 3500
+                        readTimeout = 3500
+                        instanceFollowRedirects = true
+                        setRequestProperty("User-Agent", "GlassTVLauncher/0.4")
+                    }
+                    try {
+                        connection.inputStream.use { BitmapFactory.decodeStream(it) }
+                    } finally {
+                        connection.disconnect()
+                    }
+                }
+                "content", "file", "android.resource" ->
+                    contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+                else -> null
+            }
+        } catch (_: Exception) {
+            Log.d(TAG, "Artwork URI could not be loaded (\${value.substringBefore(':')})")
+            null
+        }
+    }
+
+    private fun extractYoutubeVideoId(value: String?): String? {
+        val raw = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        if (raw.matches(Regex("[A-Za-z0-9_-]{11}"))) return raw
+        val patterns = listOf(
+            Regex("""(?:youtu\.be/)([A-Za-z0-9_-]{11})""", RegexOption.IGNORE_CASE),
+            Regex("""youtube\.com/(?:watch\?[^\s#]*v=|embed/|shorts/|live/)([A-Za-z0-9_-]{11})""", RegexOption.IGNORE_CASE)
+        )
+        for (pattern in patterns) {
+            val match = pattern.find(raw)
+            if (match != null) return match.groupValues[1]
+        }
+        return null
     }
 
     private fun isSupportedPackage(pkg: String): Boolean {
