@@ -1752,6 +1752,7 @@ class MainActivity : Activity() {
                 try { azanPlayer?.release() } catch (_: Exception) { }
                 azanPlayer = null
             }
+            updateAzanQuickButton()
             reopen("Azan otomatis ${if (enable) "diaktifkan" else "dimatikan"}")
         }
         settingRow("Uji suara azan", "Putar contoh audio untuk memastikan suara berfungsi") {
