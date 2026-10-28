@@ -189,8 +189,8 @@ class MainActivity : Activity() {
             clipToPadding = false
         }
         root.addView(mediaRow, LinearLayout.LayoutParams(-1, dp(142)))
-        addHomeCctvPreview(mediaRow)
         addContinueWatching(mediaRow)
+        addHomeCctvPreview(mediaRow)
         setContentView(root)
         root.post {
             if (lastFocusedTitle == "LANJUTKAN MENONTON") {
@@ -677,6 +677,7 @@ class MainActivity : Activity() {
             }
             empty.addView(label("Belum ada progres tontonan", 13, Color.WHITE, true))
             empty.addView(label("Aktifkan akses media untuk YouTube / SmartTube", 10, Color.rgb(180, 198, 220), false))
+            continueWatchingCard = empty
             cardRow.addView(empty, LinearLayout.LayoutParams(-1, dp(92)))
         } else {
             val count = if (resources.displayMetrics.widthPixels / resources.displayMetrics.density >= 1500f) 6 else 5
@@ -720,6 +721,7 @@ class MainActivity : Activity() {
                     }
                     setOnClickListener { openContinueWatchingApp(pkg) }
                 }
+                if (index == 0) continueWatchingCard = card
                 val thumb = ImageView(this).apply {
                     scaleType = ImageView.ScaleType.CENTER_CROP
                     background = rounded(Color.rgb(18, 25, 37), 7)
@@ -806,7 +808,7 @@ class MainActivity : Activity() {
 
     private fun continueCardBackground(focused: Boolean) = GradientDrawable().apply {
         cornerRadius = dp(12).toFloat()
-        setColor(if (focused) Color.argb(235, 38, 58, 88) else Color.argb(150, 22, 32, 48))
+        setColor(if (focused) Color.argb(205, 28, 39, 54) else Color.argb(125, 17, 23, 32))
         setStroke(if (focused) dp(2) else dp(1),
             if (focused) accent else Color.argb(100, 126, 190, 255))
     }
