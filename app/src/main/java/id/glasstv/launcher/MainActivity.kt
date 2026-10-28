@@ -50,7 +50,33 @@ import java.util.Locale
 @OptIn(UnstableApi::class)
 class MainActivity : Activity() {
     private val bg = Color.rgb(9, 13, 22)
-    private val accent = Color.rgb(126, 190, 255)
+    private val accent: Int
+        get() = when (getSharedPreferences("glass_tv", MODE_PRIVATE).getString("theme_accent", "blue")) {
+            "silver" -> Color.rgb(188, 197, 208)
+            "white" -> Color.rgb(242, 245, 249)
+            "graphite" -> Color.rgb(142, 153, 166)
+            "purple" -> Color.rgb(194, 169, 255)
+            "mint" -> Color.rgb(126, 222, 196)
+            "amber" -> Color.rgb(255, 198, 112)
+            "rose" -> Color.rgb(255, 161, 181)
+            else -> Color.rgb(126, 190, 255)
+        }
+
+    private fun accentAlpha(alpha: Int): Int =
+        Color.argb(alpha, Color.red(accent), Color.green(accent), Color.blue(accent))
+
+    private fun focusSurface(alpha: Int = 224): Int {
+        val darkR = 29
+        val darkG = 39
+        val darkB = 53
+        val blend = 0.34f
+        return Color.argb(alpha,
+            (darkR * (1f - blend) + Color.red(accent) * blend).toInt(),
+            (darkG * (1f - blend) + Color.green(accent) * blend).toInt(),
+            (darkB * (1f - blend) + Color.blue(accent) * blend).toInt())
+    }
+
+    private val favoriteDockTiles = mutableListOf<View>()
     private lateinit var root: LinearLayout
     private lateinit var wallpaperTarget: FrameLayout
     private val actions = mutableListOf<View>()
@@ -133,6 +159,7 @@ class MainActivity : Activity() {
     private fun showHome() {
         releaseHomePreviewPlayers()
         actions.clear()
+        favoriteDockTiles.clear()
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(32), dp(10), dp(32), dp(10))
@@ -243,12 +270,19 @@ class MainActivity : Activity() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), dp(8), dp(4), dp(8))
+            setPadding(dp(4), dp(5), dp(4), dp(5))
             setBackgroundColor(Color.TRANSPARENT)
             clipChildren = false
             clipToPadding = false
         }
-        val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
+        val left = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(7), dp(10), dp(7))
+            background = dashboardCardBackground()
+            clipChildren = false
+            clipToPadding = false
+        }
         dashboardGreetingLabel = label("Selamat malam", 13, Color.WHITE, true)
         left.addView(dashboardGreetingLabel)
         dashboardDateLabel = label("--", 11, Color.rgb(174, 192, 216), false)
@@ -286,17 +320,17 @@ class MainActivity : Activity() {
             setLineSpacing(dp(1).toFloat(), 1.0f)
         }
         left.addView(dashboardWeatherLabel)
-        panel.addView(left, LinearLayout.LayoutParams(dp(258), -1))
-        panel.addView(View(this).apply {
-            setBackgroundColor(Color.argb(72, 185, 207, 237))
-        }, LinearLayout.LayoutParams(dp(1), dp(72)).apply {
-            leftMargin = dp(12)
-            rightMargin = dp(12)
+        panel.addView(left, LinearLayout.LayoutParams(dp(270), -1).apply {
+            rightMargin = dp(10)
         })
 
         val prayerPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            background = dashboardCardBackground()
+            clipChildren = false
+            clipToPadding = false
         }
         val prayerHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -324,8 +358,8 @@ class MainActivity : Activity() {
                 view.elevation = if (focused) dp(7).toFloat() else dp(1).toFloat()
                 view.background = GradientDrawable().apply {
                     cornerRadius = dp(10).toFloat()
-                    setColor(if (focused) Color.rgb(67, 113, 157) else Color.argb(150, 24, 40, 59))
-                    setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(150, 126, 190, 255))
+                    setColor(if (focused) focusSurface() else Color.argb(150, 24, 40, 59))
+                    setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else accentAlpha(150))
                 }
             }
             setOnClickListener {
@@ -370,6 +404,14 @@ class MainActivity : Activity() {
         prayerPanel.addView(prayerRow, LinearLayout.LayoutParams(-1, -2))
         panel.addView(prayerPanel, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(panel, LinearLayout.LayoutParams(-1, dp(120)).apply { bottomMargin = dp(7) })
+    }
+
+    private fun dashboardCardBackground() = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR,
+        intArrayOf(Color.argb(218, 12, 18, 28), Color.argb(194, 10, 15, 24))
+    ).apply {
+        cornerRadius = dp(16).toFloat()
+        setStroke(dp(1), accentAlpha(82))
     }
 
     private fun startDashboardUpdates() {
@@ -440,7 +482,7 @@ class MainActivity : Activity() {
             background = GradientDrawable().apply {
                 cornerRadius = dp(10).toFloat()
                 setColor(Color.rgb(25, 35, 50))
-                setStroke(dp(1), Color.argb(150, 126, 190, 255))
+                setStroke(dp(1), accentAlpha(150))
             }
         }
         panel.addView(query, LinearLayout.LayoutParams(-1, dp(48)))
@@ -453,7 +495,7 @@ class MainActivity : Activity() {
             background = GradientDrawable().apply {
                 cornerRadius = dp(10).toFloat()
                 setColor(Color.rgb(45, 77, 112))
-                setStroke(dp(1), Color.argb(180, 126, 190, 255))
+                setStroke(dp(1), accentAlpha(180))
             }
             isFocusable = true
             isClickable = true
@@ -466,7 +508,7 @@ class MainActivity : Activity() {
                 view.background = GradientDrawable().apply {
                     cornerRadius = dp(10).toFloat()
                     setColor(if (focused) Color.rgb(74, 126, 180) else Color.rgb(35, 57, 83))
-                    setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(180, 126, 190, 255))
+                    setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else accentAlpha(180))
                 }
             }
         }
@@ -509,7 +551,7 @@ class MainActivity : Activity() {
                     background = GradientDrawable().apply {
                         cornerRadius = dp(9).toFloat()
                         setColor(Color.argb(120, 30, 43, 62))
-                        setStroke(dp(1), Color.argb(65, 153, 194, 255))
+                        setStroke(dp(1), accentAlpha(65))
                     }
                     isFocusable = true
                     isClickable = true
@@ -521,8 +563,8 @@ class MainActivity : Activity() {
                         view.elevation = if (focused) dp(4).toFloat() else 0f
                         view.background = GradientDrawable().apply {
                             cornerRadius = dp(9).toFloat()
-                            setColor(if (focused) Color.rgb(58, 91, 130) else Color.argb(120, 30, 43, 62))
-                            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(65, 153, 194, 255))
+                            setColor(if (focused) focusSurface() else Color.argb(120, 30, 43, 62))
+                            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else accentAlpha(65))
                         }
                     }
                     setOnClickListener { playSelectSound(); choose(city) }
@@ -673,7 +715,7 @@ class MainActivity : Activity() {
                 background = GradientDrawable().apply {
                     cornerRadius = dp(10).toFloat()
                     setColor(Color.argb(142, 15, 22, 34))
-                    setStroke(dp(1), Color.argb(105, 126, 190, 255))
+                    setStroke(dp(1), accentAlpha(105))
                 }
                 isFocusable = true
                 isFocusableInTouchMode = true
@@ -684,7 +726,7 @@ class MainActivity : Activity() {
                         cornerRadius = dp(10).toFloat()
                         setColor(if (focused) Color.argb(205, 32, 48, 70) else Color.argb(142, 15, 22, 34))
                         setStroke(if (focused) dp(2) else dp(1),
-                            if (focused) accent else Color.argb(105, 126, 190, 255))
+                            if (focused) accent else accentAlpha(105))
                     }
                 }
                 setOnKeyListener { view, keyCode, event ->
@@ -764,7 +806,7 @@ class MainActivity : Activity() {
                 )
                 setStroke(
                     if (focused) dp(2) else dp(1),
-                    if (focused) accent else Color.argb(90, 126, 190, 255)
+                    if (focused) accent else accentAlpha(90)
                 )
             }
 
@@ -812,6 +854,13 @@ class MainActivity : Activity() {
                         KeyEvent.KEYCODE_DPAD_RIGHT -> {
                             if (index >= 0 && index < actions.lastIndex) actions[index + 1].requestFocus()
                             true
+                        }
+                        KeyEvent.KEYCODE_DPAD_UP -> {
+                            val favorite = favoriteDockTiles.firstOrNull()
+                            if (favorite != null) {
+                                favorite.requestFocus()
+                                true
+                            } else false
                         }
                         KeyEvent.KEYCODE_DPAD_CENTER,
                         KeyEvent.KEYCODE_ENTER,
@@ -1056,7 +1105,7 @@ class MainActivity : Activity() {
             background = GradientDrawable().apply {
                 cornerRadius = dp(14).toFloat()
                 setColor(Color.argb(155, 18, 28, 43))
-                setStroke(dp(1), Color.argb(100, 153, 194, 255))
+                setStroke(dp(1), accentAlpha(100))
             }
             isFocusable = true
             isClickable = true
@@ -1064,8 +1113,8 @@ class MainActivity : Activity() {
             setOnFocusChangeListener { view, focused ->
                 view.background = GradientDrawable().apply {
                     cornerRadius = dp(14).toFloat()
-                    setColor(if (focused) Color.argb(230, 42, 65, 92) else Color.argb(155, 18, 28, 43))
-                    setStroke(dp(if (focused) 2 else 1), if (focused) accent else Color.argb(100, 153, 194, 255))
+                    setColor(if (focused) focusSurface(230) else Color.argb(155, 18, 28, 43))
+                    setStroke(dp(if (focused) 2 else 1), if (focused) accent else accentAlpha(100))
                 }
                 if (focused) playNavigationSound()
             }
@@ -1148,7 +1197,7 @@ class MainActivity : Activity() {
         cornerRadius = dp(12).toFloat()
         setColor(if (focused) Color.argb(190, 28, 39, 54) else Color.argb(92, 17, 23, 32))
         setStroke(if (focused) dp(2) else dp(1),
-            if (focused) accent else Color.argb(82, 126, 190, 255))
+            if (focused) accent else accentAlpha(82))
     }
 
     private fun formatWatchTime(ms: Long): String {
@@ -1410,27 +1459,22 @@ class MainActivity : Activity() {
     }
 
     private fun launchTvApp(packageName: String, activityName: String) {
-        // Launch the exact exported activity selected from the TV/regular app catalogue first.
-        val categories = listOf(
-            Intent.CATEGORY_LEANBACK_LAUNCHER,
-            Intent.CATEGORY_LAUNCHER
-        )
-        categories.forEach { category ->
+        val launchIntents = mutableListOf<Intent>()
+        try { packageManager.getLeanbackLaunchIntentForPackage(packageName)?.let { launchIntents.add(it) } } catch (_: Exception) { }
+        try { packageManager.getLaunchIntentForPackage(packageName)?.let { launchIntents.add(it) } } catch (_: Exception) { }
+        launchIntents.add(Intent(Intent.ACTION_MAIN).setClassName(packageName, activityName))
+        launchIntents.add(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+            .setClassName(packageName, activityName))
+        launchIntents.add(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            .setClassName(packageName, activityName))
+        for (intent in launchIntents.distinctBy { it.component?.flattenToShortString() ?: it.toUri(0) }) {
             try {
-                startActivity(Intent(Intent.ACTION_MAIN)
-                    .addCategory(category)
-                    .setClassName(packageName, activityName))
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                startActivity(intent)
                 return
             } catch (_: Exception) { }
         }
-        try {
-            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-            if (launchIntent != null) {
-                startActivity(launchIntent)
-                return
-            }
-        } catch (_: Exception) { }
-        toast("Aplikasi tidak dapat dibuka. Coba jalankan dari menu sistem TV.")
+        toast("Aplikasi tidak bisa dibuka. Periksa apakah aplikasi terpasang dan aktif.")
     }
 
     private fun showGlassSidebar() {
@@ -1452,7 +1496,7 @@ class MainActivity : Activity() {
                 intArrayOf(Color.argb(236, 24, 35, 51), Color.argb(229, 10, 17, 28))
             ).apply {
                 cornerRadius = dp(26).toFloat()
-                setStroke(dp(1), Color.argb(180, 126, 190, 255))
+                setStroke(dp(1), accentAlpha(180))
             }
             elevation = dp(18).toFloat()
             isClickable = true
@@ -1489,7 +1533,7 @@ class MainActivity : Activity() {
                     view.elevation = if (focused) dp(7).toFloat() else 0f
                     view.background = GradientDrawable().apply {
                         cornerRadius = dp(12).toFloat()
-                        setColor(if (focused) Color.rgb(59, 91, 129) else Color.argb(80, 24, 39, 58))
+                        setColor(if (focused) focusSurface() else Color.argb(80, 24, 39, 58))
                         setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(65, 126, 190, 255))
                     }
                 }
@@ -1652,7 +1696,7 @@ class MainActivity : Activity() {
                         view.elevation = if (focused) dp(5).toFloat() else 0f
                         view.background = GradientDrawable().apply {
                             cornerRadius = dp(14).toFloat()
-                            setColor(if (focused) Color.rgb(57, 87, 123) else Color.argb(118, 23, 34, 51))
+                            setColor(if (focused) focusSurface() else Color.argb(118, 23, 34, 51))
                             setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(75, 153, 194, 255))
                         }
                     }
@@ -1741,8 +1785,8 @@ class MainActivity : Activity() {
                     setPadding(dp(12), dp(7), dp(12), dp(7))
                     background = GradientDrawable().apply {
                         cornerRadius = dp(11).toFloat()
-                        setColor(if (isSelected) Color.argb(190, 37, 61, 88) else Color.argb(115, 25, 36, 53))
-                        setStroke(dp(1), if (isSelected) Color.argb(175, 126, 190, 255) else Color.argb(55, 153, 194, 255))
+                        setColor(if (isSelected) focusSurface(190) else Color.argb(115, 25, 36, 53))
+                        setStroke(dp(1), if (isSelected) accentAlpha(175) else accentAlpha(55))
                     }
                     isFocusable = true
                     isClickable = true
@@ -1754,8 +1798,8 @@ class MainActivity : Activity() {
                         view.elevation = if (focused) dp(5).toFloat() else 0f
                         view.background = GradientDrawable().apply {
                             cornerRadius = dp(11).toFloat()
-                            setColor(if (focused) Color.rgb(62, 99, 143) else Color.argb(115, 25, 36, 53))
-                            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(55, 153, 194, 255))
+                            setColor(if (focused) focusSurface() else Color.argb(115, 25, 36, 53))
+                            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else accentAlpha(55))
                         }
                     }
                     setOnClickListener {
@@ -1805,6 +1849,48 @@ class MainActivity : Activity() {
             safeDialogWidth(650),
             (resources.displayMetrics.heightPixels * 0.82f).toInt()
         )
+    }
+
+    private fun accentName(): String = when (getSharedPreferences("glass_tv", MODE_PRIVATE).getString("theme_accent", "blue")) {
+        "silver" -> "Abu-abu perak"
+        "white" -> "Putih"
+        "graphite" -> "Grafit gelap"
+        "purple" -> "Ungu lembut"
+        "mint" -> "Hijau mint"
+        "amber" -> "Amber hangat"
+        "rose" -> "Rose"
+        else -> "Biru langit"
+    }
+
+    private fun showAccentPicker() {
+        val options = listOf(
+            "blue" to "Biru langit",
+            "silver" to "Abu-abu perak",
+            "white" to "Putih",
+            "graphite" to "Grafit gelap",
+            "purple" to "Ungu lembut",
+            "mint" to "Hijau mint",
+            "amber" to "Amber hangat",
+            "rose" to "Rose"
+        )
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val selectedKey = prefs.getString("theme_accent", "blue")
+        val selectedIndex = options.indexOfFirst { it.first == selectedKey }.coerceAtLeast(0)
+        val picker = AlertDialog.Builder(this)
+            .setTitle("Pilih warna aksen")
+            .setSingleChoiceItems(options.map { it.second }.toTypedArray(), selectedIndex) { choiceDialog, which ->
+                val (key, label) = options[which]
+                prefs.edit().putString("theme_accent", key).apply()
+                choiceDialog.dismiss()
+                showHome()
+                showSettings()
+                toast("Warna aksen: $label")
+            }
+            .setNegativeButton("Batal", null)
+            .create()
+        picker.show()
+        picker.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        picker.window?.setLayout(safeDialogWidth(500), -2)
     }
 
     private fun currentGreeting(): String {
@@ -1870,7 +1956,7 @@ class MainActivity : Activity() {
                 background = GradientDrawable().apply {
                     cornerRadius = dp(12).toFloat()
                     setColor(Color.argb(135, 25, 36, 53))
-                    setStroke(dp(1), Color.argb(70, 153, 194, 255))
+                    setStroke(dp(1), accentAlpha(70))
                 }
                 isFocusable = true
                 isClickable = true
@@ -1878,7 +1964,7 @@ class MainActivity : Activity() {
                     view.background = GradientDrawable().apply {
                         cornerRadius = dp(12).toFloat()
                         setColor(if (focused) Color.argb(225, 46, 70, 101) else Color.argb(135, 25, 36, 53))
-                        setStroke(dp(if (focused) 2 else 1), if (focused) accent else Color.argb(70, 153, 194, 255))
+                        setStroke(dp(if (focused) 2 else 1), if (focused) accent else accentAlpha(70))
                     }
                     view.scaleX = 1f
                     view.scaleY = 1f
@@ -1907,7 +1993,7 @@ class MainActivity : Activity() {
                     setPadding(dp(8), dp(5), dp(8), dp(5))
                     background = GradientDrawable().apply {
                         cornerRadius = dp(8).toFloat()
-                        setColor(Color.argb(80, 126, 190, 255))
+                        setColor(accentAlpha(80))
                     }
                 })
             } else row.addView(label("›", 23, accent, false))
@@ -1926,6 +2012,9 @@ class MainActivity : Activity() {
         }
         settingRow("Dock aplikasi favorit", "Atur ikon aplikasi favorit dan urutannya") {
             dialog.dismiss(); manageFavoriteDock()
+        }
+        settingRow("Warna aksen", "Ubah sorotan rekomendasi dan pemutar musik", accentName()) {
+            dialog.dismiss(); showAccentPicker()
         }
         val soundOn = prefs.getBoolean("ui_sound_enabled", true)
         settingRow("Suara navigasi", "Bunyi singkat saat fokus dan memilih kartu", if (soundOn) "AKTIF" else "MATI") {
@@ -2013,9 +2102,10 @@ class MainActivity : Activity() {
                 background = GradientDrawable().apply {
                     cornerRadius = dp(12).toFloat()
                     setColor(Color.argb(120, 27, 39, 57))
-                    setStroke(dp(1), Color.argb(90, 153, 194, 255))
+                    setStroke(dp(1), accentAlpha(90))
                 }
                 isFocusable = true
+                isFocusableInTouchMode = true
                 isClickable = true
                 contentDescription = "Favorit ${resolve.loadLabel(packageManager)}"
                 setOnClickListener {
@@ -2023,17 +2113,48 @@ class MainActivity : Activity() {
                     launchTvApp(info.packageName, info.name)
                 }
                 setOnKeyListener { view, keyCode, event ->
-                    if (event.action == KeyEvent.ACTION_DOWN &&
-                        (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER ||
-                         keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                        view.performClick()
-                        true
-                    } else false
+                    if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                    val index = favoriteDockTiles.indexOf(view)
+                    when (keyCode) {
+                        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                            view.performClick()
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_LEFT -> {
+                            if (index > 0) favoriteDockTiles[index - 1].requestFocus()
+                            else return@setOnKeyListener false
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            if (index >= 0 && index < favoriteDockTiles.lastIndex) favoriteDockTiles[index + 1].requestFocus()
+                            else return@setOnKeyListener false
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_UP -> {
+                            dashboardLocationLabel?.requestFocus() ?: return@setOnKeyListener false
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            continueWatchingCard?.requestFocus() ?: return@setOnKeyListener false
+                            true
+                        }
+                        else -> false
+                    }
                 }
                 setOnFocusChangeListener { view, focused ->
-                    view.alpha = if (focused) 1f else 0.90f
-                    view.elevation = if (focused) dp(4).toFloat() else 0f
-                    if (focused) playNavigationSound()
+                    view.background = GradientDrawable().apply {
+                        cornerRadius = dp(12).toFloat()
+                        setColor(if (focused) focusSurface() else Color.argb(120, 27, 35, 48))
+                        setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else accentAlpha(115))
+                    }
+                    view.alpha = 1f
+                    view.scaleX = 1f
+                    view.scaleY = 1f
+                    view.elevation = if (focused) dp(5).toFloat() else 0f
+                    if (focused) {
+                        lastFocusedTitle = "FAVORIT"
+                        playNavigationSound()
+                    }
                 }
             }
             val icon = ImageView(this).apply {
@@ -2047,8 +2168,16 @@ class MainActivity : Activity() {
                 setPadding(dp(7), 0, 0, 0)
             })
             dock.addView(tile, LinearLayout.LayoutParams(-2, dp(44)).apply { rightMargin = dp(8) })
+            favoriteDockTiles.add(tile)
         }
-        section.addView(dock, LinearLayout.LayoutParams(-1, dp(48)))
+        val dockScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            clipChildren = false
+            clipToPadding = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(dock, ViewGroup.LayoutParams(-2, dp(48)))
+        }
+        section.addView(dockScroll, LinearLayout.LayoutParams(-1, dp(48)))
         container.addView(section, LinearLayout.LayoutParams(-1, dp(68)))
     }
 
@@ -2081,7 +2210,7 @@ class MainActivity : Activity() {
                     background = GradientDrawable().apply {
                         cornerRadius = dp(10).toFloat()
                         setColor(Color.argb(118, 22, 32, 48))
-                        setStroke(dp(1), Color.argb(78, 153, 194, 255))
+                        setStroke(dp(1), accentAlpha(78))
                     }
                     isFocusable = true
                     isClickable = true
@@ -2095,8 +2224,8 @@ class MainActivity : Activity() {
                     setOnFocusChangeListener { view, focused ->
                         view.background = GradientDrawable().apply {
                             cornerRadius = dp(10).toFloat()
-                            setColor(if (focused) Color.argb(205, 40, 61, 88) else Color.argb(118, 22, 32, 48))
-                            setStroke(dp(if (focused) 2 else 1), Color.argb(if (focused) 210 else 78, 153, 194, 255))
+                            setColor(if (focused) focusSurface(205) else Color.argb(118, 22, 32, 48))
+                            setStroke(dp(if (focused) 2 else 1), accentAlpha(if (focused) 210 else 78))
                         }
                         if (focused) playNavigationSound()
                     }
@@ -2150,6 +2279,8 @@ class MainActivity : Activity() {
         }
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val ordered = favoritePackages().filter { pkg -> apps.any { it.activityInfo.packageName == pkg } }.toMutableList()
+        var focusPackage = ordered.firstOrNull() ?: apps.firstOrNull()?.activityInfo?.packageName
+        val rowViews = mutableMapOf<String, View>()
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(8), dp(14), dp(8))
@@ -2170,6 +2301,7 @@ class MainActivity : Activity() {
             .create()
         fun renderApps() {
             list.removeAllViews()
+            rowViews.clear()
             list.addView(label("Pilih aplikasi favorit. Nomor menunjukkan urutan ikon pada dock.", 11, Color.rgb(170, 189, 213), false)
                 .apply { setPadding(dp(4), dp(2), dp(4), dp(10)) })
             apps.forEach { resolve ->
@@ -2182,10 +2314,11 @@ class MainActivity : Activity() {
                     setPadding(dp(12), dp(7), dp(12), dp(7))
                     background = GradientDrawable().apply {
                         cornerRadius = dp(11).toFloat()
-                        setColor(if (order >= 0) Color.argb(190, 37, 61, 88) else Color.argb(115, 25, 36, 53))
-                        setStroke(dp(1), if (order >= 0) Color.argb(175, 126, 190, 255) else Color.argb(55, 153, 194, 255))
+                        setColor(if (order >= 0) focusSurface(190) else Color.argb(115, 25, 36, 53))
+                        setStroke(dp(1), if (order >= 0) accentAlpha(175) else accentAlpha(55))
                     }
                     isFocusable = true
+                    isFocusableInTouchMode = true
                     isClickable = true
                     setOnFocusChangeListener { view, focused ->
                         if (focused) playNavigationSound()
@@ -2196,21 +2329,22 @@ class MainActivity : Activity() {
                         view.background = GradientDrawable().apply {
                             cornerRadius = dp(11).toFloat()
                             setColor(
-                                if (focused) Color.rgb(68, 112, 161)
-                                else if (pkg in ordered) Color.argb(190, 37, 61, 88)
+                                if (focused) focusSurface()
+                                else if (pkg in ordered) focusSurface(190)
                                 else Color.argb(115, 25, 36, 53)
                             )
                             setStroke(
                                 dp(if (focused) 3 else 1),
                                 if (focused) Color.rgb(235, 246, 255)
-                                else if (pkg in ordered) Color.argb(210, 126, 190, 255)
-                                else Color.argb(70, 153, 194, 255)
+                                else if (pkg in ordered) accentAlpha(210)
+                                else accentAlpha(70)
                             )
                         }
                     }
                     setOnClickListener {
                         playSelectSound()
                         if (order >= 0) ordered.remove(pkg) else ordered.add(pkg)
+                        focusPackage = pkg
                         renderApps()
                     }
                     setOnKeyListener { view, keyCode, event ->
@@ -2234,6 +2368,14 @@ class MainActivity : Activity() {
                 row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
                 row.addView(label(if (order >= 0) "${order + 1}" else "+", 17, if (order >= 0) accent else Color.rgb(160, 178, 201), true))
                 list.addView(row, LinearLayout.LayoutParams(-1, dp(58)).apply { bottomMargin = dp(6) })
+                rowViews[pkg] = row
+            }
+            list.post {
+                val target = focusPackage?.let { rowViews[it] } ?: rowViews.values.firstOrNull()
+                if (dialog.isShowing && target != null) {
+                    scroll.smoothScrollTo(0, target.top)
+                    target.requestFocus()
+                }
             }
         }
         renderApps()
