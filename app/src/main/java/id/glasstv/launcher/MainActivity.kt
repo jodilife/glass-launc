@@ -20,11 +20,19 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(UnstableApi::class)
 class MainActivity : Activity() {
     private val bg = Color.rgb(9, 13, 22)
     private val accent = Color.rgb(126, 190, 255)
@@ -33,6 +41,7 @@ class MainActivity : Activity() {
     private var continueWatchingCard: View? = null
     private var lastFocusedTitle: String = "Live TV"
     private var refreshOnResume = false
+    private val homePreviewPlayers = mutableListOf<ExoPlayer>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,6 +52,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         refreshOnResume = true
+        releaseHomePreviewPlayers()
         super.onPause()
     }
 
@@ -116,6 +126,7 @@ class MainActivity : Activity() {
         root.addView(hero, LinearLayout.LayoutParams(-1, -2).apply {
             bottomMargin = dp(16)
         })
+        addHomeCctvPreview()
         addContinueWatching()
 
         val section = LinearLayout(this).apply {
@@ -151,6 +162,98 @@ class MainActivity : Activity() {
                 target?.requestFocus()
             }
         }
+    }
+
+    /** Two live RTSP previews are shown directly on the home screen. */
+    private fun addHomeCctvPreview() {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, dp(12))
+        }
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(label("CCTV LANGSUNG", 12, Color.rgb(160, 178, 201), true))
+        header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        val manage = label("ATUR KAMERA  ›", 11, accent, true).apply {
+            isFocusable = true
+            isClickable = true
+            setOnClickListener { showCameras() }
+        }
+        header.addView(manage)
+        section.addView(header, LinearLayout.LayoutParams(-1, dp(24)))
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        for (index in 1..2) {
+            val name = prefs.getString("camera_name_$index", "Kamera $index")
+                ?.takeIf { it.isNotBlank() } ?: "Kamera $index"
+            val url = prefs.getString("camera_$index", null)?.trim().orEmpty()
+            val panel = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(8), dp(6), dp(8), dp(6))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(10).toFloat()
+                    setColor(Color.rgb(15, 22, 34))
+                    setStroke(dp(1), Color.argb(125, 126, 190, 255))
+                }
+                isFocusable = true
+                isClickable = true
+                setOnClickListener { showCameras() }
+            }
+            panel.addView(label(name, 11, Color.WHITE, true).apply {
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            val playerView = PlayerView(this).apply {
+                useController = false
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                setShutterBackgroundColor(Color.rgb(5, 8, 13))
+                setBackgroundColor(Color.rgb(5, 8, 13))
+            }
+            panel.addView(playerView, LinearLayout.LayoutParams(-1, dp(92)))
+            if (url.isBlank()) {
+                playerView.visibility = View.GONE
+                panel.addView(label("Belum diatur · buka Atur Kamera", 10, Color.rgb(220, 205, 154), false)
+                    .apply { setPadding(0, dp(10), 0, dp(10)) })
+            } else if (url.startsWith("rtsp://", true) || url.startsWith("rtsps://", true)) {
+                try {
+                    val player = ExoPlayer.Builder(this).build()
+                    homePreviewPlayers.add(player)
+                    playerView.player = player
+                    player.volume = 0f
+                    player.addListener(object : Player.Listener {
+                        override fun onPlayerError(error: PlaybackException) {
+                            // Keep the tile available; detailed diagnostics remain in the CCTV page.
+                        }
+                    })
+                    player.setMediaItem(MediaItem.fromUri(url))
+                    player.prepare()
+                    player.playWhenReady = true
+                } catch (_: Exception) {
+                    playerView.visibility = View.GONE
+                    panel.addView(label("Pratinjau tidak tersedia", 10, Color.rgb(220, 160, 150), false))
+                }
+            } else {
+                playerView.visibility = View.GONE
+                panel.addView(label("URL RTSP tidak valid", 10, Color.rgb(220, 160, 150), false))
+            }
+            val lp = LinearLayout.LayoutParams(0, -2, 1f)
+            lp.setMargins(0, 0, if (index == 1) dp(8) else 0, 0)
+            row.addView(panel, lp)
+        }
+        section.addView(row, LinearLayout.LayoutParams(-1, -2))
+        root.addView(section, LinearLayout.LayoutParams(-1, -2))
+    }
+
+    private fun releaseHomePreviewPlayers() {
+        homePreviewPlayers.forEach { player ->
+            try { player.release() } catch (_: Exception) { }
+        }
+        homePreviewPlayers.clear()
     }
 
     private fun addAction(row: LinearLayout, title: String, desc: String, click: () -> Unit) {
