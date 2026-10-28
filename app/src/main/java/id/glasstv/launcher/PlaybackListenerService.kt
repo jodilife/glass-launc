@@ -107,6 +107,7 @@ class PlaybackListenerService : NotificationListenerService() {
                 .putLong("audio_updated_$pkg", System.currentTimeMillis())
                 .putString("audio_package_$pkg", pkg)
                 .apply()
+            return
         }
         if (duration < MIN_DURATION_MS) return
 
