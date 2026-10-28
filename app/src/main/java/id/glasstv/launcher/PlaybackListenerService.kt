@@ -93,14 +93,26 @@ class PlaybackListenerService : NotificationListenerService() {
         val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)
             ?.trim()?.takeIf { it.isNotEmpty() } ?: return
         val duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)
+        val state = controller.playbackState
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        saveArtwork(pkg, title, metadata)
+        if (isAudioPackage(pkg)) {
+            prefs.edit()
+                .putString("audio_title_$pkg", title)
+                .putString("audio_artist_$pkg", metadata.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty())
+                .putString("audio_album_$pkg", metadata.getString(MediaMetadata.METADATA_KEY_ALBUM).orEmpty())
+                .putLong("audio_duration_$pkg", duration)
+                .putLong("audio_position_$pkg", state?.position ?: 0L)
+                .putInt("audio_state_$pkg", state?.state ?: 0)
+                .putLong("audio_updated_$pkg", System.currentTimeMillis())
+                .putString("audio_package_$pkg", pkg)
+                .apply()
+        }
         if (duration < MIN_DURATION_MS) return
 
-        val state = controller.playbackState
         val position = state?.position ?: 0L
         if (position < MIN_POSITION_MS || position >= duration - 15_000L) return
         val playbackSpeed = if (state?.state == PlaybackState.STATE_PLAYING) state.playbackSpeed else 0f
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        saveArtwork(pkg, title, metadata)
         // Keep one recent item per supported app so switching between apps doesn't erase a row.
         prefs.edit()
             .putString("watch_title_$pkg", title)
@@ -326,7 +338,16 @@ class PlaybackListenerService : NotificationListenerService() {
 
     private fun isSupportedPackage(pkg: String): Boolean {
         val p = pkg.lowercase()
-        return p.contains("youtube") || p.contains("smarttube") || p.contains("teamsmart")
+        return p.contains("youtube") || p.contains("smarttube") || p.contains("teamsmart") ||
+            isAudioPackage(p)
+    }
+
+    private fun isAudioPackage(pkg: String): Boolean {
+        val p = pkg.lowercase()
+        return p.contains("spotify") || p.contains("aimp") || p.contains("vlc") ||
+            p.contains("poweramp") || p.contains("deezer") || p.contains("tidal") ||
+            p.contains("foobar") || p.contains("music") || p.contains("plex") ||
+            p.contains("tunein") || p.contains("podcast") || p.contains("amazon")
     }
 
     private fun removeController(pkg: String) {
