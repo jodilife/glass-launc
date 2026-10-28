@@ -119,7 +119,8 @@ class MainActivity : Activity() {
     private val wallpaperCycle = object : Runnable {
         override fun run() {
             val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-            if (!prefs.getBoolean("wallpaper_auto", true)) return
+            if (prefs.getString("wallpaper_video_uri", null) != null ||
+                !prefs.getBoolean("wallpaper_auto", true)) return
             val next = (prefs.getInt("wallpaper_index", 0) + 1) % wallpaperUrls.size
             prefs.edit().putInt("wallpaper_index", next).apply()
             applyWallpaper(wallpaperTarget)
@@ -2233,7 +2234,7 @@ class MainActivity : Activity() {
                     view.background = GradientDrawable().apply {
                         cornerRadius = dp(12).toFloat()
                         setColor(if (focused) focusSurface() else Color.argb(120, 27, 35, 48))
-                        setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else accentAlpha(115))
+                        setStroke(dp(if (focused) 2 else 1), accentAlpha(if (focused) 220 else 115))
                     }
                     view.alpha = 1f
                     view.scaleX = 1f
@@ -2534,7 +2535,7 @@ class MainActivity : Activity() {
             }
         }
         dashboardPanelView?.let { view ->
-            view.layoutParams = view.layoutParams.apply { height = dp(54) }
+            view.layoutParams = view.layoutParams.apply { height = dp(60) }
             view.requestLayout()
         }
         dashboardNextPrayerLabel?.text = dashboardSnapshot?.let {
