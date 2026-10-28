@@ -8,8 +8,13 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.widget.ImageView
@@ -20,6 +25,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import java.util.Calendar
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -42,6 +48,29 @@ class MainActivity : Activity() {
     private var lastFocusedTitle: String = "Live TV"
     private var refreshOnResume = false
     private val homePreviewPlayers = mutableListOf<ExoPlayer>()
+    private val dashboardHandler = Handler(Looper.getMainLooper())
+    private val prayerTimeLabels = mutableListOf<TextView>()
+    private var headerTimeLabel: TextView? = null
+    private var dashboardClockLabel: TextView? = null
+    private var dashboardDateLabel: TextView? = null
+    private var dashboardLocationLabel: TextView? = null
+    private var dashboardWeatherLabel: TextView? = null
+    private var dashboardNextPrayerLabel: TextView? = null
+    private var dashboardSnapshot: DashboardServices.Snapshot? = null
+    private var toneGenerator: ToneGenerator? = null
+    private var azanPlayer: MediaPlayer? = null
+    private var lastAzanKey: String = ""
+    private var dashboardLoopStarted = false
+    private val azanAudioUrl = "https://raw.githubusercontent.com/toniasep/cleartv-Islamic/main/themes/islamik/azan.mp3"
+    private val dashboardTick = object : Runnable {
+        override fun run() {
+            updateDashboardClock()
+            checkForAzan()
+            val snapshot = dashboardSnapshot
+            if (snapshot == null || System.currentTimeMillis() - snapshot.fetchedAt > 15 * 60_000L) fetchDashboardData()
+            dashboardHandler.postDelayed(this, 30_000L)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,6 +81,8 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         refreshOnResume = true
+        dashboardHandler.removeCallbacks(dashboardTick)
+        dashboardLoopStarted = false
         releaseHomePreviewPlayers()
         super.onPause()
     }
@@ -61,6 +92,8 @@ class MainActivity : Activity() {
         if (refreshOnResume) {
             refreshOnResume = false
             showHome()
+        } else if (!dashboardLoopStarted) {
+            startDashboardUpdates()
         }
     }
 
@@ -88,44 +121,11 @@ class MainActivity : Activity() {
         header.addView(brand)
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         val time = SimpleDateFormat("EEE, dd MMM  •  HH:mm", Locale.getDefault()).format(Date())
-        header.addView(label(time, 15, Color.rgb(185, 199, 219), false))
+        headerTimeLabel = label(time, 15, Color.rgb(185, 199, 219), false)
+        header.addView(headerTimeLabel)
         root.addView(header, LinearLayout.LayoutParams(-1, dp(46)))
 
-        val subtitle = label("YOUR SCREEN. YOUR SPACE.", 12, accent, true).apply {
-            setLetterSpacing(0.12f)
-            setPadding(0, dp(2), 0, dp(5))
-        }
-        root.addView(subtitle)
-
-        val hero = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(20), dp(11), dp(20), dp(11))
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(28, 47, 72), Color.rgb(16, 24, 38), Color.rgb(13, 19, 30))
-            ).apply {
-                cornerRadius = dp(22).toFloat()
-                setStroke(dp(1), Color.argb(100, 126, 190, 255))
-            }
-            clipToPadding = false
-        }
-        hero.addView(label("GLASS INTERFACE   /   ANDROID TV", 12, accent, true).apply {
-            setLetterSpacing(0.08f)
-        })
-        hero.addView(label("Selamat datang kembali", 21, Color.WHITE, true).apply {
-            setPadding(0, dp(8), 0, dp(6))
-        })
-        hero.addView(label(
-            "Pilih aplikasi, buka kamera CCTV, atau putar video dari URL.\nPemutaran menggunakan aplikasi eksternal yang kompatibel.",
-            13, Color.rgb(202, 214, 231), false
-        ).apply {
-            maxLines = 3
-            setLineSpacing(dp(3).toFloat(), 1f)
-        })
-        root.addView(hero, LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = dp(8)
-        })
+        addDashboardPanel()
         addHomeCctvPreview()
         addContinueWatching()
 
@@ -162,6 +162,179 @@ class MainActivity : Activity() {
                 target?.requestFocus()
             }
         }
+        dashboardSnapshot = DashboardServices.cached(this)
+        renderDashboardSnapshot(dashboardSnapshot, null)
+        startDashboardUpdates()
+    }
+
+    private fun addDashboardPanel() {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(10), dp(14), dp(10))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(28, 43, 64), Color.rgb(15, 23, 36), Color.rgb(12, 18, 29))
+            ).apply {
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), Color.argb(115, 126, 190, 255))
+            }
+        }
+        val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
+        dashboardClockLabel = label("--:--", 32, Color.WHITE, true)
+        left.addView(dashboardClockLabel)
+        dashboardDateLabel = label("--", 11, Color.rgb(174, 192, 216), false)
+        left.addView(dashboardDateLabel)
+        dashboardLocationLabel = label("📍 Jakarta Timur", 12, accent, true).apply {
+            setPadding(0, dp(3), 0, 0)
+            isFocusable = true
+            isClickable = true
+            contentDescription = "Lokasi cuaca dan waktu salat"
+            setOnClickListener { showLocationPicker() }
+            setOnFocusChangeListener { view, focused ->
+                if (focused) { view.setTextColor(Color.WHITE); playNavigationSound() } else view.setTextColor(accent)
+            }
+            setOnKeyListener { view, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                    keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                    playSelectSound(); view.performClick(); true
+                } else false
+            }
+        }
+        left.addView(dashboardLocationLabel)
+        dashboardWeatherLabel = label("Memuat cuaca…", 12, Color.rgb(210, 221, 237), false).apply {
+            setPadding(0, dp(2), 0, 0); maxLines = 1
+        }
+        left.addView(dashboardWeatherLabel)
+        panel.addView(left, LinearLayout.LayoutParams(dp(205), -2))
+
+        val prayerPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
+        dashboardNextPrayerLabel = label("WAKTU SALAT  •  Memuat jadwal…", 11, accent, true).apply {
+            setPadding(0, 0, 0, dp(8)); setLetterSpacing(0.04f)
+        }
+        prayerPanel.addView(dashboardNextPrayerLabel)
+        val prayerRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        prayerTimeLabels.clear()
+        listOf("Subuh", "Syuruk", "Zuhur", "Asar", "Maghrib", "Isya").forEach { name ->
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(3), dp(2), dp(3), dp(2))
+            }
+            item.addView(label(name, 10, Color.rgb(165, 184, 208), false).apply { gravity = Gravity.CENTER; maxLines = 1 })
+            val timeLabel = label("--:--", 13, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, dp(4), 0, 0) }
+            prayerTimeLabels.add(timeLabel)
+            item.addView(timeLabel)
+            prayerRow.addView(item, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        prayerPanel.addView(prayerRow, LinearLayout.LayoutParams(-1, -2))
+        panel.addView(prayerPanel, LinearLayout.LayoutParams(0, -2, 1f))
+        root.addView(panel, LinearLayout.LayoutParams(-1, dp(112)).apply { bottomMargin = dp(8) })
+    }
+
+    private fun startDashboardUpdates() {
+        if (dashboardLoopStarted) return
+        dashboardLoopStarted = true
+        updateDashboardClock()
+        if (dashboardSnapshot == null || System.currentTimeMillis() - dashboardSnapshot!!.fetchedAt > 15 * 60_000L) fetchDashboardData()
+        dashboardHandler.removeCallbacks(dashboardTick)
+        dashboardHandler.postDelayed(dashboardTick, 30_000L)
+    }
+
+    private fun updateDashboardClock() {
+        val now = Date()
+        dashboardClockLabel?.text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(now)
+        dashboardDateLabel?.text = SimpleDateFormat("EEEE, dd MMMM yyyy", Locale("id", "ID")).format(now)
+        headerTimeLabel?.text = SimpleDateFormat("EEE, dd MMM  •  HH:mm", Locale("id", "ID")).format(now)
+    }
+
+    private fun fetchDashboardData() {
+        DashboardServices.fetch(this) { snapshot, error ->
+            if (snapshot != null) {
+                dashboardSnapshot = snapshot
+                renderDashboardSnapshot(snapshot, error)
+            } else {
+                dashboardWeatherLabel?.text = "Cuaca: internet belum tersedia"
+                dashboardNextPrayerLabel?.text = "Jadwal salat belum tersedia"
+            }
+        }
+    }
+
+    private fun renderDashboardSnapshot(snapshot: DashboardServices.Snapshot?, error: String?) {
+        if (snapshot == null) return
+        dashboardLocationLabel?.text = "📍 ${snapshot.city}"
+        dashboardWeatherLabel?.text = "${snapshot.temperature}  •  ${snapshot.condition}" + if (error != null) "  · offline" else ""
+        snapshot.prayerTimes.forEachIndexed { index, time -> prayerTimeLabels.getOrNull(index)?.text = time }
+        val next = DashboardServices.nextPrayer(snapshot)
+        dashboardNextPrayerLabel?.text = "WAKTU SALAT  •  Berikutnya: ${next.first}  ${next.second}"
+    }
+
+    private fun showLocationPicker() {
+        val current = DashboardServices.selectedCity(this)
+        val cities = DashboardServices.cities
+        AlertDialog.Builder(this)
+            .setTitle("Pilih lokasi cuaca & waktu salat")
+            .setSingleChoiceItems(cities.map { if (it.name == current.name) "✓  ${it.name}" else it.name }.toTypedArray(),
+                cities.indexOfFirst { it.name == current.name }) { dialog, which ->
+                DashboardServices.selectCity(this, cities[which])
+                dashboardSnapshot = null
+                dialog.dismiss()
+                showHome()
+                toast("Lokasi diubah ke ${cities[which].name}")
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun checkForAzan() {
+        if (!getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("azan_enabled", true)) return
+        val snapshot = dashboardSnapshot ?: return
+        val index = DashboardServices.duePrayer(snapshot)
+        if (index < 0) return
+        val now = Calendar.getInstance()
+        val key = String.format(Locale.ROOT, "%04d-%03d-%04d-%d",
+            now.get(Calendar.YEAR), now.get(Calendar.DAY_OF_YEAR),
+            now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE), index)
+        if (key == lastAzanKey) return
+        lastAzanKey = key
+        playAzan()
+    }
+
+    private fun playAzan() {
+        try {
+            azanPlayer?.release()
+            azanPlayer = MediaPlayer().apply {
+                setAudioStreamType(AudioManager.STREAM_MUSIC)
+                setDataSource(azanAudioUrl)
+                setOnPreparedListener { it.start() }
+                setOnCompletionListener {
+                    try { it.release() } catch (_: Exception) { }
+                    if (azanPlayer === it) azanPlayer = null
+                }
+                setOnErrorListener { player, _, _ ->
+                    try { player.release() } catch (_: Exception) { }
+                    if (azanPlayer === player) azanPlayer = null
+                    toast("Suara azan tidak dapat diputar. Periksa koneksi internet TV.")
+                    true
+                }
+                prepareAsync()
+            }
+            toast("Waktu salat tiba")
+        } catch (_: Exception) { toast("Tidak dapat memulai suara azan.") }
+    }
+
+    private fun playNavigationSound() {
+        if (!getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("ui_sound_enabled", true)) return
+        try {
+            if (toneGenerator == null) toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 18)
+            toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP2, 28)
+        } catch (_: Exception) { }
+    }
+
+    private fun playSelectSound() {
+        if (!getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("ui_sound_enabled", true)) return
+        try {
+            if (toneGenerator == null) toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 18)
+            toneGenerator?.startTone(ToneGenerator.TONE_PROP_ACK, 55)
+        } catch (_: Exception) { }
     }
 
     /** Two live RTSP previews are shown directly on the home screen. */
@@ -181,6 +354,13 @@ class MainActivity : Activity() {
             isFocusable = true
             isClickable = true
             setOnClickListener { showCameras() }
+        }
+        manage.setOnFocusChangeListener { _, focused -> if (focused) playNavigationSound() }
+        manage.setOnKeyListener { view, keyCode, event ->
+            if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                playSelectSound(); view.performClick(); true
+            } else false
         }
         header.addView(manage)
         section.addView(header, LinearLayout.LayoutParams(-1, dp(20)))
@@ -204,6 +384,7 @@ class MainActivity : Activity() {
                 isFocusableInTouchMode = true
                 isClickable = true
                 setOnFocusChangeListener { view, focused ->
+                    if (focused) playNavigationSound()
                     view.background = GradientDrawable().apply {
                         cornerRadius = dp(10).toFloat()
                         setColor(if (focused) Color.rgb(32, 48, 70) else Color.rgb(15, 22, 34))
@@ -216,6 +397,7 @@ class MainActivity : Activity() {
                         (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
                          keyCode == KeyEvent.KEYCODE_ENTER ||
                          keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                        playSelectSound()
                         view.performClick()
                         true
                     } else false
@@ -297,6 +479,7 @@ class MainActivity : Activity() {
         card.contentDescription = "$title. $desc"
         card.setOnClickListener { click() }
         card.setOnFocusChangeListener { view, focused ->
+            if (focused) playNavigationSound()
             view.setBackground(cardBackground(focused))
             view.setScaleX(if (focused) 1.04f else 1.0f)
             view.setScaleY(if (focused) 1.04f else 1.0f)
@@ -319,6 +502,7 @@ class MainActivity : Activity() {
                     KeyEvent.KEYCODE_DPAD_CENTER,
                     KeyEvent.KEYCODE_ENTER,
                     KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                        playSelectSound()
                         view.performClick()
                         true
                     }
@@ -372,6 +556,7 @@ class MainActivity : Activity() {
             isClickable = true
             background = continueCardBackground(false)
             setOnFocusChangeListener { view, focused ->
+                if (focused) playNavigationSound()
                 view.background = continueCardBackground(focused)
                 view.scaleX = if (focused) 1.015f else 1f
                 view.scaleY = if (focused) 1.015f else 1f
@@ -385,6 +570,7 @@ class MainActivity : Activity() {
                         KeyEvent.KEYCODE_DPAD_CENTER,
                         KeyEvent.KEYCODE_ENTER,
                         KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                            playSelectSound()
                             view.performClick()
                             true
                         }
@@ -775,18 +961,40 @@ class MainActivity : Activity() {
     }
 
     private fun showSettings() {
-        AlertDialog.Builder(this)
-            .setTitle("GlassTV Launcher — prototipe")
-            .setMessage(
-                "Versi 0.3.0 (Continue Watching preview)\n\n" +
-                "• Target: Android TV 11\n" +
-                "• Live TV: membuka aplikasi tuner bawaan Xiaomi/MediaTek\n" +
-                "• Entertainment: daftar aplikasi TV yang terpasang dan dapat diluncurkan\n" +
-                "• CCTV: monitor 2×2 RTSP internal, OK untuk layar penuh\n" +
-                "• Video: membuka URL HTTP(S) melalui pemutar yang kompatibel\n\n" +
-                "Tampilan CCTV tersedia di halaman kamera; pratinjau video langsung di dashboard belum diaktifkan. Live TV tetap bergantung pada aplikasi tuner sistem/vendor."
-            )
-            .setPositiveButton("OK", null).show()
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val soundOn = prefs.getBoolean("ui_sound_enabled", true)
+        val azanOn = prefs.getBoolean("azan_enabled", true)
+        val entries = arrayOf(
+            "Lokasi cuaca & waktu salat",
+            "Suara navigasi ala konsol: ${if (soundOn) "AKTIF" else "MATI"}",
+            "Azan otomatis: ${if (azanOn) "AKTIF" else "MATI"}",
+            "Uji suara azan",
+            "Info GlassTV"
+        )
+        AlertDialog.Builder(this).setTitle("Pengaturan GlassTV")
+            .setItems(entries) { _, which ->
+                when (which) {
+                    0 -> showLocationPicker()
+                    1 -> {
+                        prefs.edit().putBoolean("ui_sound_enabled", !soundOn).apply()
+                        toast("Suara navigasi ${if (!soundOn) "diaktifkan" else "dimatikan"}")
+                    }
+                    2 -> {
+                        prefs.edit().putBoolean("azan_enabled", !azanOn).apply()
+                        toast("Azan otomatis ${if (!azanOn) "diaktifkan" else "dimatikan"}")
+                    }
+                    3 -> playAzan()
+                    4 -> AlertDialog.Builder(this).setTitle("GlassTV Launcher")
+                        .setMessage(
+                            "Dashboard cuaca dan jadwal salat dengan lokasi manual.\n\n" +
+                            "• Lokasi awal: Jakarta Timur\n• Cuaca: Open-Meteo\n" +
+                            "• Jadwal salat: AlAdhan, metode 20°/18° dengan penyesuaian 2 menit\n" +
+                            "• Efek navigasi lokal, dapat dimatikan\n" +
+                            "• Suara azan melalui internet saat dashboard aktif\n\n" +
+                            "Data memerlukan internet. Launcher tidak meminta izin lokasi perangkat."
+                        ).setPositiveButton("OK", null).show()
+                }
+            }.setNegativeButton("Tutup", null).show()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -795,6 +1003,15 @@ class MainActivity : Activity() {
             return true
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onDestroy() {
+        dashboardHandler.removeCallbacksAndMessages(null)
+        try { toneGenerator?.release() } catch (_: Exception) { }
+        toneGenerator = null
+        try { azanPlayer?.release() } catch (_: Exception) { }
+        azanPlayer = null
+        super.onDestroy()
     }
 
     private fun label(text: String, size: Int, color: Int, bold: Boolean): TextView =
