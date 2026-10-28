@@ -3,16 +3,19 @@ package id.glasstv.launcher
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import java.text.SimpleDateFormat
@@ -92,8 +95,9 @@ class MainActivity : Activity() {
             setLineSpacing(dp(3).toFloat(), 1f)
         })
         root.addView(hero, LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = dp(26)
+            bottomMargin = dp(16)
         })
+        addContinueWatching()
 
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -180,6 +184,127 @@ class MainActivity : Activity() {
         lp.setMargins(0, 0, dp(12), 0)
         row.addView(card, lp)
         actions.add(card)
+    }
+
+
+    /**
+     * Shows the most recently observed YouTube/SmartTube media session.
+     * Without metadata, the card only offers the opt-in settings path.
+     */
+    private fun addContinueWatching() {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val titleKeys = prefs.all.keys.filter { it.startsWith("watch_title_") }
+        val latestPackage = titleKeys.mapNotNull { key ->
+            val pkg = key.removePrefix("watch_title_")
+            val title = prefs.getString(key, null)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val duration = prefs.getLong("watch_duration_$pkg", 0L)
+            val position = prefs.getLong("watch_position_$pkg", 0L)
+            val updated = prefs.getLong("watch_updated_$pkg", 0L)
+            if (duration < 180_000L || position < 15_000L || updated <= 0L) null
+            else Triple(pkg, title, updated)
+        }.maxByOrNull { it.third }
+
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, dp(16))
+        }
+        outer.addView(label("LANJUTKAN MENONTON", 11, Color.rgb(160, 178, 201), true).apply {
+            setLetterSpacing(0.08f)
+            setPadding(0, 0, 0, dp(7))
+        })
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            isFocusable = true
+            isFocusableInTouchMode = true
+            isClickable = true
+            background = continueCardBackground(false)
+            setOnFocusChangeListener { view, focused ->
+                view.background = continueCardBackground(focused)
+                view.scaleX = if (focused) 1.015f else 1f
+                view.scaleY = if (focused) 1.015f else 1f
+            }
+        }
+
+        if (latestPackage == null) {
+            val copy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            copy.addView(label("Belum ada tontonan terdeteksi", 14, Color.WHITE, true))
+            copy.addView(label(
+                "Aktifkan akses media untuk mencoba membaca progres YouTube atau SmartTube.",
+                11, Color.rgb(180, 198, 220), false
+            ).apply { setPadding(0, dp(3), 0, 0) })
+            card.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
+            card.addView(label("AKTIFKAN  ›", 11, accent, true))
+            card.setOnClickListener {
+                try {
+                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                } catch (_: Exception) {
+                    toast("Buka Pengaturan TV > Akses notifikasi, lalu aktifkan GlassTV Continue Watching.")
+                }
+            }
+        } else {
+            val (pkg, title, _) = latestPackage
+            val copy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            val appName = try {
+                packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+            } catch (_: Exception) { if (pkg.contains("smarttube", true) || pkg.contains("teamsmart", true)) "SmartTube" else "YouTube" }
+            copy.addView(label(title, 14, Color.WHITE, true).apply {
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            copy.addView(label(appName, 10, Color.rgb(180, 198, 220), false).apply { setPadding(0, dp(2), 0, dp(4)) })
+            val duration = prefs.getLong("watch_duration_$pkg", 0L)
+            val storedPosition = prefs.getLong("watch_position_$pkg", 0L)
+            val updated = prefs.getLong("watch_updated_$pkg", 0L)
+            val speed = prefs.getFloat("watch_speed_$pkg", 0f).coerceIn(0f, 2f)
+            val estimatedPosition = (storedPosition + ((System.currentTimeMillis() - updated).coerceAtLeast(0L) * speed).toLong())
+                .coerceIn(0L, duration)
+            val progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                max = 1000
+                this.progress = ((estimatedPosition.toDouble() / duration.toDouble()) * 1000).toInt().coerceIn(0, 1000)
+                progressTintList = ColorStateList.valueOf(accent)
+                progressBackgroundTintList = ColorStateList.valueOf(Color.rgb(51, 66, 86))
+                isIndeterminate = false
+            }
+            copy.addView(progress, LinearLayout.LayoutParams(-1, dp(5)))
+            copy.addView(label("${formatWatchTime(estimatedPosition)} / ${formatWatchTime(duration)}", 10, Color.rgb(180, 198, 220), false).apply {
+                setPadding(0, dp(3), 0, 0)
+            })
+            card.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
+            card.addView(label("BUKA APLIKASI  ›", 10, accent, true).apply { setPadding(dp(12), 0, 0, 0) })
+            card.setOnClickListener { openContinueWatchingApp(pkg) }
+        }
+
+        outer.addView(card, LinearLayout.LayoutParams(-1, dp(72)))
+        root.addView(outer, LinearLayout.LayoutParams(-1, -2))
+    }
+
+    private fun continueCardBackground(focused: Boolean) = GradientDrawable().apply {
+        cornerRadius = dp(12).toFloat()
+        setColor(if (focused) Color.argb(235, 38, 58, 88) else Color.argb(150, 22, 32, 48))
+        setStroke(if (focused) dp(2) else dp(1),
+            if (focused) accent else Color.argb(100, 126, 190, 255))
+    }
+
+    private fun formatWatchTime(ms: Long): String {
+        val totalSeconds = (ms / 1000L).coerceAtLeast(0L)
+        val hours = totalSeconds / 3600L
+        val minutes = (totalSeconds % 3600L) / 60L
+        val seconds = totalSeconds % 60L
+        return if (hours > 0) String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, seconds)
+        else String.format(Locale.getDefault(), "%d:%02d", minutes, seconds)
+    }
+
+    private fun openContinueWatchingApp(pkg: String) {
+        try {
+            val intent = packageManager.getLaunchIntentForPackage(pkg)
+            if (intent != null) startActivity(intent)
+            else toast("Aplikasi tontonan tidak ditemukan. Buka aplikasinya dari menu Entertainment.")
+        } catch (_: Exception) {
+            toast("Aplikasi tidak dapat dibuka dari launcher.")
+        }
     }
 
     private val defaultCameraUrls = listOf(
