@@ -176,10 +176,11 @@ class MainActivity : Activity() {
             clipToPadding = false
         }
         addAction(row, "Live TV", "Siaran antena") { openLiveTv() }
-        addAction(row, "Entertainment", "Aplikasi TV & musik") { openApps() }
+        addAction(row, "Entertainment", "Pilihan aplikasi") { openApps() }
+        addAction(row, "All Apps", "Semua aplikasi TV") { openAllApps() }
         addAction(row, "Kamera CCTV", "2 kamera • RTSP") { showCameras() }
         addAction(row, "Sumber video", "Buka URL HTTP(S)") { askVideoUrl() }
-        addAction(row, "Pengaturan", "Info launcher") { showSettings() }
+        addAction(row, "Pengaturan", "Preferensi GlassTV") { showSettings() }
         root.addView(row, LinearLayout.LayoutParams(-1, dp(72)))
         val mediaRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -220,7 +221,7 @@ class MainActivity : Activity() {
             }
         }
         val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
-        dashboardClockLabel = label("--:--", 32, Color.WHITE, true)
+        dashboardClockLabel = label("--:--", 29, Color.WHITE, true)
         left.addView(dashboardClockLabel)
         dashboardDateLabel = label("--", 11, Color.rgb(174, 192, 216), false)
         left.addView(dashboardDateLabel)
@@ -243,13 +244,14 @@ class MainActivity : Activity() {
         }
         left.addView(dashboardLocationLabel)
         dashboardWeatherLabel = label("Memuat cuaca BMKG…", 11, Color.rgb(232, 237, 246), false).apply {
-            setPadding(0, dp(3), 0, 0)
+            setPadding(0, dp(2), 0, 0)
             maxLines = 2
+            minHeight = dp(28)
             ellipsize = android.text.TextUtils.TruncateAt.END
             setLineSpacing(dp(1).toFloat(), 1.0f)
         }
         left.addView(dashboardWeatherLabel)
-        panel.addView(left, LinearLayout.LayoutParams(dp(238), -2))
+        panel.addView(left, LinearLayout.LayoutParams(dp(258), -1))
 
         val prayerPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -277,7 +279,7 @@ class MainActivity : Activity() {
         }
         prayerPanel.addView(prayerRow, LinearLayout.LayoutParams(-1, -2))
         panel.addView(prayerPanel, LinearLayout.LayoutParams(0, -2, 1f))
-        root.addView(panel, LinearLayout.LayoutParams(-1, dp(104)).apply { bottomMargin = dp(7) })
+        root.addView(panel, LinearLayout.LayoutParams(-1, dp(120)).apply { bottomMargin = dp(7) })
     }
 
     private fun startDashboardUpdates() {
@@ -314,7 +316,8 @@ class MainActivity : Activity() {
     private fun renderDashboardSnapshot(snapshot: DashboardServices.Snapshot?, error: String?) {
         if (snapshot == null) return
         dashboardLocationLabel?.text = "📍 ${snapshot.city}"
-        dashboardWeatherLabel?.text = "${snapshot.temperature}  •  ${snapshot.condition}\nPrakiraan BMKG" + if (error != null) " · tersimpan" else ""
+        val shortCondition = snapshot.condition.take(24).trimEnd()
+        dashboardWeatherLabel?.text = "${snapshot.temperature}  •  ${shortCondition}\nPrakiraan BMKG" + if (error != null) " · tersimpan" else ""
         snapshot.prayerTimes.forEachIndexed { index, time -> prayerTimeLabels.getOrNull(index)?.text = time }
         val next = DashboardServices.nextPrayer(snapshot)
         dashboardNextPrayerLabel?.text = "SALAT BERIKUTNYA  •  ${next.first}  ${next.second}"
@@ -575,7 +578,8 @@ class MainActivity : Activity() {
         val number = (actions.size + 1).toString().padStart(2, '0')
         val category = when (title) {
             "Live TV" -> "ANTENA DIGITAL"
-            "Entertainment" -> "APLIKASI & MEDIA"
+            "Entertainment" -> "PILIHAN APLIKASI"
+            "All Apps" -> "SEMUA APLIKASI"
             "Kamera CCTV" -> "PANTAU LANGSUNG"
             "Sumber video" -> "STREAMING URL"
             else -> "PREFERENSI"
@@ -619,8 +623,7 @@ class MainActivity : Activity() {
     private fun addContinueWatching(mediaRow: LinearLayout) {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         continueBackdropArtwork = null
-        val titleKeys = prefs.all.keys.filter { it.startsWith("watch_title_") }
-        val latestPackage = titleKeys.mapNotNull { key ->
+        val watchItems = prefs.all.keys.filter { it.startsWith("watch_title_") }.mapNotNull { key ->
             val pkg = key.removePrefix("watch_title_")
             val title = prefs.getString(key, null)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             val duration = prefs.getLong("watch_duration_$pkg", 0L)
@@ -628,160 +631,145 @@ class MainActivity : Activity() {
             val updated = prefs.getLong("watch_updated_$pkg", 0L)
             if (duration < 180_000L || position < 15_000L || updated <= 0L) null
             else Triple(pkg, title, updated)
-        }.maxByOrNull { it.third }
+        }.sortedByDescending { it.third }.take(6)
 
         val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), 0, 0, dp(4))
+            setPadding(0, 0, dp(10), dp(4))
         }
-        outer.addView(label("LANJUTKAN MENONTON", 11, Color.rgb(160, 178, 201), true).apply {
-            setLetterSpacing(0.08f)
-            setPadding(0, 0, 0, dp(4))
-        })
-
-        val card = LinearLayout(this).apply {
+        val heading = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(5), dp(12), dp(5))
-            isFocusable = true
-            isFocusableInTouchMode = true
-            isClickable = true
-            background = continueCardBackground(false)
-            setOnFocusChangeListener { view, focused ->
-                if (focused) {
-                    playNavigationSound()
-                    lastFocusedTitle = "LANJUTKAN MENONTON"
-                    applyContinueWatchingBackdrop(continueBackdropArtwork)
-                } else {
-                    view.post {
-                        if (!view.hasFocus() && !isFinishing) applyWallpaper(root)
-                    }
-                }
-                view.background = continueCardBackground(focused)
-                view.scaleX = if (focused) 1.015f else 1f
-                view.scaleY = if (focused) 1.015f else 1f
-            }
-            setOnKeyListener { view, keyCode, event ->
-                if (event.action != KeyEvent.ACTION_DOWN) {
-                    false
-                } else {
-                    when (keyCode) {
-                        KeyEvent.KEYCODE_DPAD_CENTER,
-                        KeyEvent.KEYCODE_ENTER,
-                        KeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                            playSelectSound()
-                            view.performClick()
-                            true
-                        }
-                        KeyEvent.KEYCODE_DPAD_UP -> {
-                            actions.lastOrNull()?.requestFocus()
-                            true
-                        }
-                        else -> false
-                    }
-                }
-            }
         }
-        continueWatchingCard = card
+        heading.addView(label("LANJUTKAN MENONTON", 11, Color.rgb(205, 216, 232), true))
+        heading.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        heading.addView(label(if (watchItems.size > 1) "${watchItems.size} TERAKHIR" else "PROGRES TONTONAN", 9,
+            Color.rgb(165, 184, 208), false))
+        outer.addView(heading, LinearLayout.LayoutParams(-1, dp(20)))
 
-        if (latestPackage == null) {
-            val copy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            copy.addView(label("Belum ada tontonan terdeteksi", 14, Color.WHITE, true))
-            copy.addView(label(
-                "Aktifkan akses media untuk mencoba membaca progres YouTube atau SmartTube.",
-                11, Color.rgb(180, 198, 220), false
-            ).apply { setPadding(0, dp(3), 0, 0) })
-            card.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
-            card.addView(label("AKTIFKAN  ›", 11, accent, true))
-            card.setOnClickListener {
-                try {
-                    startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                } catch (_: Exception) {
-                    toast("Buka Pengaturan TV > Akses notifikasi, lalu aktifkan GlassTV Continue Watching.")
+        val cardRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+            clipChildren = false
+            clipToPadding = false
+        }
+        if (watchItems.isEmpty()) {
+            val empty = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(5), dp(12), dp(5))
+                background = continueCardBackground(false)
+                isFocusable = true
+                isFocusableInTouchMode = true
+                isClickable = true
+                contentDescription = "Lanjutkan menonton. Aktifkan akses media"
+                setOnClickListener {
+                    try { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+                    catch (_: Exception) { toast("Aktifkan akses notifikasi GlassTV di pengaturan TV.") }
+                }
+                setOnFocusChangeListener { view, focused ->
+                    if (focused) {
+                        playNavigationSound()
+                        lastFocusedTitle = "LANJUTKAN MENONTON"
+                    }
+                    view.background = continueCardBackground(focused)
                 }
             }
+            empty.addView(label("Belum ada progres tontonan", 13, Color.WHITE, true))
+            empty.addView(label("Aktifkan akses media untuk YouTube / SmartTube", 10, Color.rgb(180, 198, 220), false))
+            cardRow.addView(empty, LinearLayout.LayoutParams(-1, dp(92)))
         } else {
-            val (pkg, title, _) = latestPackage
-            val artworkName = prefs.getString("watch_artwork_$pkg", null)
-            val artworkFile = artworkName?.let { File(filesDir, it) }
-            continueBackdropArtwork = artworkFile?.takeIf { it.isFile && it.length() > 0L }
-            val thumbnail = ImageView(this).apply {
-                // Real video thumbnails are wide (16:9) and should fill the frame.
-                // App icons and square/poster art should keep their proportions instead of being cropped.
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                setPadding(0, dp(8), 0, dp(8))
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(8).toFloat()
-                    setColor(Color.rgb(28, 41, 59))
-                }
-                clipToOutline = true
-                contentDescription = "Gambar tontonan: $title"
-                var imageLoaded = false
-                if (artworkFile != null && artworkFile.isFile) {
-                    try {
-                        val bitmap = BitmapFactory.decodeFile(artworkFile.absolutePath)
-                        if (bitmap != null) {
-                            setImageBitmap(bitmap)
-                            val aspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
-                            if (aspectRatio >= 1.25f) {
-                                scaleType = ImageView.ScaleType.CENTER_CROP
-                                setPadding(0, 0, 0, 0)
-                            } else {
-                                scaleType = ImageView.ScaleType.FIT_CENTER
-                                setPadding(0, dp(8), 0, dp(8))
+            val count = if (resources.displayMetrics.widthPixels / resources.displayMetrics.density >= 1500f) 6 else 5
+            watchItems.take(count).forEachIndexed { index, item ->
+                val (pkg, title, _) = item
+                val artworkName = prefs.getString("watch_artwork_$pkg", null)
+                val artworkFile = artworkName?.let { File(filesDir, it) }
+                    ?.takeIf { it.isFile && it.length() > 0L }
+                if (index == 0) continueBackdropArtwork = artworkFile
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.TOP
+                    setPadding(dp(6), dp(5), dp(6), dp(5))
+                    background = continueCardBackground(false)
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+                    isClickable = true
+                    contentDescription = "Lanjutkan menonton: $title"
+                    setOnFocusChangeListener { view, focused ->
+                        if (focused) {
+                            playNavigationSound()
+                            lastFocusedTitle = "LANJUTKAN MENONTON"
+                            applyContinueWatchingBackdrop(artworkFile)
+                        } else {
+                            view.post {
+                                if (!view.hasFocus() && !isFinishing) applyWallpaper(root)
                             }
-                            imageLoaded = true
                         }
-                    } catch (_: Exception) { }
+                        view.background = continueCardBackground(focused)
+                        view.scaleX = if (focused) 1.025f else 1f
+                        view.scaleY = if (focused) 1.025f else 1f
+                    }
+                    setOnKeyListener { view, keyCode, event ->
+                        if (event.action != KeyEvent.ACTION_DOWN) false else when (keyCode) {
+                            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                                playSelectSound(); view.performClick(); true
+                            }
+                            KeyEvent.KEYCODE_DPAD_UP -> { actions.lastOrNull()?.requestFocus(); true }
+                            else -> false
+                        }
+                    }
+                    setOnClickListener { openContinueWatchingApp(pkg) }
                 }
-                if (!imageLoaded) {
-                    try {
-                        setImageDrawable(packageManager.getApplicationIcon(pkg))
-                        scaleType = ImageView.ScaleType.FIT_CENTER
-                        setPadding(0, dp(8), 0, dp(8))
-                    } catch (_: Exception) {
-                        setBackgroundColor(Color.rgb(28, 41, 59))
+                val thumb = ImageView(this).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    background = rounded(Color.rgb(18, 25, 37), 7)
+                    clipToOutline = true
+                    contentDescription = "Artwork $title"
+                    var loaded = false
+                    if (artworkFile != null) {
+                        try {
+                            val bitmap = BitmapFactory.decodeFile(artworkFile.absolutePath)
+                            if (bitmap != null) { setImageBitmap(bitmap); loaded = true }
+                        } catch (_: Exception) { }
+                    }
+                    if (!loaded) {
+                        try { setImageDrawable(packageManager.getApplicationIcon(pkg)); scaleType = ImageView.ScaleType.FIT_CENTER }
+                        catch (_: Exception) { }
                     }
                 }
+                card.addView(thumb, LinearLayout.LayoutParams(-1, dp(42)))
+                card.addView(label(title, 10, Color.WHITE, true).apply {
+                    maxLines = 2
+                    minHeight = dp(26)
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(0, dp(4), 0, 0)
+                })
+                val duration = prefs.getLong("watch_duration_$pkg", 0L).coerceAtLeast(1L)
+                val storedPosition = prefs.getLong("watch_position_$pkg", 0L)
+                val updated = prefs.getLong("watch_updated_$pkg", 0L)
+                val speed = prefs.getFloat("watch_speed_$pkg", 0f).coerceIn(0f, 2f)
+                val estimated = (storedPosition + ((System.currentTimeMillis() - updated).coerceAtLeast(0L) * speed).toLong())
+                    .coerceIn(0L, duration)
+                val progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    max = 1000
+                    this.progress = ((estimated.toDouble() / duration.toDouble()) * 1000).toInt().coerceIn(0, 1000)
+                    progressTintList = ColorStateList.valueOf(accent)
+                    progressBackgroundTintList = ColorStateList.valueOf(Color.rgb(51, 66, 86))
+                }
+                card.addView(progress, LinearLayout.LayoutParams(-1, dp(3)).apply { topMargin = dp(4) })
+                card.addView(label("${formatWatchTime(estimated)} / ${formatWatchTime(duration)}", 8,
+                    Color.rgb(185, 199, 218), false).apply {
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(0, dp(3), 0, 0)
+                })
+                val lp = LinearLayout.LayoutParams(0, dp(92), 1f)
+                lp.setMargins(0, 0, if (index == count - 1 || index == watchItems.take(count).lastIndex) 0 else dp(6), 0)
+                cardRow.addView(card, lp)
             }
-            val thumbParams = LinearLayout.LayoutParams(dp(88), dp(50)).apply {
-                marginEnd = dp(14)
-            }
-            card.addView(thumbnail, thumbParams)
-
-            val copy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            val appName = try {
-                packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
-            } catch (_: Exception) { if (pkg.contains("smarttube", true) || pkg.contains("teamsmart", true)) "SmartTube" else "YouTube" }
-            copy.addView(label(title, 14, Color.WHITE, true).apply {
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            })
-            copy.addView(label(appName, 10, Color.rgb(180, 198, 220), false).apply { setPadding(0, dp(2), 0, dp(4)) })
-            val duration = prefs.getLong("watch_duration_$pkg", 0L)
-            val storedPosition = prefs.getLong("watch_position_$pkg", 0L)
-            val updated = prefs.getLong("watch_updated_$pkg", 0L)
-            val speed = prefs.getFloat("watch_speed_$pkg", 0f).coerceIn(0f, 2f)
-            val estimatedPosition = (storedPosition + ((System.currentTimeMillis() - updated).coerceAtLeast(0L) * speed).toLong())
-                .coerceIn(0L, duration)
-            val progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-                max = 1000
-                this.progress = ((estimatedPosition.toDouble() / duration.toDouble()) * 1000).toInt().coerceIn(0, 1000)
-                progressTintList = ColorStateList.valueOf(accent)
-                progressBackgroundTintList = ColorStateList.valueOf(Color.rgb(51, 66, 86))
-                isIndeterminate = false
-            }
-            copy.addView(progress, LinearLayout.LayoutParams(-1, dp(5)))
-            copy.addView(label("${formatWatchTime(estimatedPosition)} / ${formatWatchTime(duration)}", 10, Color.rgb(180, 198, 220), false).apply {
-                setPadding(0, dp(3), 0, 0)
-            })
-            card.addView(copy, LinearLayout.LayoutParams(0, -2, 1f))
-            card.addView(label("BUKA APLIKASI  ›", 10, accent, true).apply { setPadding(dp(12), 0, 0, 0) })
-            card.setOnClickListener { openContinueWatchingApp(pkg) }
         }
-
-        outer.addView(card, LinearLayout.LayoutParams(-1, dp(78)))
-        mediaRow.addView(outer, LinearLayout.LayoutParams(0, -1, 1f))
+        outer.addView(cardRow, LinearLayout.LayoutParams(-1, dp(98)))
+        mediaRow.addView(outer, LinearLayout.LayoutParams(0, -1, 2.6f))
     }
 
     /**
@@ -793,15 +781,16 @@ class MainActivity : Activity() {
         if (artworkFile == null || !artworkFile.isFile || artworkFile.length() <= 0L) return
         Thread({
             try {
-                val options = BitmapFactory.Options().apply { inSampleSize = 8 }
+                // Decode at a moderate reduction: retain the artwork's composition instead of an overly enlarged pixelated image.
+                val options = BitmapFactory.Options().apply { inSampleSize = 3 }
                 val bitmap = BitmapFactory.decodeFile(artworkFile.absolutePath, options) ?: return@Thread
                 val image = BitmapDrawable(resources, bitmap).apply { gravity = Gravity.FILL }
                 val blurScrim = GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM,
                     intArrayOf(
-                        Color.argb(145, 4, 8, 16),
-                        Color.argb(175, 5, 9, 17),
-                        Color.argb(205, 4, 7, 13)
+                        Color.argb(72, 4, 8, 16),
+                        Color.argb(96, 5, 9, 17),
+                        Color.argb(132, 4, 7, 13)
                     )
                 )
                 runOnUiThread {
@@ -1067,28 +1056,91 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun openApps() {
-        val pm = packageManager
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-        val apps = pm.queryIntentActivities(intent, 0)
-            .filter { it.activityInfo.packageName != packageName }
-            .sortedBy { it.loadLabel(pm).toString().lowercase(Locale.getDefault()) }
-        val labels = apps.map { it.loadLabel(pm).toString() }.toTypedArray()
+    private fun queryTvApps() = packageManager.queryIntentActivities(
+        Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0
+    ).filter { it.activityInfo.packageName != packageName }
+        .distinctBy { it.activityInfo.packageName }
+        .sortedBy { it.loadLabel(packageManager).toString().lowercase(Locale.getDefault()) }
+
+    private fun launchTvApp(packageName: String, activityName: String) {
+        try {
+            startActivity(Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                .setClassName(packageName, activityName))
+        } catch (_: Exception) {
+            toast("Aplikasi tidak dapat dibuka. Coba jalankan dari menu sistem TV.")
+        }
+    }
+
+    private fun openAllApps() {
+        val apps = queryTvApps()
         if (apps.isEmpty()) {
             toast("Tidak ditemukan aplikasi TV lain.")
             return
         }
-        AlertDialog.Builder(this).setTitle("Aplikasi")
+        val labels = apps.map { it.loadLabel(packageManager).toString() }.toTypedArray()
+        AlertDialog.Builder(this).setTitle("All Apps")
             .setItems(labels) { _, which ->
                 val info = apps[which].activityInfo
-                try {
-                    startActivity(Intent(Intent.ACTION_MAIN)
-                        .addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-                        .setClassName(info.packageName, info.name))
-                } catch (_: Exception) {
-                    toast("Aplikasi tidak dapat dibuka. Coba jalankan dari menu sistem TV.")
+                launchTvApp(info.packageName, info.name)
+            }.setNegativeButton("Tutup", null).show()
+    }
+
+    private fun openApps() {
+        val apps = queryTvApps()
+        val selected = getSharedPreferences("glass_tv", MODE_PRIVATE)
+            .getStringSet("entertainment_packages", emptySet())?.toSet().orEmpty()
+        val favorites = apps.filter { it.activityInfo.packageName in selected }
+        val menu = mutableListOf<String>()
+        favorites.forEach { menu.add(it.loadLabel(packageManager).toString()) }
+        val allIndex = menu.size
+        menu.add("Semua aplikasi…")
+        val manageIndex = menu.size
+        menu.add("Atur daftar Entertainment…")
+        if (menu.size == 2 && apps.isEmpty()) {
+            toast("Tidak ditemukan aplikasi TV lain.")
+            return
+        }
+        AlertDialog.Builder(this).setTitle("Entertainment")
+            .setItems(menu.toTypedArray()) { _, which ->
+                when {
+                    which < allIndex -> {
+                        val info = favorites[which].activityInfo
+                        launchTvApp(info.packageName, info.name)
+                    }
+                    which == allIndex -> openAllApps()
+                    which == manageIndex -> manageEntertainmentApps()
                 }
             }.setNegativeButton("Tutup", null).show()
+    }
+
+    private fun manageEntertainmentApps() {
+        val apps = queryTvApps()
+        if (apps.isEmpty()) {
+            toast("Tidak ditemukan aplikasi TV lain.")
+            return
+        }
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val current = prefs.getStringSet("entertainment_packages", emptySet())?.toMutableSet() ?: mutableSetOf()
+        val labels = apps.map { it.loadLabel(packageManager).toString() }.toTypedArray()
+        val checked = apps.map { it.activityInfo.packageName in current }.toBooleanArray()
+        AlertDialog.Builder(this)
+            .setTitle("Pilih aplikasi Entertainment")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                val pkg = apps[which].activityInfo.packageName
+                if (isChecked) current.add(pkg) else current.remove(pkg)
+            }
+            .setPositiveButton("Simpan") { _, _ ->
+                prefs.edit().putStringSet("entertainment_packages", current.toSet()).apply()
+                toast("Daftar Entertainment disimpan")
+            }
+            .setNeutralButton("Pilih semua") { _, _ ->
+                prefs.edit().putStringSet("entertainment_packages",
+                    apps.map { it.activityInfo.packageName }.toSet()).apply()
+                toast("Semua aplikasi dipilih untuk Entertainment")
+            }
+            .setNegativeButton("Batal", null)
+            .show()
     }
 
     private fun showSettings() {
@@ -1098,6 +1150,7 @@ class MainActivity : Activity() {
         val wallpaperAuto = prefs.getBoolean("wallpaper_auto", true)
         val entries = arrayOf(
             "Lokasi cuaca & waktu salat",
+            "Pilih aplikasi untuk Entertainment",
             "Suara navigasi ala konsol: ${if (soundOn) "AKTIF" else "MATI"}",
             "Azan otomatis: ${if (azanOn) "AKTIF" else "MATI"}",
             "Uji suara azan",
@@ -1109,27 +1162,28 @@ class MainActivity : Activity() {
             .setItems(entries) { _, which ->
                 when (which) {
                     0 -> showLocationPicker()
-                    1 -> {
+                    1 -> manageEntertainmentApps()
+                    2 -> {
                         prefs.edit().putBoolean("ui_sound_enabled", !soundOn).apply()
                         toast("Suara navigasi ${if (!soundOn) "diaktifkan" else "dimatikan"}")
                     }
-                    2 -> {
+                    3 -> {
                         prefs.edit().putBoolean("azan_enabled", !azanOn).apply()
                         toast("Azan otomatis ${if (!azanOn) "diaktifkan" else "dimatikan"}")
                     }
-                    3 -> playAzan()
-                    4 -> {
+                    4 -> playAzan()
+                    5 -> {
                         val next = (prefs.getInt("wallpaper_index", 0) + 1) % wallpaperUrls.size
                         prefs.edit().putInt("wallpaper_index", next).apply()
                         applyWallpaper(root)
                         toast("Wallpaper diganti")
                     }
-                    5 -> {
+                    6 -> {
                         prefs.edit().putBoolean("wallpaper_auto", !wallpaperAuto).apply()
                         scheduleWallpaperRotation()
                         toast("Wallpaper otomatis ${if (!wallpaperAuto) "diaktifkan" else "dimatikan"}")
                     }
-                    6 -> AlertDialog.Builder(this).setTitle("GlassTV Launcher")
+                    7 -> AlertDialog.Builder(this).setTitle("GlassTV Launcher")
                         .setMessage(
                             "Dashboard cuaca dan jadwal salat dengan lokasi manual.\n\n" +
                             "• Cuaca: prakiraan BMKG\n" +
@@ -1174,12 +1228,12 @@ class MainActivity : Activity() {
         val file = File(cacheDir, "glasstv_wallpaper_$index.jpg")
         fun display(bytesFile: File) {
             try {
-                val options = BitmapFactory.Options().apply { inSampleSize = 2 }
+                val options = BitmapFactory.Options().apply { inSampleSize = 1 }
                 val bitmap = BitmapFactory.decodeFile(bytesFile.absolutePath, options) ?: return
                 val image = BitmapDrawable(resources, bitmap).apply { gravity = Gravity.FILL }
-                val scrim = GradientDrawable(
+                        val scrim = GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM,
-                    intArrayOf(Color.argb(118, 4, 8, 16), Color.argb(145, 5, 9, 17), Color.argb(185, 4, 7, 13))
+                    intArrayOf(Color.argb(66, 4, 8, 16), Color.argb(92, 5, 9, 17), Color.argb(125, 4, 7, 13))
                 )
                 runOnUiThread {
                     if (!isFinishing && target === root) target.background = LayerDrawable(arrayOf(image, scrim))
