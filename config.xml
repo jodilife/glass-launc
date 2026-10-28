@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<glassTv>
+    <device>
+        <model>MiTV-MOSR1</model>
+        <androidVersion>11</androidVersion>
+        <adbPort>5555</adbPort>
+    </device>
+    <appearance>
+        <theme>glassmorphism-dark</theme>
+        <accentColor>#7EBEFF</accentColor>
+        <backgroundMode>external-video-or-device-specific-live-tv</backgroundMode>
+        <showClock>true</showClock>
+    </appearance>
+    <cameras>
+        <camera id="1" name="Kamera 1" enabled="false" protocol="rtsp" url="" />
+        <camera id="2" name="Kamera 2" enabled="false" protocol="rtsp" url="" />
+        <camera id="3" name="Kamera 3" enabled="false" protocol="rtsp" url="" />
+        <camera id="4" name="Kamera 4" enabled="false" protocol="rtsp" url="" />
+    </cameras>
+    <safety>
+        <disableSystemPackages>false</disableSystemPackages>
+        <makeDefaultHomeOnlyAfterVerification>true</makeDefaultHomeOnlyAfterVerification>
+    </safety>
+</glassTv>

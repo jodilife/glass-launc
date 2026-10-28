@@ -1,0 +1,2 @@
+# Template saja. Hapus tanda # hanya untuk paket yang memang Anda nonaktifkan.
+# com.example.package
