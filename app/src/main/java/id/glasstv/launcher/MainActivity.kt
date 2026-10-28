@@ -216,7 +216,7 @@ class MainActivity : Activity() {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(10), dp(16), dp(10))
+            setPadding(dp(16), dp(8), dp(16), dp(8))
             isFocusable = true
             isFocusableInTouchMode = true
             isClickable = true
@@ -277,7 +277,7 @@ class MainActivity : Activity() {
             card.setOnClickListener { openContinueWatchingApp(pkg) }
         }
 
-        outer.addView(card, LinearLayout.LayoutParams(-1, dp(72)))
+        outer.addView(card, LinearLayout.LayoutParams(-1, dp(88)))
         root.addView(outer, LinearLayout.LayoutParams(-1, -2))
     }
 
