@@ -180,8 +180,15 @@ class MainActivity : Activity() {
         addAction(row, "Sumber video", "Buka URL HTTP(S)") { askVideoUrl() }
         addAction(row, "Pengaturan", "Info launcher") { showSettings() }
         root.addView(row, LinearLayout.LayoutParams(-1, dp(72)))
-        addHomeCctvPreview()
-        addContinueWatching()
+        val mediaRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+            clipChildren = false
+            clipToPadding = false
+        }
+        root.addView(mediaRow, LinearLayout.LayoutParams(-1, dp(142)))
+        addHomeCctvPreview(mediaRow)
+        addContinueWatching(mediaRow)
         setContentView(root)
         root.post {
             if (lastFocusedTitle == "LANJUTKAN MENONTON") {
@@ -386,11 +393,11 @@ class MainActivity : Activity() {
     }
 
     /** Two live RTSP previews are shown directly on the home screen. */
-    private fun addHomeCctvPreview() {
+    private fun addHomeCctvPreview(mediaRow: LinearLayout) {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 0, 0, dp(6))
+            setPadding(0, 0, dp(10), dp(4))
         }
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -494,7 +501,7 @@ class MainActivity : Activity() {
             row.addView(panel, lp)
         }
         section.addView(row, LinearLayout.LayoutParams(-1, -2))
-        root.addView(section, LinearLayout.LayoutParams(-1, -2))
+        mediaRow.addView(section, LinearLayout.LayoutParams(0, -1, 1.15f))
     }
 
     private fun releaseHomePreviewPlayers() {
@@ -578,10 +585,10 @@ class MainActivity : Activity() {
             setLetterSpacing(0.055f)
         })
         val accentLine = View(this).apply {
-            setBackground(GradientDrawable().apply {
-                cornerRadius = dp(2).toFloat()
-                setColor(Color.rgb(199, 185, 153))
-            })
+            val accentDrawable = GradientDrawable()
+            accentDrawable.setCornerRadius(dp(2).toFloat())
+            accentDrawable.setColor(Color.rgb(199, 185, 153))
+            setBackground(accentDrawable)
         }
         card.addView(accentLine, LinearLayout.LayoutParams(dp(25), dp(2)).apply {
             topMargin = dp(4)
@@ -608,7 +615,7 @@ class MainActivity : Activity() {
      * Shows the most recently observed YouTube/SmartTube media session.
      * Without metadata, the card only offers the opt-in settings path.
      */
-    private fun addContinueWatching() {
+    private fun addContinueWatching(mediaRow: LinearLayout) {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val titleKeys = prefs.all.keys.filter { it.startsWith("watch_title_") }
         val latestPackage = titleKeys.mapNotNull { key ->
@@ -623,7 +630,7 @@ class MainActivity : Activity() {
 
         val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 0, 0, dp(8))
+            setPadding(dp(10), 0, 0, dp(4))
         }
         outer.addView(label("LANJUTKAN MENONTON", 11, Color.rgb(160, 178, 201), true).apply {
             setLetterSpacing(0.08f)
@@ -763,8 +770,8 @@ class MainActivity : Activity() {
             card.setOnClickListener { openContinueWatchingApp(pkg) }
         }
 
-        outer.addView(card, LinearLayout.LayoutParams(-1, dp(68)))
-        root.addView(outer, LinearLayout.LayoutParams(-1, -2))
+        outer.addView(card, LinearLayout.LayoutParams(-1, dp(78)))
+        mediaRow.addView(outer, LinearLayout.LayoutParams(0, -1, 1f))
     }
 
     private fun continueCardBackground(focused: Boolean) = GradientDrawable().apply {
