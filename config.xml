@@ -12,10 +12,10 @@
         <showClock>true</showClock>
     </appearance>
     <cameras>
-        <camera id="1" name="Kamera 1" enabled="true" protocol="rtsp" url="rtsp://admin:admin@192.168.1.8:8554/Streaming/Channels/101" />
-        <camera id="2" name="Kamera 2" enabled="true" protocol="rtsp" url="rtsp://admin:admin@192.168.1.8:8554/Streaming/Channels/102" />
-        <camera id="3" name="Kamera 3" enabled="true" protocol="rtsp" url="rtsp://admin:admin@192.168.1.9:8554/Streaming/Channels/101" />
-        <camera id="4" name="Kamera 4" enabled="true" protocol="rtsp" url="rtsp://admin:admin@192.168.1.9:8554/Streaming/Channels/102" />
+        <camera id="1" name="Kamera 1" enabled="false" protocol="rtsp" url="" />
+        <camera id="2" name="Kamera 2" enabled="false" protocol="rtsp" url="" />
+        <camera id="3" name="Kamera 3" enabled="false" protocol="rtsp" url="" />
+        <camera id="4" name="Kamera 4" enabled="false" protocol="rtsp" url="" />
     </cameras>
     <safety>
         <disableSystemPackages>false</disableSystemPackages>
