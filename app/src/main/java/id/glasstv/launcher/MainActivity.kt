@@ -327,12 +327,14 @@ class MainActivity : Activity() {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
+        headerPrayerMetaLabel?.visibility = View.GONE
+        headerNextPrayerLabel?.visibility = View.GONE
         headerRight.addView(headerTimeLabel)
         headerRight.addView(headerPrayerMetaLabel)
         headerRight.addView(headerNextPrayerLabel)
         header.addView(headerRight, LinearLayout.LayoutParams(dp(390), -2))
         homeHeaderView = header
-        root.addView(header, LinearLayout.LayoutParams(-1, dp(62)))
+        root.addView(header, LinearLayout.LayoutParams(-1, dp(42)))
 
         addDashboardPanel()
 
@@ -2649,6 +2651,10 @@ class MainActivity : Activity() {
         dashboardPanelView?.visibility = View.INVISIBLE
         headerPrayerMetaLabel?.visibility = View.VISIBLE
         headerNextPrayerLabel?.visibility = View.VISIBLE
+        homeHeaderView?.let { view ->
+            view.layoutParams = view.layoutParams.apply { height = dp(62) }
+            view.requestLayout()
+        }
         homeMediaRowView?.animate()?.translationY(dp(10).toFloat())?.setDuration(260L)?.start()
         root.requestFocus()
     }
@@ -2660,6 +2666,12 @@ class MainActivity : Activity() {
         backgroundAudioRowView?.visibility = View.VISIBLE
         actionMenuView?.visibility = View.VISIBLE
         dashboardPanelView?.visibility = View.VISIBLE
+        headerPrayerMetaLabel?.visibility = View.GONE
+        headerNextPrayerLabel?.visibility = View.GONE
+        homeHeaderView?.let { view ->
+            view.layoutParams = view.layoutParams.apply { height = dp(42) }
+            view.requestLayout()
+        }
         homeMediaRowView?.animate()?.translationY(0f)?.setDuration(220L)?.start()
         dashboardSnapshot?.let { renderDashboardSnapshot(it, null) }
         val target = actions.firstOrNull { it.contentDescription?.toString()?.startsWith(lastFocusedTitle) == true }
