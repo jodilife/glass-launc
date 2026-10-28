@@ -94,10 +94,10 @@ class MainActivity : Activity() {
 
     private fun addAction(row: LinearLayout, title: String, desc: String, click: () -> Unit) {
         // Latar belakang standar kartu: Efek Kaca Semi-Transparan (Glassmorphism)
-        const val CORNER_RADIUS = 14f
+        val cornerRadius = 14f
         val glassBackground = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(CORNER_RADIUS.toInt()).toFloat()
+            cornerRadius = dp(cornerRadius.toInt()).toFloat()
             setColor(Color.argb(160, 22, 32, 48)) // Semi-transparan gelap
             setStroke(dp(1), Color.argb(90, 126, 190, 255)) // Garis tepi kaca tipis bercahaya
         }
@@ -105,7 +105,7 @@ class MainActivity : Activity() {
         // Latar belakang saat kartu disorot remote (Fokus aktif)
         val glassFocusBackground = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(CORNER_RADIUS.toInt()).toFloat()
+            cornerRadius = dp(cornerRadius.toInt()).toFloat()
             setColor(Color.argb(220, 38, 58, 88)) // Lebih terang saat fokus
             setStroke(dp(2), accent) // Garis tepi aksen penuh
         }
