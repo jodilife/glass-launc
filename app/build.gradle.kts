@@ -15,6 +15,15 @@ android {
         versionName = "0.3.0"
     }
 
+    // Debug is a side-by-side preview so it cannot overwrite the installed app.
+    // Release builds keep the original applicationId.
+    buildTypes {
+        getByName("debug") {
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

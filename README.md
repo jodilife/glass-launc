@@ -11,6 +11,7 @@ Prototipe launcher Android TV bergaya dark glassmorphism untuk MiTV-MOSR1 / Andr
 - `config.xml` saat ini merupakan template dokumentasi; aplikasi belum membaca file tersebut secara otomatis.
 - Backup script mengumpulkan inventaris dan konfigurasi ADB, bukan backup firmware/data aplikasi penuh.
 - Debloat tidak dijalankan oleh skrip mana pun. Jangan menonaktifkan paket sistem secara massal.
+- APK **debug** memakai ID paket `id.glasstv.launcher.preview` supaya dapat dipasang berdampingan dengan aplikasi lama `id.glasstv.launcher`. Dengan begitu, pengujian tidak memerlukan uninstall atau penghapusan data aplikasi lama. Data kedua aplikasi terpisah.
 
 ## Prasyarat
 
@@ -89,7 +90,7 @@ Jika APK diunduh dari GitHub Actions, instal secara manual:
 
 ```powershell
 adb -s 192.168.1.50:5555 install -r .\app-debug.apk
-adb -s 192.168.1.50:5555 shell monkey -p id.glasstv.launcher 1
+adb -s 192.168.1.50:5555 shell monkey -p id.glasstv.launcher.preview 1
 ```
 
 Screenshot:
@@ -118,9 +119,13 @@ Versi 0.3.0 menambahkan baris **Lanjutkan Menonton** yang mencoba membaca metada
 
 1. Buka GlassTV Launcher, lalu pilih kartu **Lanjutkan Menonton**.
 2. Pada pengaturan Android, aktifkan akses notifikasi untuk **GlassTV Continue Watching**. Launcher hanya membaca metadata sesi media, bukan isi teks notifikasi.
-3. Putar video berdurasi minimal 3 menit dan tunggu sampai posisi pemutaran melewati 15 detik.
-4. Kembali ke launcher. Jika aplikasi menerbitkan metadata dan posisi sesi media yang kompatibel, judul dan progress akan muncul. Pilih kartu untuk membuka aplikasi sumber.
-5. Melanjutkan tepat di posisi terakhir bergantung pada kemampuan aplikasi sumber; launcher hanya membuka aplikasinya dan tidak dapat memaksa seek/resume.
+3. Jika memakai APK debug/preview, izinkan akses notifikasi untuk paket preview. Untuk MiTV yang tidak menyediakan halaman pengaturan standar, jalankan:
+   ```powershell
+   adb -s IP_TV:5555 shell cmd notification allow_listener id.glasstv.launcher.preview/id.glasstv.launcher.PlaybackListenerService 0
+   ```
+4. Putar video berdurasi minimal 3 menit dan tunggu sampai posisi pemutaran melewati 15 detik.
+5. Kembali ke launcher. Jika aplikasi menerbitkan metadata dan posisi sesi media yang kompatibel, judul dan progress akan muncul. Pilih kartu untuk membuka aplikasi sumber.
+6. Melanjutkan tepat di posisi terakhir bergantung pada kemampuan aplikasi sumber; launcher hanya membuka aplikasinya dan tidak dapat memaksa seek/resume.
 
 Batasan:
 - Akses notifikasi bersifat opsional dan harus diaktifkan pengguna secara manual.
