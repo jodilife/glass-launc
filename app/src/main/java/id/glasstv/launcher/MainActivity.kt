@@ -790,6 +790,10 @@ class MainActivity : Activity() {
                 } else {
                     val index = actions.indexOf(view)
                     when (keyCode) {
+                        KeyEvent.KEYCODE_MENU -> {
+                            showGlassSidebar()
+                            true
+                        }
                         KeyEvent.KEYCODE_DPAD_LEFT -> {
                             if (index > 0) actions[index - 1].requestFocus()
                             true
@@ -1761,7 +1765,10 @@ class MainActivity : Activity() {
             }
         }
         dialog.show()
-        dialog.window?.setLayout(dp(650), (resources.displayMetrics.heightPixels * 0.78f).toInt())
+        dialog.window?.setLayout(
+            minOf(dp(650), (resources.displayMetrics.widthPixels * 0.88f).toInt()),
+            (resources.displayMetrics.heightPixels * 0.78f).toInt()
+        )
     }
 
     private fun currentGreeting(): String {
