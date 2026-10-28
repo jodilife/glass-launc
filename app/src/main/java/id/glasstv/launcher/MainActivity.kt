@@ -11,7 +11,6 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
-import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -93,21 +92,19 @@ class MainActivity : Activity() {
     }
 
     private fun addAction(row: LinearLayout, title: String, desc: String, click: () -> Unit) {
-        // Latar belakang standar kartu: Efek Kaca Semi-Transparan (Glassmorphism)
         val cornerRadius = 14f
         val glassBackground = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(cornerRadius.toInt()).toFloat()
-            setColor(Color.argb(160, 22, 32, 48)) // Semi-transparan gelap
-            setStroke(dp(1), Color.argb(90, 126, 190, 255)) // Garis tepi kaca tipis bercahaya
+            setColor(Color.argb(160, 22, 32, 48))
+            setStroke(dp(1), Color.argb(90, 126, 190, 255))
         }
 
-        // Latar belakang saat kartu disorot remote (Fokus aktif)
         val glassFocusBackground = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(cornerRadius.toInt()).toFloat()
-            setColor(Color.argb(220, 38, 58, 88)) // Lebih terang saat fokus
-            setStroke(dp(2), accent) // Garis tepi aksen penuh
+            setColor(Color.argb(220, 38, 58, 88))
+            setStroke(dp(2), accent)
         }
 
         val card = LinearLayout(this).apply {
@@ -120,14 +117,12 @@ class MainActivity : Activity() {
             isClickable = true
             setOnClickListener { click() }
             
-            // Perubahan visual saat fokus remote berpindah
-            setOnFocusChangeListener { v, focused ->
-                v.background = if (focused) glassFocusBackground else glassBackground
-                v.scaleX = if (focused) 1.05f else 1.0f
-                v.scaleY = if (focused) 1.05f else 1.0f
+            setOnFocusChangeListener { view, focused ->
+                view.background = if (focused) glassFocusBackground else glassBackground
+                view.scaleX = if (focused) 1.05f else 1.0f
+                view.scaleY = if (focused) 1.05f else 1.0f
             }
             
-            // Dukungan tombol OK / Enter pada remote TV fisik
             setOnKeyListener { _, keyCode, event ->
                 if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
                     click()
@@ -225,7 +220,7 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("GlassTV Launcher — prototipe")
             .setMessage(
-                "Versi 0.1.1 (Glass Border)\n\n" +
+                "Versi 0.1.2 (Glass Border Fix)\n\n" +
                 "• Target: Android TV 11\n" +
                 "• Navigasi remote: fokus D-pad aktif\n" +
                 "• Kamera: membuka stream melalui pemutar eksternal\n" +
