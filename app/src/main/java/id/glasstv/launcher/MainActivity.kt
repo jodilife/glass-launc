@@ -181,28 +181,6 @@ class MainActivity : Activity() {
 
         addDashboardPanel()
 
-        val section = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        section.addView(label("JELAJAHI TV", 11, Color.rgb(168, 188, 214), true))
-        section.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        section.addView(label("Gunakan tombol arah dan OK", 10, Color.rgb(112, 131, 155), false))
-        root.addView(section, LinearLayout.LayoutParams(-1, dp(17)))
-
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(0, dp(2), 0, dp(1))
-            clipChildren = false
-            clipToPadding = false
-        }
-        addAction(row, "Live TV", "Siaran antena") { openLiveTv() }
-        addAction(row, "Entertainment", "Pilihan aplikasi") { openApps() }
-        addAction(row, "All Apps", "Semua aplikasi TV") { openAllApps() }
-        addAction(row, "Kamera CCTV", "2 kamera • RTSP") { showCameras() }
-        addAction(row, "Pengaturan", "Preferensi GlassTV") { showSettings() }
-        root.addView(row, LinearLayout.LayoutParams(-1, dp(72)))
         addFavoriteDock(root)
         addPreviewChannelRows(root)
         val mediaRow = LinearLayout(this).apply {
@@ -215,6 +193,30 @@ class MainActivity : Activity() {
         addContinueWatching(mediaRow)
         addHomeCctvPreview(mediaRow)
         addBackgroundAudioRow(root)
+
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(2), dp(4), dp(2), 0)
+        }
+        section.addView(label("JELAJAHI TV", 11, Color.rgb(168, 188, 214), true))
+        section.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        section.addView(label("Gunakan tombol arah dan OK", 10, Color.rgb(112, 131, 155), false))
+        root.addView(section, LinearLayout.LayoutParams(-1, dp(21)))
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, dp(5))
+            clipChildren = false
+            clipToPadding = false
+        }
+        addAction(row, "Live TV", "Siaran antena") { openLiveTv() }
+        addAction(row, "Entertainment", "Pilihan aplikasi") { openApps() }
+        addAction(row, "All Apps", "Semua aplikasi TV") { openAllApps() }
+        addAction(row, "Kamera CCTV", "2 kamera • RTSP") { showCameras() }
+        addAction(row, "Pengaturan", "Preferensi GlassTV") { showSettings() }
+        root.addView(row, LinearLayout.LayoutParams(-1, dp(76)))
         setContentView(wallpaperTarget)
         root.post {
             if (lastFocusedTitle == "LANJUTKAN MENONTON") {
@@ -390,9 +392,20 @@ class MainActivity : Activity() {
             }
             isFocusable = true
             isClickable = true
-            setOnFocusChangeListener { view, focused -> if (focused) playNavigationSound(); view.alpha = if (focused) 1f else 0.92f }
+            setOnFocusChangeListener { view, focused ->
+                if (focused) playNavigationSound()
+                view.alpha = 1f
+                view.scaleX = if (focused) 1.015f else 1f
+                view.scaleY = if (focused) 1.015f else 1f
+                view.elevation = if (focused) dp(8).toFloat() else 0f
+                view.background = GradientDrawable().apply {
+                    cornerRadius = dp(10).toFloat()
+                    setColor(if (focused) Color.rgb(74, 126, 180) else Color.rgb(35, 57, 83))
+                    setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(180, 126, 190, 255))
+                }
+            }
         }
-        panel.addView(search, LinearLayout.LayoutParams(-1, dp(40)).apply { topMargin = dp(8) })
+        panel.addView(search, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(8); bottomMargin = dp(4) })
         val resultList = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(8), 0, 0)
@@ -433,8 +446,16 @@ class MainActivity : Activity() {
                     isFocusable = true
                     isClickable = true
                     setOnFocusChangeListener { view, focused ->
-                        view.alpha = if (focused) 1f else 0.9f
                         if (focused) playNavigationSound()
+                        view.alpha = 1f
+                        view.scaleX = if (focused) 1.015f else 1f
+                        view.scaleY = if (focused) 1.015f else 1f
+                        view.elevation = if (focused) dp(6).toFloat() else 0f
+                        view.background = GradientDrawable().apply {
+                            cornerRadius = dp(9).toFloat()
+                            setColor(if (focused) Color.rgb(58, 91, 130) else Color.argb(120, 30, 43, 62))
+                            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(65, 153, 194, 255))
+                        }
                     }
                     setOnClickListener { playSelectSound(); choose(city) }
                     setOnKeyListener { view, keyCode, event ->
@@ -1382,8 +1403,16 @@ class MainActivity : Activity() {
                     isFocusable = true
                     isClickable = true
                     setOnFocusChangeListener { view, focused ->
-                        view.alpha = if (focused) 1f else 0.94f
                         if (focused) playNavigationSound()
+                        view.alpha = 1f
+                        view.scaleX = if (focused) 1.025f else 1f
+                        view.scaleY = if (focused) 1.025f else 1f
+                        view.elevation = if (focused) dp(7).toFloat() else 0f
+                        view.background = GradientDrawable().apply {
+                            cornerRadius = dp(11).toFloat()
+                            setColor(if (focused) Color.rgb(62, 99, 143) else Color.argb(115, 25, 36, 53))
+                            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(55, 153, 194, 255))
+                        }
                     }
                     setOnClickListener {
                         playSelectSound()
@@ -1504,8 +1533,9 @@ class MainActivity : Activity() {
                         setColor(if (focused) Color.argb(225, 46, 70, 101) else Color.argb(135, 25, 36, 53))
                         setStroke(dp(if (focused) 2 else 1), if (focused) accent else Color.argb(70, 153, 194, 255))
                     }
-                    view.scaleX = if (focused) 1.015f else 1f
-                    view.scaleY = if (focused) 1.015f else 1f
+                    view.scaleX = 1f
+                    view.scaleY = 1f
+                    view.elevation = if (focused) dp(8).toFloat() else 0f
                     if (focused) playNavigationSound()
                 }
                 setOnClickListener { playSelectSound(); action() }
@@ -1599,7 +1629,9 @@ class MainActivity : Activity() {
                 ).setPositiveButton("Kembali") { _, _ -> showSettings() }.show()
         }
         dialog.show()
-        dialog.window?.setLayout(dp(640), (resources.displayMetrics.heightPixels * 0.82f).toInt())
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(dp(700), (resources.displayMetrics.heightPixels * 0.82f).toInt())
+        dialog.window?.decorView?.setPadding(dp(10), dp(4), dp(10), dp(4))
     }
 
     private fun favoritePackages(): List<String> {
