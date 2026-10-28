@@ -203,7 +203,9 @@ class MainActivity : Activity() {
 
         val items = (1..4).map { number ->
             val configured = !prefs.getString("camera_$number", defaultCameraUrls[number - 1]).isNullOrBlank()
-            "Kamera $number  •  " + if (configured) "URL tersimpan" else "Belum dikonfigurasi"
+            val cameraName = prefs.getString("camera_name_$number", "Kamera $number")
+                ?.takeIf { it.isNotBlank() } ?: "Kamera $number"
+            "$cameraName  •  " + if (configured) "URL tersimpan" else "Belum dikonfigurasi"
         }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Kamera CCTV")
@@ -220,12 +222,42 @@ class MainActivity : Activity() {
             askRtsp(number)
             return
         }
+        val cameraName = prefs.getString("camera_name_$number", "Kamera $number")
+            ?.takeIf { it.isNotBlank() } ?: "Kamera $number"
         AlertDialog.Builder(this)
-            .setTitle("Kamera $number")
+            .setTitle(cameraName)
             .setMessage("URL RTSP tersimpan di perangkat:\n$savedUrl")
             .setPositiveButton("Buka") { _, _ -> openExternalStream(savedUrl) }
             .setNeutralButton("Edit URL") { _, _ -> askRtsp(number) }
-            .setNegativeButton("Kembali", null)
+            .setNegativeButton("Ganti nama") { _, _ -> renameCamera(number) }
+            .show()
+    }
+
+    private fun renameCamera(number: Int) {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val currentName = prefs.getString("camera_name_$number", "Kamera $number")
+            ?.takeIf { it.isNotBlank() } ?: "Kamera $number"
+        val input = EditText(this).apply {
+            hint = "Contoh: Pintu depan"
+            setSingleLine(true)
+            setText(currentName)
+            setSelection(text.length)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Nama Kamera $number")
+            .setMessage("Beri nama sesuai lokasi kamera. Nama disimpan di TV dan tidak mengubah URL RTSP.")
+            .setView(input)
+            .setPositiveButton("Simpan") { _, _ ->
+                val newName = input.text.toString().trim()
+                if (newName.isNotEmpty()) {
+                    prefs.edit().putString("camera_name_$number", newName).apply()
+                    toast("Nama kamera disimpan")
+                    showCameras()
+                } else {
+                    toast("Nama kamera tidak boleh kosong")
+                }
+            }
+            .setNegativeButton("Batal", null)
             .show()
     }
 
