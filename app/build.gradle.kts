@@ -19,7 +19,7 @@ android {
     // Release builds keep the original applicationId.
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ".preview"
+            applicationIdSuffix = ".thumbnailtest"
             versionNameSuffix = "-preview"
         }
     }
