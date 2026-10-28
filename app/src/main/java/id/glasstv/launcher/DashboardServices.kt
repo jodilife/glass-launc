@@ -28,9 +28,15 @@ internal object DashboardServices {
     )
 
     // BMKG adm4 codes correspond to kelurahan-level forecast pages.
+    // Jakarta Timur options use BMKG kelurahan (adm4) codes.
     val cities = listOf(
         City("Pondok Kelapa", -6.2250, 106.9330, "31.75.07.1004"),
-        City("Duren Sawit", -6.2290, 106.9160, "31.75.07.1001")
+        City("Duren Sawit", -6.2290, 106.9160, "31.75.07.1001"),
+        City("Pondok Bambu", -6.2290, 106.8910, "31.75.07.1002"),
+        City("Klender", -6.2140, 106.9060, "31.75.07.1003"),
+        City("Malaka Sari", -6.2180, 106.9280, "31.75.07.1005"),
+        City("Malaka Jaya", -6.2130, 106.9280, "31.75.07.1006"),
+        City("Pondok Kopi", -6.2140, 106.9380, "31.75.07.1007")
     )
 
     private val prayerKeys = listOf("Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha")
