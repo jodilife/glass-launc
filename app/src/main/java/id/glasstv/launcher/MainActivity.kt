@@ -193,7 +193,8 @@ class MainActivity : Activity() {
             contentDescription = "Lokasi cuaca dan waktu salat"
             setOnClickListener { showLocationPicker() }
             setOnFocusChangeListener { view, focused ->
-                if (focused) { view.setTextColor(Color.WHITE); playNavigationSound() } else view.setTextColor(accent)
+                (view as TextView).setTextColor(if (focused) Color.WHITE else accent)
+                if (focused) playNavigationSound()
             }
             setOnKeyListener { view, keyCode, event ->
                 if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
