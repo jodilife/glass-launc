@@ -389,31 +389,11 @@ class MainActivity : Activity() {
     private val defaultCameraUrls = listOf("", "", "", "")
 
     private fun showCameras() {
-        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        // Seed the four known working RTSP addresses on first launch (and migrate
-        // empty slots), so users do not have to type them manually on the TV.
-        val editor = prefs.edit()
-        for (number in 1..4) {
-            // Only seed a non-empty default. Empty slots stay unconfigured until the user enters a URL.
-            if (prefs.getString("camera_$number", null).isNullOrBlank()) {
-                defaultCameraUrls[number - 1].takeIf { it.isNotBlank() }?.let {
-                    editor.putString("camera_$number", it)
-                }
-            }
+        try {
+            startActivity(Intent(this, CctvActivity::class.java))
+        } catch (_: Exception) {
+            toast("Halaman CCTV tidak dapat dibuka.")
         }
-        editor.apply()
-
-        val items = (1..4).map { number ->
-            val configured = !prefs.getString("camera_$number", defaultCameraUrls[number - 1]).isNullOrBlank()
-            val cameraName = prefs.getString("camera_name_$number", "Kamera $number")
-                ?.takeIf { it.isNotBlank() } ?: "Kamera $number"
-            "$cameraName  •  " + if (configured) "URL tersimpan" else "Belum dikonfigurasi"
-        }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("Kamera CCTV")
-            .setItems(items) { _, which -> manageCamera(which + 1) }
-            .setNegativeButton("Kembali", null)
-            .show()
     }
 
     private fun manageCamera(number: Int) {
@@ -522,28 +502,111 @@ class MainActivity : Activity() {
     }
 
     private fun openLiveTv() {
-        val packageName = "com.mitv.livetv"
-        try {
-            // Prefer the TV manufacturer's own Live TV application so tuner/channel
-            // setup remains handled by the OEM service.
-            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-            if (launchIntent != null) {
-                startActivity(launchIntent)
-                return
-            }
+        val pm = packageManager
+        val preferredPackages = listOf(
+            "com.mitv.livetv",
+            "com.google.android.tv",
+            "com.android.tv"
+        )
 
-            // Some OEM TV apps expose a Leanback launcher activity without a
-            // conventional getLaunchIntentForPackage result.
-            val leanbackIntent = Intent(Intent.ACTION_MAIN)
-                .addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-                .setPackage(packageName)
-            if (leanbackIntent.resolveActivity(packageManager) != null) {
-                startActivity(leanbackIntent)
-            } else {
-                toast("Aplikasi Live TV bawaan tidak ditemukan. Periksa apakah com.mitv.livetv masih terpasang.")
+        // Prefer known TV/tuner apps, but do not assume every vendor uses the same package name.
+        for (pkg in preferredPackages) {
+            try {
+                val launchIntent = pm.getLaunchIntentForPackage(pkg)
+                if (launchIntent != null) {
+                    startActivity(launchIntent)
+                    return
+                }
+                val target = Intent(Intent.ACTION_MAIN)
+                    .addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                    .setPackage(pkg)
+                val resolved = pm.queryIntentActivities(target, 0).firstOrNull()?.activityInfo
+                if (resolved != null) {
+                    startActivity(Intent(Intent.ACTION_MAIN)
+                        .addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                        .setClassName(resolved.packageName, resolved.name))
+                    return
+                }
+            } catch (_: Exception) {
+                // Continue with runtime discovery below.
             }
+        }
+
+        data class TvCandidate(
+            val packageName: String,
+            val activityName: String,
+            val label: String,
+            val score: Int
+        )
+
+        val launcherIntents = listOf(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER),
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        )
+        val activities = launcherIntents.flatMap { pm.queryIntentActivities(it, 0) }
+            .distinctBy { "${it.activityInfo.packageName}/${it.activityInfo.name}" }
+
+        val candidates = activities.mapNotNull { resolveInfo ->
+            val info = resolveInfo.activityInfo
+            if (info.packageName == packageName) return@mapNotNull null
+            val appLabel = try {
+                resolveInfo.loadLabel(pm).toString()
+            } catch (_: Exception) {
+                info.packageName
+            }
+            val p = info.packageName.lowercase(Locale.ROOT)
+            val label = appLabel.lowercase(Locale.ROOT)
+            val score = when {
+                p == "com.mitv.livetv" -> 1000
+                p == "com.google.android.tv" || p == "com.android.tv" -> 950
+                p.contains("livetv") || p.contains("live_tv") -> 900
+                p.contains("livechannels") || p.contains("live.channels") -> 850
+                label == "live tv" || label == "live channels" || label == "tv" -> 800
+                label.contains("live tv") || label.contains("live channel") -> 750
+                p.contains("droidlogic") && (p.contains("tv") || label.contains("tv")) -> 650
+                label.contains("digital tv") || label == "dtv" || p.contains("dtv") -> 600
+                label.contains("television") -> 500
+                else -> 0
+            }
+            if (score == 0) null else TvCandidate(info.packageName, info.name, appLabel, score)
+        }.distinctBy { it.packageName }
+            .sortedByDescending { it.score }
+
+        if (candidates.isEmpty()) {
+            toast("Aplikasi Live TV bawaan belum terdeteksi. Periksa menu Apps atau aplikasi TV sistem.")
+            return
+        }
+
+        val strongest = candidates.first().score
+        val topCandidates = candidates.filter { it.score == strongest }
+        if (candidates.size == 1 || (strongest >= 850 && topCandidates.size == 1)) {
+            launchTvCandidate(candidates.first().packageName, candidates.first().activityName)
+            return
+        }
+
+        val labels = candidates.map { "${it.label}  •  ${it.packageName}" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Pilih aplikasi Live TV")
+            .setItems(labels) { _, which ->
+                val candidate = candidates[which]
+                launchTvCandidate(candidate.packageName, candidate.activityName)
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun launchTvCandidate(packageName: String, activityName: String) {
+        try {
+            val intent = Intent(Intent.ACTION_MAIN).setClassName(packageName, activityName)
+            startActivity(intent)
         } catch (_: Exception) {
-            toast("Live TV tidak dapat dibuka. Coba buka aplikasi TV bawaan dari menu sistem.")
+            try {
+                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+                if (launchIntent != null) startActivity(launchIntent)
+                else toast("Aplikasi TV tidak dapat dibuka dari launcher.")
+            } catch (_: Exception) {
+                toast("Aplikasi TV tidak dapat dibuka dari launcher.")
+            }
         }
     }
 
@@ -579,9 +642,9 @@ class MainActivity : Activity() {
                 "• Target: Android TV 11\n" +
                 "• Live TV: membuka aplikasi tuner bawaan Xiaomi/MediaTek\n" +
                 "• Entertainment: daftar aplikasi TV yang terpasang dan dapat diluncurkan\n" +
-                "• Kamera: 4 URL RTSP tersimpan lokal; stream via pemutar eksternal\n" +
+                "• CCTV: monitor 2×2 RTSP internal, OK untuk layar penuh\n" +
                 "• Video: membuka URL HTTP(S) melalui pemutar yang kompatibel\n\n" +
-                "Preview video langsung di dalam kartu belum diaktifkan. Uji tombol OK/Back di TV sebelum menjadikan launcher default."
+                "Tampilan CCTV tersedia di halaman kamera; pratinjau video langsung di dashboard belum diaktifkan. Live TV tetap bergantung pada aplikasi tuner sistem/vendor."
             )
             .setPositiveButton("OK", null).show()
     }
