@@ -27,12 +27,12 @@ class PlaybackListenerService : NotificationListenerService() {
         super.onListenerDisconnected()
     }
 
-    override fun onNotificationPosted(sbn: StatusBarNotification?) {
+    override fun onNotificationPosted(sbn: StatusBarNotification) {
         // Notification contents are deliberately ignored. Refresh only media-session metadata.
         refreshSessions()
     }
 
-    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {
         refreshSessions()
     }
 
@@ -93,7 +93,7 @@ class PlaybackListenerService : NotificationListenerService() {
 
     private fun isSupportedPackage(pkg: String): Boolean {
         val p = pkg.lowercase()
-        return p.contains("youtube") || p.contains("smarttube")
+        return p.contains("youtube") || p.contains("smarttube") || p.contains("teamsmart")
     }
 
     private fun removeController(pkg: String) {
