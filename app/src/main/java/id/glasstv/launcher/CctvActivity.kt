@@ -33,7 +33,7 @@ class CctvActivity : Activity() {
     private val playerViews = mutableListOf<PlayerView>()
     private val nameLabels = mutableListOf<TextView>()
     private val statusLabels = mutableListOf<TextView>()
-    private val players: MutableList<ExoPlayer?> = MutableList(4) { null }
+    private val players: MutableList<ExoPlayer?> = MutableList(2) { null }
 
     private lateinit var root: LinearLayout
     private lateinit var content: FrameLayout
@@ -62,12 +62,12 @@ class CctvActivity : Activity() {
     override fun onStart() {
         super.onStart()
         activityStarted = true
-        for (index in 0..3) startPlayer(index)
+        for (index in 0..1) startPlayer(index)
     }
 
     override fun onStop() {
         activityStarted = false
-        for (index in 0..3) releasePlayer(index)
+        for (index in 0..1) releasePlayer(index)
         super.onStop()
     }
 
@@ -111,7 +111,7 @@ class CctvActivity : Activity() {
 
         root.addView(
             label(
-                "4 kamera • RTSP langsung • OK untuk layar penuh • BACK untuk kembali",
+                "2 kamera • RTSP langsung • OK untuk layar penuh • BACK untuk kembali",
                 12, Color.rgb(166, 185, 210), false
             ).apply { setPadding(0, dp(2), 0, dp(8)) },
             LinearLayout.LayoutParams(-1, -2)
@@ -120,13 +120,13 @@ class CctvActivity : Activity() {
         content = FrameLayout(this)
         grid = GridLayout(this).apply {
             columnCount = 2
-            rowCount = 2
+            rowCount = 1
             useDefaultMargins = false
             alignmentMode = GridLayout.ALIGN_BOUNDS
             setBackgroundColor(backgroundColor)
         }
 
-        for (index in 0..3) {
+        for (index in 0..1) {
             val cell = createCell(index)
             cells.add(cell)
             grid.addView(cell, gridParams(index))
