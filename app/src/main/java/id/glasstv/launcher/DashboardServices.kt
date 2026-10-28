@@ -17,7 +17,7 @@ import java.util.Locale
  * precaution adjustment.
  */
 internal object DashboardServices {
-    data class City(val name: String, val lat: Double, val lon: Double, val bmkgCode: String)
+    data class City(val name: String, val lat: Double, val lon: Double, val bmkgCode: String = "")
     data class Snapshot(
         val city: String,
         val temperature: String,
@@ -45,13 +45,48 @@ internal object DashboardServices {
     fun selectedCity(context: Context): City {
         val prefs = context.getSharedPreferences("glass_tv", Context.MODE_PRIVATE)
         val name = prefs.getString("dashboard_city", "Pondok Kelapa") ?: "Pondok Kelapa"
-        return cities.firstOrNull { it.name == name } ?: cities.first()
+        val preset = cities.firstOrNull { it.name == name }
+        if (preset != null) return preset
+        val lat = prefs.getString("dashboard_city_lat", null)?.toDoubleOrNull()
+        val lon = prefs.getString("dashboard_city_lon", null)?.toDoubleOrNull()
+        if (lat != null && lon != null) return City(name, lat, lon, prefs.getString("dashboard_city_bmkg", "").orEmpty())
+        return cities.first()
     }
 
     fun selectCity(context: Context, city: City) {
         context.getSharedPreferences("glass_tv", Context.MODE_PRIVATE).edit()
-            .putString("dashboard_city", city.name).apply()
+            .putString("dashboard_city", city.name)
+            .putString("dashboard_city_lat", city.lat.toString())
+            .putString("dashboard_city_lon", city.lon.toString())
+            .putString("dashboard_city_bmkg", city.bmkgCode)
+            .apply()
         context.getSharedPreferences("dashboard_cache", Context.MODE_PRIVATE).edit().clear().apply()
+    }
+
+    fun searchCities(context: Context, query: String, callback: (List<City>, String?) -> Unit) {
+        Thread({
+            try {
+                val encoded = URLEncoder.encode(query.trim(), "UTF-8")
+                val json = JSONObject(get("https://geocoding-api.open-meteo.com/v1/search?name=$encoded&count=12&language=id&format=json&countryCode=ID"))
+                val results = json.optJSONArray("results")
+                val found = mutableListOf<City>()
+                if (results != null) {
+                    for (i in 0 until results.length()) {
+                        val item = results.optJSONObject(i) ?: continue
+                        val name = item.optString("name").trim()
+                        val lat = item.optDouble("latitude", Double.NaN)
+                        val lon = item.optDouble("longitude", Double.NaN)
+                        if (name.isBlank() || !lat.isFinite() || !lon.isFinite()) continue
+                        val region = item.optString("admin1").trim()
+                        val displayName = if (region.isNotBlank() && !name.equals(region, true)) "$name, $region" else name
+                        found.add(City(displayName, lat, lon, ""))
+                    }
+                }
+                Handler(Looper.getMainLooper()).post { callback(found.distinctBy { it.name }, null) }
+            } catch (e: Exception) {
+                Handler(Looper.getMainLooper()).post { callback(emptyList(), e.message ?: "Pencarian lokasi gagal") }
+            }
+        }, "glasstv-city-search").start()
     }
 
     fun cached(context: Context): Snapshot? {
@@ -69,12 +104,22 @@ internal object DashboardServices {
         val city = selectedCity(app)
         Thread({
             try {
-                val weatherUrl = "https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=${city.bmkgCode}"
-                val weather = latestBmkgForecast(JSONObject(get(weatherUrl)))
-                val temp = "${weather.optInt("t", Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE }?.let { "$it°C" } ?: "Suhu --"}"
-                val condition = weather.optString("weather_desc", "").takeIf { it.isNotBlank() }
-                    ?: weather.optString("weather_desc_en", "").takeIf { it.isNotBlank() }
-                    ?: "Cuaca terkini"
+                val temp: String
+                val condition: String
+                if (city.bmkgCode.isNotBlank()) {
+                    val weatherUrl = "https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=\${city.bmkgCode}"
+                    val weather = latestBmkgForecast(JSONObject(get(weatherUrl)))
+                    temp = "\${weather.optInt("t", Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE }?.let { "$it°C" } ?: "Suhu --"}"
+                    condition = weather.optString("weather_desc", "").takeIf { it.isNotBlank() }
+                        ?: weather.optString("weather_desc_en", "").takeIf { it.isNotBlank() }
+                        ?: "Cuaca terkini"
+                } else {
+                    val weatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=\${city.lat}&longitude=\${city.lon}&current=temperature_2m,weather_code&timezone=Asia%2FJakarta"
+                    val current = JSONObject(get(weatherUrl)).getJSONObject("current")
+                    val degrees = current.optDouble("temperature_2m", Double.NaN)
+                    temp = if (degrees.isFinite()) "\${degrees.toInt()}°C" else "Suhu --"
+                    condition = weatherDescription(current.optInt("weather_code", -1))
+                }
                 val timestamp = System.currentTimeMillis() / 1000L
                 val prayerUrl = "https://api.aladhan.com/v1/timings/$timestamp?latitude=${city.lat}&longitude=${city.lon}&method=20&timezonestring=Asia%2FJakarta&tune=0,2,0,2,2,2,0,2,0"
                 val prayer = JSONObject(get(prayerUrl)).getJSONObject("data")
@@ -117,6 +162,23 @@ internal object DashboardServices {
             if (parts[0].toInt() * 60 + parts[1].toInt() == minute) return i
         }
         return -1
+    }
+
+    private fun weatherDescription(code: Int): String = when (code) {
+        0 -> "Cerah"
+        1 -> "Cerah berawan"
+        2 -> "Berawan sebagian"
+        3 -> "Mendung"
+        45, 48 -> "Berkabut"
+        51, 53, 55 -> "Gerimis"
+        56, 57 -> "Gerimis membeku"
+        61, 63, 65 -> "Hujan"
+        66, 67 -> "Hujan membeku"
+        71, 73, 75, 77 -> "Salju"
+        80, 81, 82 -> "Hujan sesaat"
+        85, 86 -> "Hujan salju"
+        95, 96, 99 -> "Badai petir"
+        else -> "Cuaca terkini"
     }
 
     private fun latestBmkgForecast(root: JSONObject): JSONObject {
