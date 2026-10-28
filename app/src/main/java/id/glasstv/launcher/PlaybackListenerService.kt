@@ -1,6 +1,9 @@
 package id.glasstv.launcher
 
 import android.content.ComponentName
+import android.graphics.Bitmap
+import java.io.File
+import java.io.FileOutputStream
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
@@ -81,6 +84,7 @@ class PlaybackListenerService : NotificationListenerService() {
         if (position < MIN_POSITION_MS || position >= duration - 15_000L) return
         val playbackSpeed = if (state?.state == PlaybackState.STATE_PLAYING) state.playbackSpeed else 0f
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        saveArtwork(pkg, title, metadata)
         // Keep one recent item per supported app so switching between apps doesn't erase a row.
         prefs.edit()
             .putString("watch_title_$pkg", title)
@@ -91,6 +95,75 @@ class PlaybackListenerService : NotificationListenerService() {
             .putString("watch_package_$pkg", pkg)
             .putFloat("watch_speed_$pkg", playbackSpeed)
             .apply()
+    }
+
+    /**
+     * Persist media-session artwork locally. Not all players expose artwork; the UI
+     * falls back to the installed player's app icon when no video thumbnail is offered.
+     */
+    private fun saveArtwork(pkg: String, title: String, metadata: MediaMetadata) {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val oldTitle = prefs.getString("watch_artwork_title_$pkg", null)
+        val oldName = prefs.getString("watch_artwork_$pkg", null)
+        if (oldTitle == title && !oldName.isNullOrBlank() && File(filesDir, oldName).isFile) return
+
+        var source: Bitmap? = null
+        val artworkKeys = arrayOf(
+            MediaMetadata.METADATA_KEY_ART,
+            MediaMetadata.METADATA_KEY_ALBUM_ART,
+            MediaMetadata.METADATA_KEY_DISPLAY_ICON
+        )
+        for (key in artworkKeys) {
+            try {
+                source = metadata.getBitmap(key)
+            } catch (_: Exception) {
+                source = null
+            }
+            if (source != null) break
+        }
+
+        val fileName = "watch_art_" + pkg.replace(Regex("[^A-Za-z0-9_.-]"), "_") + ".jpg"
+        val target = File(filesDir, fileName)
+        if (source == null) {
+            if (oldTitle != title) {
+                if (!oldName.isNullOrBlank()) File(filesDir, oldName).delete()
+                prefs.edit()
+                    .remove("watch_artwork_$pkg")
+                    .remove("watch_artwork_title_$pkg")
+                    .apply()
+            }
+            return
+        }
+
+        var scaled: Bitmap? = null
+        try {
+            val ratio = minOf(480f / source.width, 270f / source.height, 1f)
+            val image = if (ratio < 1f) {
+                Bitmap.createScaledBitmap(
+                    source,
+                    (source.width * ratio).toInt().coerceAtLeast(1),
+                    (source.height * ratio).toInt().coerceAtLeast(1),
+                    true
+                ).also { scaled = it }
+            } else source
+            FileOutputStream(target).use { output ->
+                if (!image.compress(Bitmap.CompressFormat.JPEG, 82, output)) {
+                    throw IllegalStateException("Could not encode artwork")
+                }
+            }
+            prefs.edit()
+                .putString("watch_artwork_$pkg", fileName)
+                .putString("watch_artwork_title_$pkg", title)
+                .apply()
+        } catch (e: Exception) {
+            target.delete()
+            Log.i(TAG, "Media session did not provide usable artwork for $pkg", e)
+            if (oldTitle != title) {
+                prefs.edit().remove("watch_artwork_$pkg").remove("watch_artwork_title_$pkg").apply()
+            }
+        } finally {
+            scaled?.recycle()
+        }
     }
 
     private fun isSupportedPackage(pkg: String): Boolean {
