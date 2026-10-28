@@ -1346,26 +1346,89 @@ class MainActivity : Activity() {
             return
         }
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        val current = prefs.getStringSet("entertainment_packages", emptySet())?.toMutableSet() ?: mutableSetOf()
-        val labels = apps.map { it.loadLabel(packageManager).toString() }.toTypedArray()
-        val checked = apps.map { it.activityInfo.packageName in current }.toBooleanArray()
-        AlertDialog.Builder(this)
-            .setTitle("Pilih aplikasi Entertainment")
-            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
-                val pkg = apps[which].activityInfo.packageName
-                if (isChecked) current.add(pkg) else current.remove(pkg)
-            }
-            .setPositiveButton("Simpan") { _, _ ->
-                prefs.edit().putStringSet("entertainment_packages", current.toSet()).apply()
-                toast("Daftar Entertainment disimpan")
-            }
-            .setNeutralButton("Pilih semua") { _, _ ->
-                prefs.edit().putStringSet("entertainment_packages",
-                    apps.map { it.activityInfo.packageName }.toSet()).apply()
-                toast("Semua aplikasi dipilih untuk Entertainment")
-            }
+        val selected = prefs.getStringSet("entertainment_packages", emptySet())?.toMutableSet() ?: mutableSetOf()
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+        }
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(list, ScrollView.LayoutParams(-1, -2))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("ENTERTAINMENT  /  PILIH APLIKASI")
+            .setView(scroll)
+            .setPositiveButton("Simpan", null)
+            .setNeutralButton("Pilih semua", null)
             .setNegativeButton("Batal", null)
-            .show()
+            .create()
+        fun renderApps() {
+            list.removeAllViews()
+            list.addView(label("Pilih aplikasi yang ingin ditampilkan di baris Entertainment.", 11, Color.rgb(170, 189, 213), false)
+                .apply { setPadding(dp(4), dp(2), dp(4), dp(10) }})
+            apps.forEach { resolve ->
+                val info = resolve.activityInfo
+                val pkg = info.packageName
+                val isSelected = pkg in selected
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(12), dp(7), dp(12), dp(7))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(11).toFloat()
+                        setColor(if (isSelected) Color.argb(190, 37, 61, 88) else Color.argb(115, 25, 36, 53))
+                        setStroke(dp(1), if (isSelected) Color.argb(175, 126, 190, 255) else Color.argb(55, 153, 194, 255))
+                    }
+                    isFocusable = true
+                    isClickable = true
+                    setOnFocusChangeListener { view, focused ->
+                        view.alpha = if (focused) 1f else 0.94f
+                        if (focused) playNavigationSound()
+                    }
+                    setOnClickListener {
+                        playSelectSound()
+                        if (isSelected) selected.remove(pkg) else selected.add(pkg)
+                        renderApps()
+                    }
+                    setOnKeyListener { view, keyCode, event ->
+                        if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                            keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                            view.performClick(); true
+                        } else false
+                    }
+                }
+                val icon = ImageView(this).apply {
+                    try { setImageDrawable(resolve.loadIcon(packageManager)) } catch (_: Exception) { }
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                }
+                row.addView(icon, LinearLayout.LayoutParams(dp(38), dp(38)))
+                val texts = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(12), 0, dp(8), 0)
+                }
+                texts.addView(label(resolve.loadLabel(packageManager).toString(), 13, Color.WHITE, true))
+                texts.addView(label(if (isSelected) "Dipilih untuk Entertainment" else "Ketuk untuk menambahkan", 10, Color.rgb(170, 189, 213), false))
+                row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
+                row.addView(label(if (isSelected) "✓" else "+", 19, if (isSelected) accent else Color.rgb(160, 178, 201), true))
+                list.addView(row, LinearLayout.LayoutParams(-1, dp(58)).apply { bottomMargin = dp(6) })
+            }
+        }
+        renderApps()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                prefs.edit().putStringSet("entertainment_packages", selected.toSet()).apply()
+                dialog.dismiss()
+                toast("Daftar Entertainment disimpan")
+                showHome()
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                selected.clear()
+                apps.forEach { selected.add(it.activityInfo.packageName) }
+                renderApps()
+            }
+        }
+        dialog.show()
+        dialog.window?.setLayout(dp(650), (resources.displayMetrics.heightPixels * 0.78f).toInt())
     }
 
     private fun currentGreeting(): String {
@@ -1696,31 +1759,87 @@ class MainActivity : Activity() {
         }
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val ordered = favoritePackages().filter { pkg -> apps.any { it.activityInfo.packageName == pkg } }.toMutableList()
-        val labels = apps.map { resolve ->
-            val pkg = resolve.activityInfo.packageName
-            (if (pkg in ordered) "★  " else "") + resolve.loadLabel(packageManager).toString()
-        }.toTypedArray()
-        val checked = apps.map { it.activityInfo.packageName in ordered }.toBooleanArray()
-        AlertDialog.Builder(this)
-            .setTitle("Pilih aplikasi dock favorit")
-            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
-                val pkg = apps[which].activityInfo.packageName
-                if (isChecked) {
-                    if (pkg !in ordered) ordered.add(pkg)
-                } else ordered.remove(pkg)
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+        }
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(list, ScrollView.LayoutParams(-1, -2))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("FAVORIT  /  ATUR DOCK APLIKASI")
+            .setView(scroll)
+            .setPositiveButton("Simpan", null)
+            .setNeutralButton("Kosongkan", null)
+            .setNegativeButton("Batal", null)
+            .create()
+        fun renderApps() {
+            list.removeAllViews()
+            list.addView(label("Pilih aplikasi favorit. Nomor menunjukkan urutan ikon pada dock.", 11, Color.rgb(170, 189, 213), false)
+                .apply { setPadding(dp(4), dp(2), dp(4), dp(10) }})
+            apps.forEach { resolve ->
+                val info = resolve.activityInfo
+                val pkg = info.packageName
+                val order = ordered.indexOf(pkg)
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(12), dp(7), dp(12), dp(7))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(11).toFloat()
+                        setColor(if (order >= 0) Color.argb(190, 37, 61, 88) else Color.argb(115, 25, 36, 53))
+                        setStroke(dp(1), if (order >= 0) Color.argb(175, 126, 190, 255) else Color.argb(55, 153, 194, 255))
+                    }
+                    isFocusable = true
+                    isClickable = true
+                    setOnFocusChangeListener { view, focused ->
+                        view.alpha = if (focused) 1f else 0.94f
+                        if (focused) playNavigationSound()
+                    }
+                    setOnClickListener {
+                        playSelectSound()
+                        if (order >= 0) ordered.remove(pkg) else ordered.add(pkg)
+                        renderApps()
+                    }
+                    setOnKeyListener { view, keyCode, event ->
+                        if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                            keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                            view.performClick(); true
+                        } else false
+                    }
+                }
+                val icon = ImageView(this).apply {
+                    try { setImageDrawable(resolve.loadIcon(packageManager)) } catch (_: Exception) { }
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                }
+                row.addView(icon, LinearLayout.LayoutParams(dp(38), dp(38)))
+                val texts = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(12), 0, dp(8), 0)
+                }
+                texts.addView(label(resolve.loadLabel(packageManager).toString(), 13, Color.WHITE, true))
+                texts.addView(label(if (order >= 0) "Favorit ke-\${order + 1}" else "Ketuk untuk menambahkan", 10, Color.rgb(170, 189, 213), false))
+                row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
+                row.addView(label(if (order >= 0) "\${order + 1}" else "+", 17, if (order >= 0) accent else Color.rgb(160, 178, 201), true))
+                list.addView(row, LinearLayout.LayoutParams(-1, dp(58)).apply { bottomMargin = dp(6) })
             }
-            .setPositiveButton("Simpan") { _, _ ->
+        }
+        renderApps()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 prefs.edit().putString("favorite_dock_order", ordered.joinToString(",")).apply()
+                dialog.dismiss()
                 showHome()
                 toast("Dock favorit disimpan")
             }
-            .setNeutralButton("Kosongkan") { _, _ ->
-                prefs.edit().putString("favorite_dock_order", "").apply()
-                showHome()
-                toast("Dock favorit dikosongkan")
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                ordered.clear()
+                renderApps()
             }
-            .setNegativeButton("Batal", null)
-            .show()
+        }
+        dialog.show()
+        dialog.window?.setLayout(dp(650), (resources.displayMetrics.heightPixels * 0.78f).toInt())
     }
 
     private fun openGoogleAmbientSettings() {
