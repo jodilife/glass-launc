@@ -20,6 +20,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.widget.ImageView
+import android.widget.HorizontalScrollView
 import android.view.KeyEvent
 import android.view.View
 import android.widget.EditText
