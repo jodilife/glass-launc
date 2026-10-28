@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.media.tv.TvContract
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
@@ -20,9 +21,12 @@ import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.widget.ImageView
+import android.widget.FrameLayout
+import android.widget.ScrollView
 import android.widget.HorizontalScrollView
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -48,6 +52,7 @@ class MainActivity : Activity() {
     private val bg = Color.rgb(9, 13, 22)
     private val accent = Color.rgb(126, 190, 255)
     private lateinit var root: LinearLayout
+    private lateinit var wallpaperTarget: FrameLayout
     private val actions = mutableListOf<View>()
     private var continueWatchingCard: View? = null
     private var continueBackdropArtwork: File? = null
@@ -68,7 +73,7 @@ class MainActivity : Activity() {
             if (!prefs.getBoolean("wallpaper_auto", true)) return
             val next = (prefs.getInt("wallpaper_index", 0) + 1) % wallpaperUrls.size
             prefs.edit().putInt("wallpaper_index", next).apply()
-            applyWallpaper(root)
+            applyWallpaper(wallpaperTarget)
             wallpaperHandler.postDelayed(this, 8 * 60 * 1000L)
         }
     }
@@ -130,14 +135,31 @@ class MainActivity : Activity() {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(32), dp(10), dp(32), dp(10))
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(10, 15, 24), Color.rgb(5, 8, 14))
-            )
+            background = Color.TRANSPARENT
             isFocusableInTouchMode = true
             clipChildren = false
             clipToPadding = false
         }
+
+        wallpaperTarget = FrameLayout(this).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(10, 15, 24), Color.rgb(5, 8, 14))
+            )
+            clipChildren = false
+            clipToPadding = false
+        }
+        val homeScroll = ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+            clipChildren = false
+            clipToPadding = false
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        }
+        homeScroll.addView(root, ScrollView.LayoutParams(-1, -2))
+        wallpaperTarget.addView(homeScroll, FrameLayout.LayoutParams(-1, -1))
+        applyWallpaper(wallpaperTarget)
+        scheduleWallpaperRotation()
 
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -157,8 +179,6 @@ class MainActivity : Activity() {
         header.addView(headerTimeLabel)
         root.addView(header, LinearLayout.LayoutParams(-1, dp(40)))
 
-        applyWallpaper(root)
-        scheduleWallpaperRotation()
         addDashboardPanel()
 
         val section = LinearLayout(this).apply {
@@ -184,6 +204,7 @@ class MainActivity : Activity() {
         addAction(row, "Pengaturan", "Preferensi GlassTV") { showSettings() }
         root.addView(row, LinearLayout.LayoutParams(-1, dp(72)))
         addFavoriteDock(root)
+        addPreviewChannelRows(root)
         val mediaRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.TOP
@@ -193,7 +214,7 @@ class MainActivity : Activity() {
         root.addView(mediaRow, LinearLayout.LayoutParams(-1, dp(142)))
         addContinueWatching(mediaRow)
         addHomeCctvPreview(mediaRow)
-        setContentView(root)
+        setContentView(wallpaperTarget)
         root.post {
             if (lastFocusedTitle == "LANJUTKAN MENONTON") {
                 continueWatchingCard?.requestFocus()
@@ -1257,7 +1278,7 @@ class MainActivity : Activity() {
                     5 -> {
                         val next = (prefs.getInt("wallpaper_index", 0) + 1) % wallpaperUrls.size
                         prefs.edit().putInt("wallpaper_index", next).apply()
-                        applyWallpaper(root)
+                        applyWallpaper(wallpaperTarget)
                         toast("Wallpaper diganti")
                     }
                     6 -> {
@@ -1341,6 +1362,96 @@ class MainActivity : Activity() {
         container.addView(section, LinearLayout.LayoutParams(-1, dp(68)))
     }
 
+    private fun addPreviewChannelRows(container: LinearLayout) {
+        val channels = TvPreviewChannels.read(this)
+        if (channels.isEmpty()) return
+        channels.forEach { channel ->
+            val section = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, dp(5), 0, dp(6))
+                clipChildren = false
+                clipToPadding = false
+            }
+            section.addView(label(channel.title.uppercase(Locale.getDefault()), 10, Color.rgb(166, 188, 216), true))
+            val horizontal = HorizontalScrollView(this).apply {
+                isHorizontalScrollBarEnabled = false
+                clipChildren = false
+                clipToPadding = false
+            }
+            val cards = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(dp(2), dp(5), dp(2), dp(5))
+                clipChildren = false
+                clipToPadding = false
+            }
+            channel.programs.forEach { program ->
+                val tile = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(5), dp(5), dp(5), dp(5))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(10).toFloat()
+                        setColor(Color.argb(118, 22, 32, 48))
+                        setStroke(dp(1), Color.argb(78, 153, 194, 255))
+                    }
+                    isFocusable = true
+                    isClickable = true
+                    contentDescription = program.title
+                    setOnClickListener {
+                        val intent = TvPreviewChannels.launchIntent(this@MainActivity, channel, program)
+                        if (intent != null) {
+                            try { startActivity(intent) } catch (_: Exception) { toast("Video tidak dapat dibuka.") }
+                        } else toast("Aplikasi " + channel.packageName + " tidak dapat dibuka.")
+                    }
+                    setOnFocusChangeListener { view, focused ->
+                        view.background = GradientDrawable().apply {
+                            cornerRadius = dp(10).toFloat()
+                            setColor(if (focused) Color.argb(205, 40, 61, 88) else Color.argb(118, 22, 32, 48))
+                            setStroke(dp(if (focused) 2 else 1), Color.argb(if (focused) 210 else 78, 153, 194, 255))
+                        }
+                        if (focused) playNavigationSound()
+                    }
+                }
+                val art = ImageView(this).apply {
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(7).toFloat()
+                        setColor(Color.rgb(24, 32, 45))
+                    }
+                }
+                tile.addView(art, LinearLayout.LayoutParams(dp(164), dp(78)))
+                tile.addView(label(program.title, 11, Color.WHITE, true).apply {
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(dp(2), dp(4), dp(2), 0)
+                }, LinearLayout.LayoutParams(dp(164), dp(34)))
+                cards.addView(tile, LinearLayout.LayoutParams(-2, dp(124)).apply { rightMargin = dp(9) })
+                loadPreviewArtwork(program.artwork, art)
+            }
+            horizontal.addView(cards)
+            section.addView(horizontal, LinearLayout.LayoutParams(-1, dp(134)))
+            container.addView(section, LinearLayout.LayoutParams(-1, dp(155)))
+        }
+    }
+
+    private fun loadPreviewArtwork(source: String?, target: ImageView) {
+        if (source.isNullOrBlank()) return
+        Thread({
+            try {
+                val uri = Uri.parse(source)
+                val bitmap = if (uri.scheme == "content") {
+                    contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+                } else {
+                    val connection = URL(source).openConnection().apply {
+                        connectTimeout = 5000
+                        readTimeout = 7000
+                    }
+                    connection.getInputStream().use { BitmapFactory.decodeStream(it) }
+                }
+                if (bitmap != null) runOnUiThread { if (!isFinishing) target.setImageBitmap(bitmap) }
+            } catch (_: Exception) { }
+        }, "glasstv-preview-art").start()
+    }
+
     private fun manageFavoriteDock() {
         val apps = queryTvApps()
         if (apps.isEmpty()) {
@@ -1410,7 +1521,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun applyWallpaper(target: LinearLayout) {
+    private fun applyWallpaper(target: FrameLayout) {
         val index = getSharedPreferences("glass_tv", MODE_PRIVATE)
             .getInt("wallpaper_index", 0).mod(wallpaperUrls.size)
         val file = File(cacheDir, "glasstv_wallpaper_$index.jpg")
@@ -1424,7 +1535,7 @@ class MainActivity : Activity() {
                     intArrayOf(Color.argb(66, 4, 8, 16), Color.argb(92, 5, 9, 17), Color.argb(125, 4, 7, 13))
                 )
                 runOnUiThread {
-                    if (!isFinishing && target === root) target.background = LayerDrawable(arrayOf(image, scrim))
+                    if (!isFinishing && target === wallpaperTarget) target.background = LayerDrawable(arrayOf(image, scrim))
                 }
             } catch (_: Exception) { }
         }
