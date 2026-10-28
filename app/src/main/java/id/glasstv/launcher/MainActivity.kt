@@ -68,7 +68,7 @@ class MainActivity : Activity() {
         actions.clear()
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(42), dp(26), dp(42), dp(28))
+            setPadding(dp(34), dp(14), dp(34), dp(14))
             setBackgroundColor(bg)
             isFocusableInTouchMode = true
             clipChildren = false
@@ -93,14 +93,14 @@ class MainActivity : Activity() {
 
         val subtitle = label("YOUR SCREEN. YOUR SPACE.", 12, accent, true).apply {
             setLetterSpacing(0.12f)
-            setPadding(0, dp(3), 0, dp(10))
+            setPadding(0, dp(2), 0, dp(5))
         }
         root.addView(subtitle)
 
         val hero = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(26), dp(18), dp(26), dp(18))
+            setPadding(dp(20), dp(11), dp(20), dp(11))
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
                 intArrayOf(Color.rgb(28, 47, 72), Color.rgb(16, 24, 38), Color.rgb(13, 19, 30))
@@ -113,7 +113,7 @@ class MainActivity : Activity() {
         hero.addView(label("GLASS INTERFACE   /   ANDROID TV", 12, accent, true).apply {
             setLetterSpacing(0.08f)
         })
-        hero.addView(label("Selamat datang kembali", 24, Color.WHITE, true).apply {
+        hero.addView(label("Selamat datang kembali", 21, Color.WHITE, true).apply {
             setPadding(0, dp(8), 0, dp(6))
         })
         hero.addView(label(
@@ -124,7 +124,7 @@ class MainActivity : Activity() {
             setLineSpacing(dp(3).toFloat(), 1f)
         })
         root.addView(hero, LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = dp(16)
+            bottomMargin = dp(8)
         })
         addHomeCctvPreview()
         addContinueWatching()
@@ -136,12 +136,12 @@ class MainActivity : Activity() {
         section.addView(label("AKSES CEPAT", 12, Color.rgb(160, 178, 201), true))
         section.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         section.addView(label("Pilih dengan remote  •  OK untuk membuka", 11, Color.rgb(133, 151, 174), false))
-        root.addView(section, LinearLayout.LayoutParams(-1, dp(22)))
+        root.addView(section, LinearLayout.LayoutParams(-1, dp(18)))
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, dp(4), 0, dp(2))
+            setPadding(0, dp(2), 0, dp(1))
             clipChildren = false
             clipToPadding = false
         }
@@ -150,7 +150,7 @@ class MainActivity : Activity() {
         addAction(row, "Kamera CCTV", "2 kamera • RTSP") { showCameras() }
         addAction(row, "Sumber video", "Buka URL HTTP(S)") { askVideoUrl() }
         addAction(row, "Pengaturan", "Info launcher") { showSettings() }
-        root.addView(row, LinearLayout.LayoutParams(-1, dp(78)))
+        root.addView(row, LinearLayout.LayoutParams(-1, dp(66)))
         setContentView(root)
         root.post {
             if (lastFocusedTitle == "LANJUTKAN MENONTON") {
@@ -169,7 +169,7 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 0, 0, dp(12))
+            setPadding(0, 0, 0, dp(6))
         }
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -183,7 +183,7 @@ class MainActivity : Activity() {
             setOnClickListener { showCameras() }
         }
         header.addView(manage)
-        section.addView(header, LinearLayout.LayoutParams(-1, dp(24)))
+        section.addView(header, LinearLayout.LayoutParams(-1, dp(20)))
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -194,14 +194,32 @@ class MainActivity : Activity() {
             val url = prefs.getString("camera_$index", null)?.trim().orEmpty()
             val panel = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(8), dp(6), dp(8), dp(6))
+                setPadding(dp(6), dp(3), dp(6), dp(3))
                 background = GradientDrawable().apply {
                     cornerRadius = dp(10).toFloat()
                     setColor(Color.rgb(15, 22, 34))
                     setStroke(dp(1), Color.argb(125, 126, 190, 255))
                 }
                 isFocusable = true
+                isFocusableInTouchMode = true
                 isClickable = true
+                setOnFocusChangeListener { view, focused ->
+                    view.background = GradientDrawable().apply {
+                        cornerRadius = dp(10).toFloat()
+                        setColor(if (focused) Color.rgb(32, 48, 70) else Color.rgb(15, 22, 34))
+                        setStroke(if (focused) dp(2) else dp(1),
+                            if (focused) accent else Color.argb(125, 126, 190, 255))
+                    }
+                }
+                setOnKeyListener { view, keyCode, event ->
+                    if (event.action == KeyEvent.ACTION_DOWN &&
+                        (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                         keyCode == KeyEvent.KEYCODE_ENTER ||
+                         keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                        view.performClick()
+                        true
+                    } else false
+                }
                 setOnClickListener { showCameras() }
             }
             panel.addView(label(name, 11, Color.WHITE, true).apply {
@@ -214,11 +232,11 @@ class MainActivity : Activity() {
                 setShutterBackgroundColor(Color.rgb(5, 8, 13))
                 setBackgroundColor(Color.rgb(5, 8, 13))
             }
-            panel.addView(playerView, LinearLayout.LayoutParams(-1, dp(92)))
+            panel.addView(playerView, LinearLayout.LayoutParams(-1, dp(56)))
             if (url.isBlank()) {
                 playerView.visibility = View.GONE
                 panel.addView(label("Belum diatur · buka Atur Kamera", 10, Color.rgb(220, 205, 154), false)
-                    .apply { setPadding(0, dp(10), 0, dp(10)) })
+                    .apply { setPadding(0, dp(4), 0, dp(4)) })
             } else if (url.startsWith("rtsp://", true) || url.startsWith("rtsps://", true)) {
                 try {
                     val player = ExoPlayer.Builder(this).build()
@@ -338,17 +356,17 @@ class MainActivity : Activity() {
 
         val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 0, 0, dp(16))
+            setPadding(0, 0, 0, dp(8))
         }
         outer.addView(label("LANJUTKAN MENONTON", 11, Color.rgb(160, 178, 201), true).apply {
             setLetterSpacing(0.08f)
-            setPadding(0, 0, 0, dp(7))
+            setPadding(0, 0, 0, dp(4))
         })
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(8), dp(16), dp(8))
+            setPadding(dp(12), dp(5), dp(12), dp(5))
             isFocusable = true
             isFocusableInTouchMode = true
             isClickable = true
@@ -358,6 +376,25 @@ class MainActivity : Activity() {
                 view.scaleX = if (focused) 1.015f else 1f
                 view.scaleY = if (focused) 1.015f else 1f
                 if (focused) lastFocusedTitle = "LANJUTKAN MENONTON"
+            }
+            setOnKeyListener { view, keyCode, event ->
+                if (event.action != KeyEvent.ACTION_DOWN) {
+                    false
+                } else {
+                    when (keyCode) {
+                        KeyEvent.KEYCODE_DPAD_CENTER,
+                        KeyEvent.KEYCODE_ENTER,
+                        KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                            view.performClick()
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            actions.firstOrNull()?.requestFocus()
+                            true
+                        }
+                        else -> false
+                    }
+                }
             }
         }
         continueWatchingCard = card
@@ -421,7 +458,7 @@ class MainActivity : Activity() {
                     }
                 }
             }
-            val thumbParams = LinearLayout.LayoutParams(dp(108), dp(62)).apply {
+            val thumbParams = LinearLayout.LayoutParams(dp(88), dp(50)).apply {
                 marginEnd = dp(14)
             }
             card.addView(thumbnail, thumbParams)
@@ -457,7 +494,7 @@ class MainActivity : Activity() {
             card.setOnClickListener { openContinueWatchingApp(pkg) }
         }
 
-        outer.addView(card, LinearLayout.LayoutParams(-1, dp(88)))
+        outer.addView(card, LinearLayout.LayoutParams(-1, dp(68)))
         root.addView(outer, LinearLayout.LayoutParams(-1, -2))
     }
 
