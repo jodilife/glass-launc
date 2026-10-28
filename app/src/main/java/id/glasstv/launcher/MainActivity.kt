@@ -578,7 +578,7 @@ class MainActivity : Activity() {
             setLetterSpacing(0.055f)
         })
         val accentLine = View(this).apply {
-            background = GradientDrawable().apply {
+            this.background = GradientDrawable().apply {
                 cornerRadius = dp(2).toFloat()
                 setColor(Color.rgb(199, 185, 153))
             }
