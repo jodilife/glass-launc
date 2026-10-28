@@ -106,6 +106,7 @@ class MainActivity : Activity() {
         // Keep the lightweight clock/prayer watcher alive while another TV app is in front.
         // CCTV preview players are still released to save memory.
         releaseHomePreviewPlayers()
+        wallpaperHandler.removeCallbacks(wallpaperCycle)
         super.onPause()
     }
 
@@ -117,6 +118,7 @@ class MainActivity : Activity() {
         } else if (!dashboardLoopStarted) {
             startDashboardUpdates()
         }
+        scheduleWallpaperRotation()
     }
 
     private fun showHome() {
@@ -1103,6 +1105,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         dashboardHandler.removeCallbacksAndMessages(null)
+        wallpaperHandler.removeCallbacksAndMessages(null)
         try { toneGenerator?.release() } catch (_: Exception) { }
         toneGenerator = null
         try { azanPlayer?.release() } catch (_: Exception) { }
