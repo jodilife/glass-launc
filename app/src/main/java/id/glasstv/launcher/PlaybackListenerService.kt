@@ -1,7 +1,11 @@
 package id.glasstv.launcher
 
 import android.content.ComponentName
+import android.app.Notification
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import java.io.File
 import java.io.FileOutputStream
 import android.media.MediaMetadata
@@ -20,6 +24,8 @@ import android.util.Log
 class PlaybackListenerService : NotificationListenerService() {
     private val controllers = mutableMapOf<String, MediaController>()
     private val callbacks = mutableMapOf<String, MediaController.Callback>()
+    // Store only image payloads from supported apps' notifications; notification text is never read.
+    private val notificationArtwork = mutableMapOf<String, Bitmap>()
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -32,7 +38,14 @@ class PlaybackListenerService : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        // Notification contents are deliberately ignored. Refresh only media-session metadata.
+        // Some TV players omit artwork from MediaMetadata but include it in the media notification.
+        // Read image extras only; do not inspect notification title, body, or other text.
+        val pkg = sbn.packageName
+        if (isSupportedPackage(pkg)) {
+            extractNotificationArtwork(sbn.notification)?.let { bitmap ->
+                notificationArtwork[pkg] = bitmap
+            }
+        }
         refreshSessions()
     }
 
@@ -98,8 +111,50 @@ class PlaybackListenerService : NotificationListenerService() {
     }
 
     /**
+     * Try image-only notification extras when the media session has no artwork bitmap.
+     * This intentionally does not read notification title/text.
+     */
+    private fun extractNotificationArtwork(notification: Notification): Bitmap? {
+        val extras = notification.extras
+        try {
+            val picture = extras.getParcelable(Notification.EXTRA_PICTURE) as? Bitmap
+            if (picture != null && !picture.isRecycled) return picture
+        } catch (_: Exception) { }
+
+        try {
+            val largeIconBitmap = extras.getParcelable(Notification.EXTRA_LARGE_ICON) as? Bitmap
+            if (largeIconBitmap != null && !largeIconBitmap.isRecycled) return largeIconBitmap
+        } catch (_: Exception) { }
+
+        return try {
+            drawableToBitmap(notification.getLargeIcon()?.loadDrawable(this))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun drawableToBitmap(drawable: Drawable?): Bitmap? {
+        if (drawable == null) return null
+        if (drawable is BitmapDrawable) {
+            return drawable.bitmap.takeIf { !it.isRecycled }
+        }
+        val width = drawable.intrinsicWidth.takeIf { it > 0 } ?: 320
+        val height = drawable.intrinsicHeight.takeIf { it > 0 } ?: 180
+        val ratio = minOf(1280f / width, 720f / height, 1f)
+        val bitmap = Bitmap.createBitmap(
+            (width * ratio).toInt().coerceAtLeast(1),
+            (height * ratio).toInt().coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888
+        )
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        return bitmap
+    }
+
+    /**
      * Persist media-session artwork locally. Not all players expose artwork; the UI
-     * falls back to the installed player's app icon when no video thumbnail is offered.
+     * falls back to notification artwork, then the installed player's app icon.
      */
     private fun saveArtwork(pkg: String, title: String, metadata: MediaMetadata) {
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
@@ -125,6 +180,10 @@ class PlaybackListenerService : NotificationListenerService() {
         val fileName = "watch_art_" + pkg.replace(Regex("[^A-Za-z0-9_.-]"), "_") + ".jpg"
         val target = File(filesDir, fileName)
         if (source == null) {
+            source = notificationArtwork[pkg]?.takeUnless { it.isRecycled }
+        }
+        if (source == null) {
+            Log.d(TAG, "No media-session or notification artwork available for $pkg")
             if (oldTitle != title) {
                 if (!oldName.isNullOrBlank()) File(filesDir, oldName).delete()
                 prefs.edit()
