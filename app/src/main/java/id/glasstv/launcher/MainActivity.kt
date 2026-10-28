@@ -727,7 +727,7 @@ class MainActivity : Activity() {
                 if (index == 0) continueWatchingCard = card
                 val thumb = ImageView(this).apply {
                     scaleType = ImageView.ScaleType.CENTER_CROP
-                    background = rounded(Color.rgb(18, 25, 37), 7)
+                    background = GradientDrawable().apply { setColor(Color.rgb(18, 25, 37)); cornerRadius = dp(7).toFloat() }
                     clipToOutline = true
                     contentDescription = "Artwork $title"
                     var loaded = false
