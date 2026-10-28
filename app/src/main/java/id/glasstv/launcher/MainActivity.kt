@@ -8,6 +8,8 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.LayerDrawable
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.ToneGenerator
@@ -34,6 +36,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -49,6 +53,23 @@ class MainActivity : Activity() {
     private var refreshOnResume = false
     private val homePreviewPlayers = mutableListOf<ExoPlayer>()
     private val dashboardHandler = Handler(Looper.getMainLooper())
+    private val wallpaperHandler = Handler(Looper.getMainLooper())
+    private val wallpaperUrls = listOf(
+        "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1920&q=82",
+        "https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1920&q=82",
+        "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1920&q=82",
+        "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1920&q=82"
+    )
+    private val wallpaperCycle = object : Runnable {
+        override fun run() {
+            val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+            if (!prefs.getBoolean("wallpaper_auto", true)) return
+            val next = (prefs.getInt("wallpaper_index", 0) + 1) % wallpaperUrls.size
+            prefs.edit().putInt("wallpaper_index", next).apply()
+            applyWallpaper(root)
+            wallpaperHandler.postDelayed(this, 8 * 60 * 1000L)
+        }
+    }
     private val prayerTimeLabels = mutableListOf<TextView>()
     private var headerTimeLabel: TextView? = null
     private var dashboardClockLabel: TextView? = null
@@ -104,7 +125,10 @@ class MainActivity : Activity() {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(32), dp(10), dp(32), dp(10))
-            setBackgroundColor(Color.rgb(7, 10, 17))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(10, 15, 24), Color.rgb(5, 8, 14))
+            )
             isFocusableInTouchMode = true
             clipChildren = false
             clipToPadding = false
@@ -128,6 +152,8 @@ class MainActivity : Activity() {
         header.addView(headerTimeLabel)
         root.addView(header, LinearLayout.LayoutParams(-1, dp(40)))
 
+        applyWallpaper(root)
+        scheduleWallpaperRotation()
         addDashboardPanel()
 
         val section = LinearLayout(this).apply {
@@ -206,15 +232,25 @@ class MainActivity : Activity() {
             }
         }
         left.addView(dashboardLocationLabel)
-        dashboardWeatherLabel = label("Memuat cuaca…", 12, Color.rgb(210, 221, 237), false).apply {
-            setPadding(0, dp(2), 0, 0); maxLines = 1
+        dashboardWeatherLabel = label("Memuat cuaca BMKG…", 11, Color.rgb(232, 237, 246), false).apply {
+            setPadding(0, dp(3), 0, 0)
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setLineSpacing(dp(1).toFloat(), 1.0f)
         }
         left.addView(dashboardWeatherLabel)
-        panel.addView(left, LinearLayout.LayoutParams(dp(205), -2))
+        panel.addView(left, LinearLayout.LayoutParams(dp(238), -2))
 
-        val prayerPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
-        dashboardNextPrayerLabel = label("WAKTU SALAT  •  Memuat jadwal…", 11, accent, true).apply {
-            setPadding(0, 0, 0, dp(8)); setLetterSpacing(0.04f)
+        val prayerPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+        }
+        dashboardNextPrayerLabel = label("SALAT BERIKUTNYA  •  Memuat jadwal…", 11, Color.rgb(224, 233, 247), true).apply {
+            gravity = Gravity.CENTER
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(8), 0, dp(8), dp(8))
+            setLetterSpacing(0.035f)
         }
         prayerPanel.addView(dashboardNextPrayerLabel)
         val prayerRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -259,7 +295,7 @@ class MainActivity : Activity() {
                 dashboardSnapshot = snapshot
                 renderDashboardSnapshot(snapshot, error)
             } else {
-                dashboardWeatherLabel?.text = "Cuaca: internet belum tersedia"
+                dashboardWeatherLabel?.text = "Cuaca BMKG belum tersedia\nPeriksa koneksi internet"
                 dashboardNextPrayerLabel?.text = "Jadwal salat belum tersedia"
             }
         }
@@ -268,10 +304,10 @@ class MainActivity : Activity() {
     private fun renderDashboardSnapshot(snapshot: DashboardServices.Snapshot?, error: String?) {
         if (snapshot == null) return
         dashboardLocationLabel?.text = "📍 ${snapshot.city}"
-        dashboardWeatherLabel?.text = "${snapshot.temperature}  •  ${snapshot.condition}" + if (error != null) "  · offline" else ""
+        dashboardWeatherLabel?.text = "${snapshot.temperature}  •  ${snapshot.condition}\nPrakiraan BMKG" + if (error != null) " · tersimpan" else ""
         snapshot.prayerTimes.forEachIndexed { index, time -> prayerTimeLabels.getOrNull(index)?.text = time }
         val next = DashboardServices.nextPrayer(snapshot)
-        dashboardNextPrayerLabel?.text = "WAKTU SALAT  •  Berikutnya: ${next.first}  ${next.second}"
+        dashboardNextPrayerLabel?.text = "SALAT BERIKUTNYA  •  ${next.first}  ${next.second}"
     }
 
     private fun showLocationPicker() {
@@ -1009,11 +1045,14 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val soundOn = prefs.getBoolean("ui_sound_enabled", true)
         val azanOn = prefs.getBoolean("azan_enabled", true)
+        val wallpaperAuto = prefs.getBoolean("wallpaper_auto", true)
         val entries = arrayOf(
             "Lokasi cuaca & waktu salat",
             "Suara navigasi ala konsol: ${if (soundOn) "AKTIF" else "MATI"}",
             "Azan otomatis: ${if (azanOn) "AKTIF" else "MATI"}",
             "Uji suara azan",
+            "Wallpaper berikutnya",
+            "Wallpaper otomatis: ${if (wallpaperAuto) "AKTIF" else "MATI"}",
             "Info GlassTV"
         )
         AlertDialog.Builder(this).setTitle("Pengaturan GlassTV")
@@ -1029,14 +1068,26 @@ class MainActivity : Activity() {
                         toast("Azan otomatis ${if (!azanOn) "diaktifkan" else "dimatikan"}")
                     }
                     3 -> playAzan()
-                    4 -> AlertDialog.Builder(this).setTitle("GlassTV Launcher")
+                    4 -> {
+                        val next = (prefs.getInt("wallpaper_index", 0) + 1) % wallpaperUrls.size
+                        prefs.edit().putInt("wallpaper_index", next).apply()
+                        applyWallpaper(root)
+                        toast("Wallpaper diganti")
+                    }
+                    5 -> {
+                        prefs.edit().putBoolean("wallpaper_auto", !wallpaperAuto).apply()
+                        scheduleWallpaperRotation()
+                        toast("Wallpaper otomatis ${if (!wallpaperAuto) "diaktifkan" else "dimatikan"}")
+                    }
+                    6 -> AlertDialog.Builder(this).setTitle("GlassTV Launcher")
                         .setMessage(
                             "Dashboard cuaca dan jadwal salat dengan lokasi manual.\n\n" +
-                            "• Lokasi awal: Jakarta Timur\n• Cuaca: Open-Meteo\n" +
+                            "• Cuaca: prakiraan BMKG\n" +
                             "• Jadwal salat: AlAdhan, metode 20°/18° dengan penyesuaian 2 menit\n" +
+                            "• Wallpaper fotografis berganti otomatis, dapat diatur\n" +
                             "• Efek navigasi lokal, dapat dimatikan\n" +
                             "• Suara azan melalui internet saat dashboard aktif\n\n" +
-                            "Data memerlukan internet. Launcher tidak meminta izin lokasi perangkat."
+                            "Data cuaca dan azan memerlukan internet. Launcher tidak meminta izin lokasi perangkat."
                         ).setPositiveButton("OK", null).show()
                 }
             }.setNegativeButton("Tutup", null).show()
@@ -1057,6 +1108,52 @@ class MainActivity : Activity() {
         try { azanPlayer?.release() } catch (_: Exception) { }
         azanPlayer = null
         super.onDestroy()
+    }
+
+    private fun scheduleWallpaperRotation() {
+        wallpaperHandler.removeCallbacks(wallpaperCycle)
+        if (getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("wallpaper_auto", true)) {
+            wallpaperHandler.postDelayed(wallpaperCycle, 8 * 60 * 1000L)
+        }
+    }
+
+    private fun applyWallpaper(target: LinearLayout) {
+        val index = getSharedPreferences("glass_tv", MODE_PRIVATE)
+            .getInt("wallpaper_index", 0).mod(wallpaperUrls.size)
+        val file = File(cacheDir, "glasstv_wallpaper_$index.jpg")
+        fun display(bytesFile: File) {
+            try {
+                val options = BitmapFactory.Options().apply { inSampleSize = 2 }
+                val bitmap = BitmapFactory.decodeFile(bytesFile.absolutePath, options) ?: return
+                val image = BitmapDrawable(resources, bitmap).apply { gravity = Gravity.FILL }
+                val scrim = GradientDrawable(
+                    GradientDrawable.Orientation.TOP_BOTTOM,
+                    intArrayOf(Color.argb(168, 4, 8, 16), Color.argb(178, 5, 9, 17), Color.argb(210, 4, 7, 13))
+                )
+                runOnUiThread {
+                    if (!isFinishing && target === root) target.background = LayerDrawable(arrayOf(image, scrim))
+                }
+            } catch (_: Exception) { }
+        }
+        if (file.exists() && file.length() > 12_000L) {
+            display(file)
+            return
+        }
+        Thread({
+            var connection: HttpURLConnection? = null
+            try {
+                connection = URL(wallpaperUrls[index]).openConnection() as HttpURLConnection
+                connection.connectTimeout = 8000
+                connection.readTimeout = 10000
+                connection.setRequestProperty("User-Agent", "GlassTVLauncher/0.5")
+                connection.inputStream.use { input -> file.outputStream().use { output -> input.copyTo(output) } }
+                if (file.length() > 12_000L) display(file) else file.delete()
+            } catch (_: Exception) {
+                try { file.delete() } catch (_: Exception) { }
+            } finally {
+                connection?.disconnect()
+            }
+        }, "glasstv-wallpaper").start()
     }
 
     private fun label(text: String, size: Int, color: Int, bold: Boolean): TextView =
