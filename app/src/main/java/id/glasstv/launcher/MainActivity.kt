@@ -578,10 +578,10 @@ class MainActivity : Activity() {
             setLetterSpacing(0.055f)
         })
         val accentLine = View(this).apply {
-            this.background = GradientDrawable().apply {
+            setBackground(GradientDrawable().apply {
                 cornerRadius = dp(2).toFloat()
                 setColor(Color.rgb(199, 185, 153))
-            }
+            })
         }
         card.addView(accentLine, LinearLayout.LayoutParams(dp(25), dp(2)).apply {
             topMargin = dp(4)
