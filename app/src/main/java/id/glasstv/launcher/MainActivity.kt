@@ -183,6 +183,7 @@ class MainActivity : Activity() {
         addAction(row, "Kamera CCTV", "2 kamera • RTSP") { showCameras() }
         addAction(row, "Pengaturan", "Preferensi GlassTV") { showSettings() }
         root.addView(row, LinearLayout.LayoutParams(-1, dp(72)))
+        addFavoriteDock(root)
         val mediaRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.TOP
@@ -1229,7 +1230,9 @@ class MainActivity : Activity() {
             "Wallpaper berikutnya",
             "Wallpaper otomatis: ${if (wallpaperAuto) "AKTIF" else "MATI"}",
             "Edit nama sapaan",
-            "Info GlassTV"
+            "Info GlassTV",
+            "Atur dock aplikasi favorit",
+            "Google Ambient / Art Gallery"
         )
         AlertDialog.Builder(this).setTitle("Pengaturan GlassTV")
             .setItems(entries) { _, which ->
@@ -1241,8 +1244,14 @@ class MainActivity : Activity() {
                         toast("Suara navigasi ${if (!soundOn) "diaktifkan" else "dimatikan"}")
                     }
                     3 -> {
-                        prefs.edit().putBoolean("azan_enabled", !azanOn).apply()
-                        toast("Azan otomatis ${if (!azanOn) "diaktifkan" else "dimatikan"}")
+                        val enable = !azanOn
+                        prefs.edit().putBoolean("azan_enabled", enable).apply()
+                        if (!enable) {
+                            try { azanPlayer?.stop() } catch (_: Exception) { }
+                            try { azanPlayer?.release() } catch (_: Exception) { }
+                            azanPlayer = null
+                        }
+                        toast("Azan otomatis ${if (enable) "diaktifkan" else "dimatikan"}")
                     }
                     4 -> playAzan()
                     5 -> {
@@ -1267,8 +1276,113 @@ class MainActivity : Activity() {
                             "• Suara azan melalui internet saat dashboard aktif\n\n" +
                             "Data cuaca dan azan memerlukan internet. Launcher tidak meminta izin lokasi perangkat."
                         ).setPositiveButton("OK", null).show()
+                    9 -> manageFavoriteDock()
+                    10 -> openGoogleAmbientSettings()
                 }
             }.setNegativeButton("Tutup", null).show()
+    }
+
+    private fun favoritePackages(): List<String> {
+        return getSharedPreferences("glass_tv", MODE_PRIVATE)
+            .getString("favorite_dock_order", "")
+            .orEmpty().split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    private fun addFavoriteDock(container: LinearLayout) {
+        val chosen = favoritePackages()
+        if (chosen.isEmpty()) return
+        val apps = queryTvApps().associateBy { it.activityInfo.packageName }
+        val available = chosen.mapNotNull { apps[it] }
+        if (available.isEmpty()) return
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(5), 0, dp(4))
+        }
+        section.addView(label("FAVORIT", 10, Color.rgb(150, 171, 199), true))
+        val dock = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            clipChildren = false
+            clipToPadding = false
+        }
+        available.forEach { resolve ->
+            val info = resolve.activityInfo
+            val tile = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(10), dp(5), dp(12), dp(5))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(12).toFloat()
+                    setColor(Color.argb(120, 27, 39, 57))
+                    setStroke(dp(1), Color.argb(90, 153, 194, 255))
+                }
+                isFocusable = true
+                isClickable = true
+                contentDescription = "Favorit ${resolve.loadLabel(packageManager)}"
+                setOnClickListener { launchTvApp(info.packageName, info.name) }
+                setOnFocusChangeListener { view, focused ->
+                    view.alpha = if (focused) 1f else 0.88f
+                    if (focused) playNavigationSound()
+                }
+            }
+            val icon = ImageView(this).apply {
+                try { setImageDrawable(resolve.loadIcon(packageManager)) } catch (_: Exception) { }
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+            tile.addView(icon, LinearLayout.LayoutParams(dp(28), dp(28)))
+            tile.addView(label(resolve.loadLabel(packageManager).toString(), 11, Color.WHITE, true).apply {
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp(7), 0, 0, 0)
+            })
+            dock.addView(tile, LinearLayout.LayoutParams(-2, dp(44)).apply { rightMargin = dp(8) })
+        }
+        section.addView(dock, LinearLayout.LayoutParams(-1, dp(48)))
+        container.addView(section, LinearLayout.LayoutParams(-1, dp(68)))
+    }
+
+    private fun manageFavoriteDock() {
+        val apps = queryTvApps()
+        if (apps.isEmpty()) {
+            toast("Tidak ditemukan aplikasi TV lain.")
+            return
+        }
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val ordered = favoritePackages().filter { pkg -> apps.any { it.activityInfo.packageName == pkg } }.toMutableList()
+        val labels = apps.map { resolve ->
+            val pkg = resolve.activityInfo.packageName
+            (if (pkg in ordered) "★  " else "") + resolve.loadLabel(packageManager).toString()
+        }.toTypedArray()
+        val checked = apps.map { it.activityInfo.packageName in ordered }.toBooleanArray()
+        AlertDialog.Builder(this)
+            .setTitle("Pilih aplikasi dock favorit")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                val pkg = apps[which].activityInfo.packageName
+                if (isChecked) {
+                    if (pkg !in ordered) ordered.add(pkg)
+                } else ordered.remove(pkg)
+            }
+            .setPositiveButton("Simpan") { _, _ ->
+                prefs.edit().putString("favorite_dock_order", ordered.joinToString(",")).apply()
+                showHome()
+                toast("Dock favorit disimpan")
+            }
+            .setNeutralButton("Kosongkan") { _, _ ->
+                prefs.edit().putString("favorite_dock_order", "").apply()
+                showHome()
+                toast("Dock favorit dikosongkan")
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun openGoogleAmbientSettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_DREAM_SETTINGS))
+        } catch (_: Exception) {
+            try { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+            catch (_: Exception) { toast("Pengaturan screensaver Android tidak dapat dibuka dari launcher.") }
+        }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
