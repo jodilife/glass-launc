@@ -36,59 +36,88 @@ class MainActivity : Activity() {
         actions.clear()
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(34), dp(24), dp(34), dp(24))
+            setPadding(dp(38), dp(24), dp(38), dp(26))
             setBackgroundColor(bg)
             isFocusableInTouchMode = true
+            clipChildren = false
+            clipToPadding = false
         }
 
-        // Header Layout
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        header.addView(label("GLASS", 30, Color.WHITE, true))
-        header.addView(label("TV", 30, accent, true))
-        val spacer = View(this)
-        header.addView(spacer, LinearLayout.LayoutParams(0, 1, 1f))
+        val brand = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        brand.addView(label("GLASS", 29, Color.WHITE, true))
+        brand.addView(label("TV", 29, accent, true))
+        header.addView(brand)
+        header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         val time = SimpleDateFormat("EEE, dd MMM  •  HH:mm", Locale.getDefault()).format(Date())
-        header.addView(label(time, 17, Color.LTGRAY, false))
-        root.addView(header, LinearLayout.LayoutParams(-1, dp(52)))
+        header.addView(label(time, 15, Color.rgb(185, 199, 219), false))
+        root.addView(header, LinearLayout.LayoutParams(-1, dp(46)))
 
-        // Subtitle Layout
-        val subtitle = label("Your screen. Your space.", 16, Color.rgb(185, 199, 219), false)
-        subtitle.setPadding(0, dp(2), 0, dp(18))
+        val subtitle = label("YOUR SCREEN. YOUR SPACE.", 12, accent, true).apply {
+            letterSpacing = 0.12f
+            setPadding(0, dp(4), 0, dp(18))
+        }
         root.addView(subtitle)
 
-        // Hero Content Layout
-        val hero = TextView(this).apply {
-            text = "LIVE BACKGROUND  •  GLASS INTERFACE\n\nWelcome home\n\nPilih sumber video atau buka kamera untuk memulai. Akses tuner TV internal perlu diuji pada firmware MiTV."
-            textSize = 20f
-            setTextColor(Color.WHITE)
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(26), dp(18), dp(26), dp(18))
-            setBackgroundColor(Color.rgb(19, 29, 44))
-            isFocusable = false
+            setPadding(dp(28), dp(22), dp(28), dp(22))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(28, 47, 72), Color.rgb(16, 24, 38), Color.rgb(13, 19, 30))
+            ).apply {
+                cornerRadius = dp(22).toFloat()
+                setStroke(dp(1), Color.argb(100, 126, 190, 255))
+            }
+            clipToPadding = false
         }
-        root.addView(hero, LinearLayout.LayoutParams(-1, 0, 1f))
+        hero.addView(label("GLASS INTERFACE   /   ANDROID TV", 12, accent, true).apply {
+            letterSpacing = 0.08f
+        })
+        hero.addView(label("Selamat datang kembali", 28, Color.WHITE, true).apply {
+            setPadding(0, dp(12), 0, dp(8))
+        })
+        hero.addView(label(
+            "Pilih aplikasi, buka kamera CCTV, atau putar video dari URL.\nPemutaran menggunakan aplikasi eksternal yang kompatibel.",
+            15, Color.rgb(202, 214, 231), false
+        ).apply {
+            maxLines = 3
+            setLineSpacing(dp(3).toFloat(), 1f)
+        })
+        root.addView(hero, LinearLayout.LayoutParams(-1, 0, 1f).apply {
+            bottomMargin = dp(18)
+        })
 
-        // Action Buttons Row Layout
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        section.addView(label("AKSES CEPAT", 12, Color.rgb(160, 178, 201), true))
+        section.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        section.addView(label("Pilih dengan remote  •  OK untuk membuka", 11, Color.rgb(133, 151, 174), false))
+        root.addView(section, LinearLayout.LayoutParams(-1, dp(24)))
+
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(0, dp(18), 0, 0)
+            setPadding(0, dp(8), 0, dp(4))
+            clipChildren = false
+            clipToPadding = false
         }
-        addAction(row, "Aplikasi", "Buka daftar aplikasi") { openApps() }
-        addAction(row, "Kamera CCTV", "RTSP / ONVIF") { showCameras() }
-        addAction(row, "Sumber video", "Pilih URL video") { askVideoUrl() }
-        addAction(row, "Pengaturan", "Informasi & konfigurasi") { showSettings() }
-        
-        root.addView(row, LinearLayout.LayoutParams(-1, dp(110)))
+        addAction(row, "Aplikasi", "Daftar aplikasi TV") { openApps() }
+        addAction(row, "Kamera CCTV", "4 slot kamera • RTSP") { showCameras() }
+        addAction(row, "Sumber video", "Buka URL HTTP(S)") { askVideoUrl() }
+        addAction(row, "Pengaturan", "Info launcher") { showSettings() }
+        root.addView(row, LinearLayout.LayoutParams(-1, dp(96)))
         setContentView(root)
-
-        // Alihkan fokus awal ke kartu pertama agar remote langsung merespons
-        if (actions.isNotEmpty()) {
-            actions[0].requestFocus()
-        }
+        if (actions.isNotEmpty()) root.post { actions.firstOrNull()?.requestFocus() }
     }
 
     private fun addAction(row: LinearLayout, title: String, desc: String, click: () -> Unit) {
@@ -200,10 +229,15 @@ class MainActivity : Activity() {
 
     private fun openExternalStream(url: String) {
         try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            val uri = Uri.parse(url)
+            val intent = Intent(Intent.ACTION_VIEW, uri)
+            if (intent.resolveActivity(packageManager) == null) {
+                toast("Tidak ada aplikasi pemutar yang mendukung URL ini. Pasang pemutar yang kompatibel.")
+                return
+            }
             startActivity(intent)
         } catch (_: Exception) {
-            toast("Tidak ada aplikasi yang dapat membuka stream. Pasang pemutar yang kompatibel.")
+            toast("URL tidak valid atau tidak ada aplikasi yang dapat membuka stream.")
         }
     }
 
@@ -221,8 +255,13 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this).setTitle("Aplikasi")
             .setItems(labels) { _, which ->
                 val info = apps[which].activityInfo
-                startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-                    .setClassName(info.packageName, info.name))
+                try {
+                    startActivity(Intent(Intent.ACTION_MAIN)
+                        .addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                        .setClassName(info.packageName, info.name))
+                } catch (_: Exception) {
+                    toast("Aplikasi tidak dapat dibuka. Coba jalankan dari menu sistem TV.")
+                }
             }.setNegativeButton("Tutup", null).show()
     }
 
