@@ -182,10 +182,27 @@ class MainActivity : Activity() {
         actions.add(card)
     }
 
+    private val defaultCameraUrls = listOf(
+        "rtsp://admin:admin@192.168.1.8:8554/Streaming/Channels/101",
+        "rtsp://admin:admin@192.168.1.8:8554/Streaming/Channels/102",
+        "rtsp://admin:admin@192.168.1.9:8554/Streaming/Channels/101",
+        "rtsp://admin:admin@192.168.1.9:8554/Streaming/Channels/102"
+    )
+
     private fun showCameras() {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        // Seed the four known working RTSP addresses on first launch (and migrate
+        // empty slots), so users do not have to type them manually on the TV.
+        val editor = prefs.edit()
+        for (number in 1..4) {
+            if (prefs.getString("camera_$number", null).isNullOrBlank()) {
+                editor.putString("camera_$number", defaultCameraUrls[number - 1])
+            }
+        }
+        editor.apply()
+
         val items = (1..4).map { number ->
-            val configured = !prefs.getString("camera_$number", null).isNullOrBlank()
+            val configured = !prefs.getString("camera_$number", defaultCameraUrls[number - 1]).isNullOrBlank()
             "Kamera $number  •  " + if (configured) "URL tersimpan" else "Belum dikonfigurasi"
         }.toTypedArray()
         AlertDialog.Builder(this)
@@ -198,7 +215,8 @@ class MainActivity : Activity() {
     private fun manageCamera(number: Int) {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val savedUrl = prefs.getString("camera_$number", null)
-        if (savedUrl.isNullOrBlank()) {
+            ?.takeIf { it.isNotBlank() } ?: defaultCameraUrls[number - 1]
+        if (savedUrl.isBlank()) {
             askRtsp(number)
             return
         }
