@@ -356,12 +356,9 @@ class MainActivity : Activity() {
         }
     }
 
-    private val defaultCameraUrls = listOf(
-        "rtsp://admin:admin@192.168.1.8:8554/Streaming/Channels/101",
-        "rtsp://admin:admin@192.168.1.8:8554/Streaming/Channels/102",
-        "rtsp://admin:admin@192.168.1.9:8554/Streaming/Channels/101",
-        "rtsp://admin:admin@192.168.1.9:8554/Streaming/Channels/102"
-    )
+    // Never publish camera addresses or credentials in source control.
+    // Existing on-TV values are read from shared preferences and remain untouched.
+    private val defaultCameraUrls = listOf("", "", "", "")
 
     private fun showCameras() {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
@@ -369,8 +366,11 @@ class MainActivity : Activity() {
         // empty slots), so users do not have to type them manually on the TV.
         val editor = prefs.edit()
         for (number in 1..4) {
+            // Only seed a non-empty default. Empty slots stay unconfigured until the user enters a URL.
             if (prefs.getString("camera_$number", null).isNullOrBlank()) {
-                editor.putString("camera_$number", defaultCameraUrls[number - 1])
+                defaultCameraUrls[number - 1].takeIf { it.isNotBlank() }?.let {
+                    editor.putString("camera_$number", it)
+                }
             }
         }
         editor.apply()
