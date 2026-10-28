@@ -127,8 +127,6 @@ class MainActivity : Activity() {
         root.addView(header, LinearLayout.LayoutParams(-1, dp(46)))
 
         addDashboardPanel()
-        addHomeCctvPreview()
-        addContinueWatching()
 
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -152,6 +150,8 @@ class MainActivity : Activity() {
         addAction(row, "Sumber video", "Buka URL HTTP(S)") { askVideoUrl() }
         addAction(row, "Pengaturan", "Info launcher") { showSettings() }
         root.addView(row, LinearLayout.LayoutParams(-1, dp(66)))
+        addHomeCctvPreview()
+        addContinueWatching()
         setContentView(root)
         root.post {
             if (lastFocusedTitle == "LANJUTKAN MENONTON") {
@@ -578,8 +578,8 @@ class MainActivity : Activity() {
                             view.performClick()
                             true
                         }
-                        KeyEvent.KEYCODE_DPAD_DOWN -> {
-                            actions.firstOrNull()?.requestFocus()
+                        KeyEvent.KEYCODE_DPAD_UP -> {
+                            actions.lastOrNull()?.requestFocus()
                             true
                         }
                         else -> false
