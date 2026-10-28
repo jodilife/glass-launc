@@ -136,7 +136,7 @@ class MainActivity : Activity() {
         }
         addAction(row, "Live TV", "Siaran antena") { openLiveTv() }
         addAction(row, "Entertainment", "Aplikasi TV & musik") { openApps() }
-        addAction(row, "Kamera CCTV", "4 slot kamera • RTSP") { showCameras() }
+        addAction(row, "Kamera CCTV", "2 kamera • RTSP") { showCameras() }
         addAction(row, "Sumber video", "Buka URL HTTP(S)") { askVideoUrl() }
         addAction(row, "Pengaturan", "Info launcher") { showSettings() }
         root.addView(row, LinearLayout.LayoutParams(-1, dp(78)))
