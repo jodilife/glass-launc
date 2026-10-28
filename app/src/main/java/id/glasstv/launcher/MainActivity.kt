@@ -2141,8 +2141,25 @@ class MainActivity : Activity() {
                     isFocusable = true
                     isClickable = true
                     setOnFocusChangeListener { view, focused ->
-                        view.alpha = if (focused) 1f else 0.94f
                         if (focused) playNavigationSound()
+                        view.alpha = 1f
+                        view.scaleX = if (focused) 1.025f else 1f
+                        view.scaleY = if (focused) 1.025f else 1f
+                        view.elevation = if (focused) dp(8).toFloat() else 0f
+                        view.background = GradientDrawable().apply {
+                            cornerRadius = dp(11).toFloat()
+                            setColor(
+                                if (focused) Color.rgb(68, 112, 161)
+                                else if (pkg in ordered) Color.argb(190, 37, 61, 88)
+                                else Color.argb(115, 25, 36, 53)
+                            )
+                            setStroke(
+                                dp(if (focused) 3 else 1),
+                                if (focused) Color.rgb(235, 246, 255)
+                                else if (pkg in ordered) Color.argb(210, 126, 190, 255)
+                                else Color.argb(70, 153, 194, 255)
+                            )
+                        }
                     }
                     setOnClickListener {
                         playSelectSound()
