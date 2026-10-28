@@ -698,12 +698,15 @@ class MainActivity : Activity() {
                     contentDescription = "Lanjutkan menonton: $title"
                     setOnFocusChangeListener { view, focused ->
                         if (focused) {
+                            continueWatchingCard = view
                             playNavigationSound()
                             lastFocusedTitle = "LANJUTKAN MENONTON"
                             applyContinueWatchingBackdrop(artworkFile)
                         } else {
                             view.post {
-                                if (!view.hasFocus() && !isFinishing) applyWallpaper(root)
+                                if (!view.hasFocus() && continueWatchingCard?.hasFocus() != true && !isFinishing) {
+                                    applyWallpaper(root)
+                                }
                             }
                         }
                         view.background = continueCardBackground(focused)
@@ -780,7 +783,10 @@ class MainActivity : Activity() {
      * create a blur-like effect that also works on Android 11 (API 30).
      */
     private fun applyContinueWatchingBackdrop(artworkFile: File?) {
-        if (artworkFile == null || !artworkFile.isFile || artworkFile.length() <= 0L) return
+        if (artworkFile == null || !artworkFile.isFile || artworkFile.length() <= 0L) {
+            applyWallpaper(root)
+            return
+        }
         Thread({
             try {
                 // Decode at a moderate reduction: retain the artwork's composition instead of an overly enlarged pixelated image.
@@ -1233,7 +1239,7 @@ class MainActivity : Activity() {
                 val options = BitmapFactory.Options().apply { inSampleSize = 1 }
                 val bitmap = BitmapFactory.decodeFile(bytesFile.absolutePath, options) ?: return
                 val image = BitmapDrawable(resources, bitmap).apply { gravity = Gravity.FILL }
-                        val scrim = GradientDrawable(
+                val scrim = GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM,
                     intArrayOf(Color.argb(66, 4, 8, 16), Color.argb(92, 5, 9, 17), Color.argb(125, 4, 7, 13))
                 )
