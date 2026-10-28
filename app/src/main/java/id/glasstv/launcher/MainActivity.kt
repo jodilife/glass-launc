@@ -61,6 +61,7 @@ class MainActivity : Activity() {
     private var azanPlayer: MediaPlayer? = null
     private var lastAzanKey: String = ""
     private var dashboardLoopStarted = false
+    private var lastDashboardFetchAttempt = 0L
     private val azanAudioUrl = "https://raw.githubusercontent.com/toniasep/cleartv-Islamic/main/themes/islamik/azan.mp3"
     private val dashboardTick = object : Runnable {
         override fun run() {
@@ -249,6 +250,9 @@ class MainActivity : Activity() {
     }
 
     private fun fetchDashboardData() {
+        val now = System.currentTimeMillis()
+        if (now - lastDashboardFetchAttempt < 5 * 60_000L) return
+        lastDashboardFetchAttempt = now
         DashboardServices.fetch(this) { snapshot, error ->
             if (snapshot != null) {
                 dashboardSnapshot = snapshot
@@ -278,6 +282,7 @@ class MainActivity : Activity() {
                 cities.indexOfFirst { it.name == current.name }) { dialog, which ->
                 DashboardServices.selectCity(this, cities[which])
                 dashboardSnapshot = null
+                lastDashboardFetchAttempt = 0L
                 dialog.dismiss()
                 showHome()
                 toast("Lokasi diubah ke ${cities[which].name}")
