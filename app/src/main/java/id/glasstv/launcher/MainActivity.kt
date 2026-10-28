@@ -221,7 +221,7 @@ class MainActivity : Activity() {
                 )
             ).apply {
                 cornerRadius = dp(20).toFloat()
-                setStroke(dp(1), Color.argb(76, 153, 194, 255))
+                setStroke(dp(1), Color.argb(132, 153, 194, 255))
             }
         }
         val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
