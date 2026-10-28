@@ -2490,7 +2490,7 @@ class MainActivity : Activity() {
                 intArrayOf(Color.rgb(36, 55, 79), Color.rgb(16, 25, 39))
             ).apply {
                 cornerRadius = dp(16).toFloat()
-                setStroke(dp(1), Color.argb(190, 126, 190, 255))
+                setStroke(dp(1), accentAlpha(190))
             }
             elevation = dp(12).toFloat()
         }
@@ -2502,7 +2502,7 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.argb(130, 126, 190, 255))
+                setColor(accentAlpha(130))
             }
         }
         panel.addView(mark, LinearLayout.LayoutParams(dp(30), dp(30)).apply { rightMargin = dp(11) })
