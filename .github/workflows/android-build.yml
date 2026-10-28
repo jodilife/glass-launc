@@ -2,7 +2,7 @@ name: Android APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/entertainment-dashboard]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -34,6 +34,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: GlassTV-Launcher-debug
+          name: GlassTV-Thumbnail-Test-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

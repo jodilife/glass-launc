@@ -11,6 +11,7 @@ Prototipe launcher Android TV bergaya dark glassmorphism untuk MiTV-MOSR1 / Andr
 - `config.xml` saat ini merupakan template dokumentasi; aplikasi belum membaca file tersebut secara otomatis.
 - Backup script mengumpulkan inventaris dan konfigurasi ADB, bukan backup firmware/data aplikasi penuh.
 - Debloat tidak dijalankan oleh skrip mana pun. Jangan menonaktifkan paket sistem secara massal.
+- APK **debug** thumbnail-test memakai ID paket `id.glasstv.launcher.thumbnailtest` supaya dapat dipasang berdampingan dengan aplikasi lama `id.glasstv.launcher`. Dengan begitu, pengujian tidak memerlukan uninstall atau penghapusan data aplikasi lama. Data kedua aplikasi terpisah.
 
 ## Prasyarat
 
@@ -89,7 +90,8 @@ Jika APK diunduh dari GitHub Actions, instal secara manual:
 
 ```powershell
 adb -s 192.168.1.50:5555 install -r .\app-debug.apk
-adb -s 192.168.1.50:5555 shell monkey -p id.glasstv.launcher 1
+adb -s 192.168.1.50:5555 shell cmd notification allow_listener id.glasstv.launcher.thumbnailtest/id.glasstv.launcher.PlaybackListenerService 0
+adb -s 192.168.1.50:5555 shell am start -n id.glasstv.launcher.thumbnailtest/id.glasstv.launcher.MainActivity
 ```
 
 Screenshot:
@@ -112,10 +114,28 @@ Tidak ada skrip yang menonaktifkan paket. Jika Anda kelak menonaktifkan paket se
 
 Jalankan hanya untuk paket yang sebelumnya Anda nonaktifkan dan verifikasi satu per satu. Perintah `pm enable` tidak memulihkan data aplikasi atau perubahan lain.
 
+## Continue Watching (preview)
+
+Versi 0.3.0 menambahkan baris **Lanjutkan Menonton** yang mencoba membaca metadata dari sesi media Android untuk YouTube dan SmartTube. Ini bukan integrasi riwayat akun privat dan tidak dijamin bekerja pada semua versi aplikasi/firmware.
+
+1. Buka GlassTV Launcher, lalu pilih kartu **Lanjutkan Menonton**.
+2. Pada pengaturan Android, aktifkan akses notifikasi untuk **GlassTV Continue Watching**. Launcher hanya membaca metadata sesi media, bukan isi teks notifikasi.
+3. Jika memakai APK debug/preview, izinkan akses notifikasi untuk paket preview. Untuk MiTV yang tidak menyediakan halaman pengaturan standar, jalankan:
+   ```powershell
+   adb -s IP_TV:5555 shell cmd notification allow_listener id.glasstv.launcher.thumbnailtest/id.glasstv.launcher.PlaybackListenerService 0
+   ```
+4. Putar video berdurasi minimal 3 menit dan tunggu sampai posisi pemutaran melewati 15 detik.
+5. Kembali ke launcher. Jika aplikasi menerbitkan metadata dan posisi sesi media yang kompatibel, judul dan progress akan muncul. Pilih kartu untuk membuka aplikasi sumber.
+6. Melanjutkan tepat di posisi terakhir bergantung pada kemampuan aplikasi sumber; launcher hanya membuka aplikasinya dan tidak dapat memaksa seek/resume.
+
+Batasan:
+- Akses notifikasi bersifat opsional dan harus diaktifkan pengguna secara manual.
+- Tidak semua build YouTube/SmartTube mempublikasikan judul, durasi, atau posisi dengan cara yang dapat dibaca launcher.
+- Jika tidak ada data yang kompatibel, kartu tetap menampilkan petunjuk aktivasi, bukan data tontonan palsu.
+- Fitur ini belum diverifikasi di perangkat MiTV-MOSR1 secara langsung.
+
 ## Roadmap
 
-1. Inventarisasi TV dan identifikasi cara akses sumber Live TV internal.
-2. Verifikasi build di GitHub Actions dan instalasi di TV.
-3. Tambahkan pemutaran background yang benar-benar teruji.
-4. Tambahkan penyimpanan konfigurasi kamera dan pemutar RTSP tertanam yang kompatibel.
-5. Perbaiki navigasi remote, accessibility, error states, dan pengaturan launcher.
+1. Uji pengambilan sesi media YouTube dan SmartTube di MiTV-MOSR1.
+2. Perbaiki navigasi remote dan tata letak berdasarkan screenshot TV aktual.
+3. Evaluasi Watch Next Android TV bila firmware/aplikasi menyediakan data yang dapat diakses launcher.
