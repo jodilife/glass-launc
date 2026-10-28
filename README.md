@@ -6,8 +6,8 @@ Prototipe launcher Android TV bergaya dark glassmorphism untuk MiTV-MOSR1 / Andr
 
 - Ini adalah **starter project**, bukan produk yang sudah diuji di perangkat.
 - UI awal menggunakan panel gelap dan kartu semi-transparan sederhana. Blur kaca tingkat lanjut belum diterapkan.
-- Android launcher biasa tidak otomatis dapat mengambil output tuner Live TV internal. Integrasi tersebut memerlukan pemeriksaan aplikasi/vendor API pada firmware MiTV.
-- Tombol kamera menerima URL RTSP dan meneruskannya ke aplikasi eksternal. Ini belum merupakan pemutar RTSP tertanam dan belum mengimplementasikan ONVIF discovery.
+- Tombol Live TV mencoba aplikasi tuner Xiaomi/Android TV yang umum, lalu mencari aplikasi TV yang terpasang jika package vendor berbeda. Ini membuka aplikasi tuner sistem/vendor, bukan mengambil output tuner langsung di dalam launcher.
+- Halaman Kamera CCTV menyediakan monitor RTSP 2×2 di dalam launcher, pemilihan kamera layar penuh, pengaturan nama, dan penyimpanan URL secara lokal di TV. Ini belum mengimplementasikan penemuan kamera otomatis melalui ONVIF. Dukungan stream bergantung pada codec kamera dan decoder perangkat; Media3 mendukung format RTSP umum seperti H.264, tetapi tidak semua stream akan kompatibel.
 - `config.xml` saat ini merupakan template dokumentasi; aplikasi belum membaca file tersebut secara otomatis.
 - Backup script mengumpulkan inventaris dan konfigurasi ADB, bukan backup firmware/data aplikasi penuh.
 - Debloat tidak dijalankan oleh skrip mana pun. Jangan menonaktifkan paket sistem secara massal.
@@ -144,6 +144,7 @@ Batasan:
 
 ## Roadmap
 
-1. Rapikan dan verifikasi alur rilis untuk paket utama `id.glasstv.launcher` tanpa kehilangan data dari instalasi bertanda tangan berbeda.
-2. Perbaiki navigasi remote dan tata letak berdasarkan screenshot TV aktual bila ditemukan masalah lanjutan.
-3. Evaluasi Watch Next Android TV bila firmware/aplikasi menyediakan data yang dapat diakses launcher.
+1. Uji monitor CCTV 2×2 di MiTV-MOSR1 untuk memastikan empat stream dapat didekode bersamaan dan fokus remote nyaman.
+2. Verifikasi aplikasi Live TV yang benar pada firmware MiTV; bila belum ditemukan, inventaris package/activity dari perangkat diperlukan.
+3. Rapikan alur rilis untuk paket utama `id.glasstv.launcher` tanpa kehilangan data dari instalasi bertanda tangan berbeda.
+4. Evaluasi Watch Next Android TV bila firmware/aplikasi menyediakan data yang dapat diakses launcher.
