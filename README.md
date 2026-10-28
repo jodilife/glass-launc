@@ -13,6 +13,13 @@ Prototipe launcher Android TV bergaya dark glassmorphism untuk MiTV-MOSR1 / Andr
 - Debloat tidak dijalankan oleh skrip mana pun. Jangan menonaktifkan paket sistem secara massal.
 - APK **debug** thumbnail-test memakai ID paket `id.glasstv.launcher.thumbnailtest` supaya dapat dipasang berdampingan dengan aplikasi lama `id.glasstv.launcher`. Dengan begitu, pengujian tidak memerlukan uninstall atau penghapusan data aplikasi lama. Data kedua aplikasi terpisah.
 
+## URL kamera dan kredensial (lokal saja)
+
+- Jangan simpan URL RTSP lengkap, alamat IP kamera, username, atau password kamera di source code, `config.xml`, README, screenshot, atau commit Git.
+- `config.xml` pada repositori publik sengaja berisi empat slot kosong sebagai contoh. Aplikasi saat dijalankan menyimpan URL yang dimasukkan pengguna di SharedPreferences lokal pada TV; nilai yang sudah tersimpan tidak dihapus oleh perubahan template source.
+- File lokal seperti `config.local.xml` dan `camera-config.local.xml` diabaikan oleh Git melalui `.gitignore`. Jangan menghapus aturan tersebut untuk mengunggah konfigurasi lokal.
+- Jika suatu password/URL pernah dipublikasikan di commit lama, menghapusnya dari file terbaru tidak menghapus salinan pada riwayat Git. Ganti password kamera yang pernah terpapar, kemudian perbarui URL RTSP dari menu **Kamera CCTV** pada TV. Jangan uninstall launcher atau hapus data aplikasinya demi langkah ini.
+
 ## Prasyarat
 
 - JDK 17
