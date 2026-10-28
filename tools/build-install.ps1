@@ -30,7 +30,7 @@ try {
     Write-Warning "Membuka pemilih Home. Pilih GlassTV Launcher hanya setelah menguji tombol Home dan cara kembali ke launcher sistem."
     & $adb -s $Device shell am start -a android.intent.action.MAIN -c android.intent.category.HOME
   } else {
-    & $adb -s $Device shell monkey -p id.glasstv.launcher.preview 1
+    & $adb -s $Device shell am start -n id.glasstv.launcher.preview/id.glasstv.launcher.MainActivity
   }
 } finally {
   Pop-Location
