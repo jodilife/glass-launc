@@ -437,7 +437,7 @@ class MainActivity : Activity() {
             val url = prefs.getString("camera_$index", null)?.trim().orEmpty()
             val panel = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(6), dp(3), dp(6), dp(3))
+                setPadding(dp(6), dp(4), dp(6), dp(4))
                 background = GradientDrawable().apply {
                     cornerRadius = dp(10).toFloat()
                     setColor(Color.argb(142, 15, 22, 34))
@@ -504,11 +504,11 @@ class MainActivity : Activity() {
                 playerView.visibility = View.GONE
                 panel.addView(label("URL RTSP tidak valid", 10, Color.rgb(220, 160, 150), false))
             }
-            val lp = LinearLayout.LayoutParams(0, -2, 1f)
+            val lp = LinearLayout.LayoutParams(0, dp(98), 1f)
             lp.setMargins(0, 0, if (index == 1) dp(8) else 0, 0)
             row.addView(panel, lp)
         }
-        section.addView(row, LinearLayout.LayoutParams(-1, -2))
+        section.addView(row, LinearLayout.LayoutParams(-1, dp(98)))
         mediaRow.addView(section, LinearLayout.LayoutParams(0, -1, 1.05f))
     }
 
