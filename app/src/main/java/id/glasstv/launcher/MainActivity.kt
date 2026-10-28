@@ -363,7 +363,7 @@ class MainActivity : Activity() {
         panel.addView(label("Cari kota atau kabupaten di Indonesia", 12, Color.rgb(180, 198, 220), true))
         val query = EditText(this).apply {
             hint = "Contoh: Bandung, Surabaya, Yogyakarta"
-            singleLine = true
+            setSingleLine(true)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(125, 145, 171))
             textSize = 16f
@@ -399,7 +399,7 @@ class MainActivity : Activity() {
         }
         val resultScroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
-            addView(resultList, ScrollView.LayoutParams(-1, -2))
+            addView(resultList, FrameLayout.LayoutParams(-1, -2))
         }
         panel.addView(resultScroll, LinearLayout.LayoutParams(-1, dp(270)))
         val dialog = AlertDialog.Builder(this)
@@ -1353,7 +1353,7 @@ class MainActivity : Activity() {
         }
         val scroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
-            addView(list, ScrollView.LayoutParams(-1, -2))
+            addView(list, FrameLayout.LayoutParams(-1, -2))
         }
         val dialog = AlertDialog.Builder(this)
             .setTitle("ENTERTAINMENT  /  PILIH APLIKASI")
@@ -1479,7 +1479,7 @@ class MainActivity : Activity() {
         }
         val scroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
-            addView(panel, ScrollView.LayoutParams(-1, -2))
+            addView(panel, FrameLayout.LayoutParams(-1, -2))
         }
         val dialog = AlertDialog.Builder(this)
             .setTitle("GLASSTV  /  PENGATURAN")
@@ -1765,7 +1765,7 @@ class MainActivity : Activity() {
         }
         val scroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
-            addView(list, ScrollView.LayoutParams(-1, -2))
+            addView(list, FrameLayout.LayoutParams(-1, -2))
         }
         val dialog = AlertDialog.Builder(this)
             .setTitle("FAVORIT  /  ATUR DOCK APLIKASI")
