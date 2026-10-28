@@ -1365,7 +1365,7 @@ class MainActivity : Activity() {
         fun renderApps() {
             list.removeAllViews()
             list.addView(label("Pilih aplikasi yang ingin ditampilkan di baris Entertainment.", 11, Color.rgb(170, 189, 213), false)
-                .apply { setPadding(dp(4), dp(2), dp(4), dp(10) }})
+                .apply { setPadding(dp(4), dp(2), dp(4), dp(10)) })
             apps.forEach { resolve ->
                 val info = resolve.activityInfo
                 val pkg = info.packageName
@@ -1777,7 +1777,7 @@ class MainActivity : Activity() {
         fun renderApps() {
             list.removeAllViews()
             list.addView(label("Pilih aplikasi favorit. Nomor menunjukkan urutan ikon pada dock.", 11, Color.rgb(170, 189, 213), false)
-                .apply { setPadding(dp(4), dp(2), dp(4), dp(10) }})
+                .apply { setPadding(dp(4), dp(2), dp(4), dp(10)) })
             apps.forEach { resolve ->
                 val info = resolve.activityInfo
                 val pkg = info.packageName
