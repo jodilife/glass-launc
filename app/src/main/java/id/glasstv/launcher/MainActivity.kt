@@ -413,7 +413,7 @@ class MainActivity : Activity() {
             lastDashboardFetchAttempt = 0L
             dialog.dismiss()
             showHome()
-            toast("Lokasi diubah ke \${city.name}")
+            toast("Lokasi diubah ke ${city.name}")
         }
         fun render(items: List<DashboardServices.City>, message: String? = null) {
             resultList.removeAllViews()
@@ -1490,7 +1490,7 @@ class MainActivity : Activity() {
         val soundOn = prefs.getBoolean("ui_sound_enabled", true)
         settingRow("Suara navigasi", "Bunyi singkat saat fokus dan memilih kartu", if (soundOn) "AKTIF" else "MATI") {
             prefs.edit().putBoolean("ui_sound_enabled", !soundOn).apply()
-            reopen("Suara navigasi \${if (!soundOn) "diaktifkan" else "dimatikan"}")
+            reopen("Suara navigasi ${if (!soundOn) "diaktifkan" else "dimatikan"}")
         }
         val azanOn = prefs.getBoolean("azan_enabled", true)
         settingRow("Azan otomatis", "Putar azan saat waktu salat tiba", if (azanOn) "AKTIF" else "MATI") {
@@ -1501,7 +1501,7 @@ class MainActivity : Activity() {
                 try { azanPlayer?.release() } catch (_: Exception) { }
                 azanPlayer = null
             }
-            reopen("Azan otomatis \${if (enable) "diaktifkan" else "dimatikan"}")
+            reopen("Azan otomatis ${if (enable) "diaktifkan" else "dimatikan"}")
         }
         settingRow("Uji suara azan", "Putar contoh audio untuk memastikan suara berfungsi") {
             dialog.dismiss(); playAzan()
@@ -1510,7 +1510,7 @@ class MainActivity : Activity() {
         settingRow("Wallpaper otomatis", "Ganti wallpaper secara berkala", if (wallpaperAuto) "AKTIF" else "MATI") {
             prefs.edit().putBoolean("wallpaper_auto", !wallpaperAuto).apply()
             scheduleWallpaperRotation()
-            reopen("Wallpaper otomatis \${if (!wallpaperAuto) "diaktifkan" else "dimatikan"}")
+            reopen("Wallpaper otomatis ${if (!wallpaperAuto) "diaktifkan" else "dimatikan"}")
         }
         settingRow("Wallpaper berikutnya", "Ganti ke foto latar berikutnya") {
             val next = (prefs.getInt("wallpaper_index", 0) + 1) % wallpaperUrls.size
