@@ -13,6 +13,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.media3.common.MediaItem
@@ -375,7 +376,11 @@ class CctvActivity : Activity() {
 
         AlertDialog.Builder(this)
             .setTitle("Kamera ${index + 1}")
-            .setView(form)
+            .setView(ScrollView(this).apply {
+                isFillViewport = false
+                clipToPadding = false
+                addView(form, ScrollView.LayoutParams(-1, -2))
+            })
             .setPositiveButton("Simpan") { _, _ ->
                 val name = nameInput.text.toString().trim().ifBlank { "Kamera ${index + 1}" }
                 val user = userInput.text.toString().trim()
