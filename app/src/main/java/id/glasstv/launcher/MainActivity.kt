@@ -516,38 +516,48 @@ class MainActivity : Activity() {
     }
 
     private fun addAction(row: LinearLayout, title: String, desc: String, click: () -> Unit) {
-        val cornerRadius = dp(14).toFloat()
+        val cornerRadius = dp(16).toFloat()
+
         fun cardBackground(focused: Boolean): GradientDrawable =
-            GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                if (focused)
-                    intArrayOf(Color.rgb(39, 59, 86), Color.rgb(23, 36, 55))
-                else
-                    intArrayOf(Color.rgb(22, 30, 44), Color.rgb(14, 20, 30))
-            ).apply {
+            GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                this.cornerRadius = cornerRadius
-                setStroke(if (focused) dp(2) else dp(1),
-                    if (focused) Color.rgb(155, 207, 255) else Color.argb(70, 158, 190, 230))
+                setCornerRadius(cornerRadius)
+                setColor(
+                    if (focused) Color.argb(210, 38, 58, 88)
+                    else Color.argb(160, 22, 32, 48)
+                )
+                setStroke(
+                    if (focused) dp(2) else dp(1),
+                    if (focused) accent else Color.argb(90, 126, 190, 255)
+                )
             }
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(6), dp(10), dp(6))
+            setPadding(dp(14), dp(8), dp(12), dp(8))
             background = cardBackground(false)
             isFocusable = true
             isFocusableInTouchMode = true
             isClickable = true
             contentDescription = "$title. $desc"
             setOnClickListener { click() }
+
             setOnFocusChangeListener { view, focused ->
-                if (focused) playNavigationSound()
-                view.setBackground(cardBackground(focused))
-                view.scaleX = if (focused) 1.025f else 1f
-                view.scaleY = if (focused) 1.025f else 1f
-                if (focused) lastFocusedTitle = title
+                if (focused) {
+                    playNavigationSound()
+                    lastFocusedTitle = title
+                }
+
+                view.background = cardBackground(focused)
+                view.animate().cancel()
+                view.animate()
+                    .scaleX(if (focused) 1.035f else 1f)
+                    .scaleY(if (focused) 1.035f else 1f)
+                    .setDuration(150L)
+                    .start()
             }
+
             setOnKeyListener { view, keyCode, event ->
                 if (event.action != KeyEvent.ACTION_DOWN) {
                     false
