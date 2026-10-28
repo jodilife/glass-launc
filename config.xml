@@ -12,7 +12,7 @@
         <showClock>true</showClock>
     </appearance>
     <cameras>
-        <camera id="1" name="Kamera 1" enabled="false" protocol="rtsp" url="" />
+        <camera id="1" name="Kamera 1" enabled="false" protocol="rtsp" url="" example="rtsp://user:pass@192.168.1.9:8554/Streaming/Channels/102" />
         <camera id="2" name="Kamera 2" enabled="false" protocol="rtsp" url="" />
         <camera id="3" name="Kamera 3" enabled="false" protocol="rtsp" url="" />
         <camera id="4" name="Kamera 4" enabled="false" protocol="rtsp" url="" />
