@@ -77,9 +77,14 @@ class MainActivity : Activity() {
     }
 
     private val favoriteDockTiles = mutableListOf<View>()
+    private val prayerItemViews = mutableListOf<View>()
+    private val prayerNameLabels = mutableListOf<TextView>()
     private val idleHandler = Handler(Looper.getMainLooper())
     private var idleMode = false
     private var homeHeaderView: View? = null
+    private var headerPrayerMetaLabel: TextView? = null
+    private var headerNextPrayerLabel: TextView? = null
+    private var homeMediaRowView: View? = null
     private var dashboardPanelView: View? = null
     private var weatherPanelView: View? = null
     private var prayerPanelView: View? = null
@@ -94,11 +99,50 @@ class MainActivity : Activity() {
         override fun run() { enterIdleMode() }
     }
     private val wallpaperVideoRequestCode = 7142
+    private fun idleTimeoutSeconds(): Int {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        return prefs.getInt("idle_timeout_seconds", if (prefs.getBoolean("idle_compact_mode", true)) 30 else 0)
+    }
+
     private fun resetIdleTimer() {
         idleHandler.removeCallbacks(idleTimeout)
-        if (getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("idle_compact_mode", true)) {
-            idleHandler.postDelayed(idleTimeout, idleTimeoutMs)
-        }
+        val seconds = idleTimeoutSeconds()
+        if (seconds > 0) idleHandler.postDelayed(idleTimeout, seconds * 1000L)
+    }
+
+    private fun idleTimeoutLabel(seconds: Int): String = when (seconds) {
+        0 -> "MATI"
+        15 -> "15 DETIK"
+        30 -> "30 DETIK"
+        45 -> "45 DETIK"
+        60 -> "1 MENIT"
+        120 -> "2 MENIT"
+        300 -> "5 MENIT"
+        else -> "$seconds DETIK"
+    }
+
+    private fun showIdleTimeoutPicker() {
+        val values = intArrayOf(0, 15, 30, 45, 60, 120, 300)
+        val options = arrayOf("Mati", "15 detik", "30 detik", "45 detik", "1 menit", "2 menit", "5 menit")
+        val selectedSeconds = idleTimeoutSeconds()
+        val checked = values.indexOf(selectedSeconds).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("Tampilan ringkas otomatis")
+            .setSingleChoiceItems(options, checked) { picker, which ->
+                val seconds = values[which]
+                getSharedPreferences("glass_tv", MODE_PRIVATE).edit()
+                    .putInt("idle_timeout_seconds", seconds)
+                    .putBoolean("idle_compact_mode", seconds > 0)
+                    .apply()
+                if (seconds == 0) {
+                    idleHandler.removeCallbacks(idleTimeout)
+                    exitIdleMode()
+                } else resetIdleTimer()
+                picker.dismiss()
+                showSettings()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
     }
     private lateinit var root: LinearLayout
     private lateinit var wallpaperTarget: FrameLayout
@@ -199,7 +243,12 @@ class MainActivity : Activity() {
         idleHandler.removeCallbacks(idleTimeout)
         actions.clear()
         favoriteDockTiles.clear()
+        prayerItemViews.clear()
+        prayerNameLabels.clear()
         homeHeaderView = null
+        headerPrayerMetaLabel = null
+        headerNextPrayerLabel = null
+        homeMediaRowView = null
         dashboardPanelView = null
         weatherPanelView = null
         prayerPanelView = null
@@ -259,24 +308,46 @@ class MainActivity : Activity() {
 
         header.addView(brand)
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        val time = SimpleDateFormat("EEE, dd MMM  •  HH:mm", Locale.getDefault()).format(Date())
-        headerTimeLabel = label(time, 15, Color.rgb(185, 199, 219), false)
-        header.addView(headerTimeLabel)
+        val headerRight = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setPadding(0, dp(2), 0, dp(2))
+        }
+        val time = SimpleDateFormat("EEEE, dd MMM  •  HH:mm", Locale("id", "ID")).format(Date())
+        headerTimeLabel = label(time, 12, Color.rgb(185, 199, 219), false).apply {
+            gravity = Gravity.END
+            maxLines = 1
+        }
+        headerPrayerMetaLabel = label("Waktu Sholat · Kalender Hijriyah", 10, Color.rgb(185, 199, 219), false).apply {
+            gravity = Gravity.END
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        headerNextPrayerLabel = label("Salat berikutnya · --:--", 12, accent, true).apply {
+            gravity = Gravity.END
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        headerRight.addView(headerTimeLabel)
+        headerRight.addView(headerPrayerMetaLabel)
+        headerRight.addView(headerNextPrayerLabel)
+        header.addView(headerRight, LinearLayout.LayoutParams(dp(390), -2))
         homeHeaderView = header
-        root.addView(header, LinearLayout.LayoutParams(-1, dp(40)))
+        root.addView(header, LinearLayout.LayoutParams(-1, dp(62)))
 
         addDashboardPanel()
 
-        addFavoriteDock(root)
         val mediaRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.TOP
             clipChildren = false
             clipToPadding = false
         }
+        homeMediaRowView = mediaRow
         root.addView(mediaRow, LinearLayout.LayoutParams(-1, dp(158)))
         addContinueWatching(mediaRow)
         addHomeCctvPreview(mediaRow)
+        addFavoriteDock(root)
         addBackgroundAudioRow(root)
         addPreviewChannelRows(root)
 
@@ -393,12 +464,11 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), 0, dp(4), dp(5))
         }
-        dashboardNextPrayerLabel = label("SALAT BERIKUTNYA  •  Memuat jadwal…", 11, Color.rgb(224, 233, 247), true).apply {
+        dashboardNextPrayerLabel = label("Waktu Sholat · Kalender Hijriyah", 10, Color.rgb(224, 233, 247), true).apply {
             gravity = Gravity.CENTER_VERTICAL
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(4), 0, dp(6), 0)
-            setLetterSpacing(0.035f)
         }
         prayerHeader.addView(dashboardNextPrayerLabel, LinearLayout.LayoutParams(0, dp(34), 1f))
         dashboardAzanButton = TextView(this).apply {
@@ -448,13 +518,24 @@ class MainActivity : Activity() {
         updateAzanQuickButton()
         val prayerRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         prayerTimeLabels.clear()
+        prayerNameLabels.clear()
+        prayerItemViews.clear()
         listOf("Subuh", "Syuruk", "Zuhur", "Asar", "Maghrib", "Isya").forEach { name ->
             val item = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(3), dp(2), dp(3), dp(2))
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(dp(3), dp(4), dp(3), dp(4))
+                background = GradientDrawable().apply { cornerRadius = dp(8).toFloat(); setColor(Color.TRANSPARENT) }
             }
-            item.addView(label(name, 10, Color.rgb(165, 184, 208), false).apply { gravity = Gravity.CENTER; maxLines = 1 })
+            val nameLabel = label(name, 10, Color.rgb(165, 184, 208), false).apply {
+                gravity = Gravity.CENTER
+                maxLines = 1
+            }
+            prayerNameLabels.add(nameLabel)
+            item.addView(nameLabel)
             val timeLabel = label("--:--", 13, Color.WHITE, true).apply { gravity = Gravity.CENTER; setPadding(0, dp(4), 0, 0) }
             prayerTimeLabels.add(timeLabel)
+            prayerItemViews.add(item)
             item.addView(timeLabel)
             prayerRow.addView(item, LinearLayout.LayoutParams(0, -2, 1f))
         }
@@ -488,7 +569,8 @@ class MainActivity : Activity() {
         dashboardGreetingLabel?.text = currentGreeting()
         dashboardDateLabel?.text = SimpleDateFormat("EEEE, dd MMMM yyyy", Locale("id", "ID")).format(now)
         dashboardClockLabel?.text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(now)
-        headerTimeLabel?.text = SimpleDateFormat("EEE, dd MMM  •  HH:mm", Locale("id", "ID")).format(now)
+        headerTimeLabel?.text = SimpleDateFormat("EEEE, dd MMM  •  HH:mm", Locale("id", "ID")).format(now)
+        updateHeaderPrayerInfo()
     }
 
     private fun fetchDashboardData() {
@@ -501,9 +583,38 @@ class MainActivity : Activity() {
                 renderDashboardSnapshot(snapshot, error)
             } else {
                 dashboardWeatherLabel?.text = "Cuaca BMKG belum tersedia\nPeriksa koneksi internet"
-                dashboardNextPrayerLabel?.text = "Jadwal salat belum tersedia"
+                dashboardNextPrayerLabel?.text = "Waktu Sholat ${DashboardServices.selectedCity(this).name} - Kalender Hijriyah"
+                updateHeaderPrayerInfo()
             }
         }
+    }
+
+    private fun hijriDate(date: Date): String {
+        if (android.os.Build.VERSION.SDK_INT < 24) return "Kalender Hijriyah"
+        return try {
+            val cal = android.icu.util.IslamicCalendar().apply {
+                timeZone = java.util.TimeZone.getTimeZone("Asia/Jakarta")
+                time = date
+            }
+            val months = arrayOf("Muharam", "Safar", "Rabiulawal", "Rabiulakhir", "Jumadilawal", "Jumadilakhir",
+                "Rajab", "Syakban", "Ramadan", "Syawal", "Zulkaidah", "Zulhijah")
+            val day = cal.get(android.icu.util.Calendar.DAY_OF_MONTH)
+            val month = months[cal.get(android.icu.util.Calendar.MONTH).coerceIn(0, 11)]
+            val year = cal.get(android.icu.util.Calendar.YEAR)
+            "$day $month $year H"
+        } catch (_: Exception) { "Kalender Hijriyah" }
+    }
+
+    private fun updateHeaderPrayerInfo() {
+        val city = dashboardSnapshot?.city ?: DashboardServices.selectedCity(this).name
+        headerPrayerMetaLabel?.text = "Waktu Sholat $city - ${hijriDate(Date())}"
+        val snapshot = dashboardSnapshot
+        if (snapshot == null) {
+            headerNextPrayerLabel?.text = "Salat berikutnya · --:--"
+            return
+        }
+        val next = DashboardServices.nextPrayer(snapshot)
+        headerNextPrayerLabel?.text = "${next.first} · ${next.second}"
     }
 
     private fun renderDashboardSnapshot(snapshot: DashboardServices.Snapshot?, error: String?) {
@@ -513,7 +624,20 @@ class MainActivity : Activity() {
         dashboardWeatherLabel?.text = "${snapshot.temperature}  •  ${shortCondition}\nPrakiraan BMKG" + if (error != null) " · tersimpan" else ""
         snapshot.prayerTimes.forEachIndexed { index, time -> prayerTimeLabels.getOrNull(index)?.text = time }
         val next = DashboardServices.nextPrayer(snapshot)
-        dashboardNextPrayerLabel?.text = "SALAT BERIKUTNYA  •  ${next.first}  ${next.second}"
+        val hijri = hijriDate(Date())
+        dashboardNextPrayerLabel?.text = "Waktu Sholat ${snapshot.city} - $hijri"
+        val nextIndex = snapshot.prayerNames.indexOf(next.first).takeIf { it >= 0 } ?: 0
+        prayerItemViews.forEachIndexed { index, item ->
+            val active = index == nextIndex
+            item.background = GradientDrawable().apply {
+                cornerRadius = dp(8).toFloat()
+                setColor(if (active) accentAlpha(44) else Color.TRANSPARENT)
+                if (active) setStroke(dp(1), accentAlpha(190))
+            }
+            prayerNameLabels.getOrNull(index)?.setTextColor(if (active) accent else Color.rgb(165, 184, 208))
+            prayerTimeLabels.getOrNull(index)?.setTextColor(if (active) Color.WHITE else Color.rgb(225, 232, 242))
+        }
+        updateHeaderPrayerInfo()
     }
 
     private fun safeDialogWidth(maxWidthDp: Int): Int {
@@ -1002,8 +1126,6 @@ class MainActivity : Activity() {
         }
         heading.addView(label("LANJUTKAN MENONTON", 11, Color.rgb(205, 216, 232), true))
         heading.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        heading.addView(label(if (watchItems.size > 1) "${watchItems.size} TERAKHIR" else "PROGRES TONTONAN", 9,
-            Color.rgb(165, 184, 208), false))
         outer.addView(heading, LinearLayout.LayoutParams(-1, dp(20)))
 
         val cardRow = LinearLayout(this).apply {
@@ -1078,7 +1200,8 @@ class MainActivity : Activity() {
                             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
                                 playSelectSound(); view.performClick(); true
                             }
-                            KeyEvent.KEYCODE_DPAD_UP -> { actions.lastOrNull()?.requestFocus(); true }
+                            KeyEvent.KEYCODE_DPAD_UP -> { dashboardLocationLabel?.requestFocus(); true }
+                            KeyEvent.KEYCODE_DPAD_DOWN -> { favoriteDockTiles.firstOrNull()?.requestFocus(); true }
                             else -> false
                         }
                     }
@@ -1964,7 +2087,13 @@ class MainActivity : Activity() {
         }
         val name = getSharedPreferences("glass_tv", MODE_PRIVATE)
             .getString("greeting_name", "").orEmpty().trim()
-        return if (name.isBlank()) salutation else "$salutation, $name"
+        val titleCaseSalutation = when (salutation) {
+            "Selamat pagi" -> "Selamat Pagi"
+            "Selamat siang" -> "Selamat Siang"
+            "Selamat sore" -> "Selamat Sore"
+            else -> "Selamat Malam"
+        }
+        return if (name.isBlank()) titleCaseSalutation else "$titleCaseSalutation, $name"
     }
 
     private fun showGreetingEditor() {
@@ -2115,15 +2244,9 @@ class MainActivity : Activity() {
             dialog.dismiss()
             toast("Wallpaper foto diaktifkan")
         }
-        val compactIdle = prefs.getBoolean("idle_compact_mode", true)
-        settingRow("Tampilan saat tidak digunakan", "Ringkas setelah 1 menit tanpa tombol remote", if (compactIdle) "AKTIF" else "MATI") {
-            prefs.edit().putBoolean("idle_compact_mode", !compactIdle).apply()
-            if (compactIdle) {
-                idleHandler.removeCallbacks(idleTimeout)
-                exitIdleMode()
-            } else resetIdleTimer()
+        settingRow("Tampilan saat tidak digunakan", "Atur waktu otomatis menjadi ringkas", idleTimeoutLabel(idleTimeoutSeconds())) {
             dialog.dismiss()
-            showSettings()
+            showIdleTimeoutPicker()
         }
         val wallpaperAuto = prefs.getBoolean("wallpaper_auto", true)
         settingRow("Wallpaper otomatis", "Ganti wallpaper foto secara berkala", if (wallpaperAuto) "AKTIF" else "MATI") {
@@ -2220,11 +2343,12 @@ class MainActivity : Activity() {
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_UP -> {
-                            dashboardLocationLabel?.requestFocus() ?: return@setOnKeyListener false
+                            continueWatchingCard?.requestFocus() ?: return@setOnKeyListener false
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_DOWN -> {
-                            continueWatchingCard?.requestFocus() ?: return@setOnKeyListener false
+                            val target = actions.firstOrNull() ?: return@setOnKeyListener false
+                            target.requestFocus()
                             true
                         }
                         else -> false
@@ -2515,65 +2639,29 @@ class MainActivity : Activity() {
     }
 
     private fun enterIdleMode() {
-        if (idleMode || isFinishing || !::root.isInitialized || !hasWindowFocus()) {
-            resetIdleTimer()
-            return
-        }
+        if (idleMode || isFinishing || !::root.isInitialized || !hasWindowFocus()) return
         idleMode = true
-        homeHeaderView?.visibility = View.GONE
         favoriteDockView?.visibility = View.GONE
         backgroundAudioRowView?.visibility = View.GONE
         actionMenuView?.visibility = View.GONE
-        weatherPanelView?.visibility = View.GONE
-        prayerRowView?.visibility = View.GONE
-        prayerPanelView?.let { panel ->
-            panel.findViewWithTag<View>("azan_quick_button")?.visibility = View.GONE
-            panel.layoutParams = (panel.layoutParams as? LinearLayout.LayoutParams)?.apply {
-                width = ViewGroup.LayoutParams.MATCH_PARENT
-                weight = 0f
-                leftMargin = 0
-            }
-        }
-        dashboardPanelView?.let { view ->
-            view.layoutParams = view.layoutParams.apply { height = dp(60) }
-            view.requestLayout()
-        }
-        dashboardNextPrayerLabel?.text = dashboardSnapshot?.let {
-            val nextPrayer = DashboardServices.nextPrayer(it)
-            "${nextPrayer.first.uppercase(Locale.getDefault())}  ·  ${nextPrayer.second}"
-        } ?: "JADWAL SALAT"
-        dashboardNextPrayerLabel?.textSize = 14f
-        dashboardNextPrayerLabel?.setTextColor(Color.WHITE)
-        dashboardPanelView?.requestLayout()
+        dashboardPanelView?.visibility = View.GONE
+        headerPrayerMetaLabel?.visibility = View.VISIBLE
+        headerNextPrayerLabel?.visibility = View.VISIBLE
+        homeMediaRowView?.animate()?.translationY(dp(10).toFloat())?.setDuration(260L)?.start()
         root.requestFocus()
     }
 
     private fun exitIdleMode() {
         if (!idleMode) return
         idleMode = false
-        homeHeaderView?.visibility = View.VISIBLE
         favoriteDockView?.visibility = View.VISIBLE
         backgroundAudioRowView?.visibility = View.VISIBLE
         actionMenuView?.visibility = View.VISIBLE
-        weatherPanelView?.visibility = View.VISIBLE
-        prayerRowView?.visibility = View.VISIBLE
-        prayerPanelView?.let { panel ->
-            panel.findViewWithTag<View>("azan_quick_button")?.visibility = View.VISIBLE
-            panel.layoutParams = (panel.layoutParams as? LinearLayout.LayoutParams)?.apply {
-                width = 0
-                weight = 1f
-                leftMargin = dp(6)
-            }
-        }
-        dashboardPanelView?.let { view ->
-            view.layoutParams = view.layoutParams.apply { height = dp(120) }
-            view.requestLayout()
-        }
-        dashboardNextPrayerLabel?.textSize = 11f
+        dashboardPanelView?.visibility = View.VISIBLE
+        homeMediaRowView?.animate()?.translationY(0f)?.setDuration(220L)?.start()
         dashboardSnapshot?.let { renderDashboardSnapshot(it, null) }
-        dashboardPanelView?.requestLayout()
         val target = actions.firstOrNull { it.contentDescription?.toString()?.startsWith(lastFocusedTitle) == true }
-            ?: continueWatchingCard ?: actions.firstOrNull()
+            ?: continueWatchingCard ?: favoriteDockTiles.firstOrNull() ?: actions.firstOrNull()
         target?.requestFocus()
     }
 
