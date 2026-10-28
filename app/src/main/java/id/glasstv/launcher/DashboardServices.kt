@@ -107,17 +107,17 @@ internal object DashboardServices {
                 val temp: String
                 val condition: String
                 if (city.bmkgCode.isNotBlank()) {
-                    val weatherUrl = "https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=\${city.bmkgCode}"
+                    val weatherUrl = "https://api.bmkg.go.id/publik/prakiraan-cuaca?adm4=${city.bmkgCode}"
                     val weather = latestBmkgForecast(JSONObject(get(weatherUrl)))
-                    temp = "\${weather.optInt("t", Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE }?.let { "$it°C" } ?: "Suhu --"}"
+                    temp = "${weather.optInt("t", Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE }?.let { "$it°C" } ?: "Suhu --"}"
                     condition = weather.optString("weather_desc", "").takeIf { it.isNotBlank() }
                         ?: weather.optString("weather_desc_en", "").takeIf { it.isNotBlank() }
                         ?: "Cuaca terkini"
                 } else {
-                    val weatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=\${city.lat}&longitude=\${city.lon}&current=temperature_2m,weather_code&timezone=Asia%2FJakarta"
+                    val weatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&current=temperature_2m,weather_code&timezone=Asia%2FJakarta"
                     val current = JSONObject(get(weatherUrl)).getJSONObject("current")
                     val degrees = current.optDouble("temperature_2m", Double.NaN)
-                    temp = if (degrees.isFinite()) "\${degrees.toInt()}°C" else "Suhu --"
+                    temp = if (degrees.isFinite()) "${degrees.toInt()}°C" else "Suhu --"
                     condition = weatherDescription(current.optInt("weather_code", -1))
                 }
                 val timestamp = System.currentTimeMillis() / 1000L
