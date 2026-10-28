@@ -541,7 +541,7 @@ class MainActivity : Activity() {
         prayerPanel.addView(prayerRow, LinearLayout.LayoutParams(-1, -2))
         prayerRowView = prayerRow
         prayerPanelView = prayerPanel
-        panel.addView(prayerPanel, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(6) })
+        panel.addView(prayerPanel, LinearLayout.LayoutParams(0, -1, 1f).apply { leftMargin = dp(6) })
         dashboardPanelView = panel
         root.addView(panel, LinearLayout.LayoutParams(-1, dp(120)).apply { bottomMargin = dp(7) })
     }
