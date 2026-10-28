@@ -252,7 +252,10 @@ class MainActivity : Activity() {
             val artworkName = prefs.getString("watch_artwork_$pkg", null)
             val artworkFile = artworkName?.let { File(filesDir, it) }
             val thumbnail = ImageView(this).apply {
-                scaleType = ImageView.ScaleType.CENTER_CROP
+                // Real video thumbnails are wide (16:9) and should fill the frame.
+                // App icons and square/poster art should keep their proportions instead of being cropped.
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setPadding(0, dp(8), 0, dp(8))
                 background = GradientDrawable().apply {
                     cornerRadius = dp(8).toFloat()
                     setColor(Color.rgb(28, 41, 59))
@@ -265,6 +268,14 @@ class MainActivity : Activity() {
                         val bitmap = BitmapFactory.decodeFile(artworkFile.absolutePath)
                         if (bitmap != null) {
                             setImageBitmap(bitmap)
+                            val aspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
+                            if (aspectRatio >= 1.25f) {
+                                scaleType = ImageView.ScaleType.CENTER_CROP
+                                setPadding(0, 0, 0, 0)
+                            } else {
+                                scaleType = ImageView.ScaleType.FIT_CENTER
+                                setPadding(0, dp(8), 0, dp(8))
+                            }
                             imageLoaded = true
                         }
                     } catch (_: Exception) { }
@@ -272,6 +283,8 @@ class MainActivity : Activity() {
                 if (!imageLoaded) {
                     try {
                         setImageDrawable(packageManager.getApplicationIcon(pkg))
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        setPadding(0, dp(8), 0, dp(8))
                     } catch (_: Exception) {
                         setBackgroundColor(Color.rgb(28, 41, 59))
                     }
