@@ -243,18 +243,10 @@ class MainActivity : Activity() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(18), dp(9), dp(16), dp(9))
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(
-                    Color.argb(190, 24, 34, 51),
-                    Color.argb(178, 14, 20, 31),
-                    Color.argb(165, 10, 15, 24)
-                )
-            ).apply {
-                cornerRadius = dp(20).toFloat()
-                setStroke(dp(1), Color.argb(132, 153, 194, 255))
-            }
+            setPadding(dp(4), dp(8), dp(4), dp(8))
+            setBackgroundColor(Color.TRANSPARENT)
+            clipChildren = false
+            clipToPadding = false
         }
         val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL }
         dashboardGreetingLabel = label("Selamat malam", 13, Color.WHITE, true)
@@ -264,13 +256,18 @@ class MainActivity : Activity() {
         dashboardClockLabel = label("--:--", 26, Color.WHITE, true)
         left.addView(dashboardClockLabel)
         dashboardLocationLabel = label("📍 Jakarta Timur", 12, accent, true).apply {
-            setPadding(0, dp(3), 0, 0)
+            setPadding(dp(5), dp(3), dp(5), dp(3))
             isFocusable = true
             isClickable = true
             contentDescription = "Lokasi cuaca dan waktu salat"
             setOnClickListener { showLocationPicker() }
             setOnFocusChangeListener { view, focused ->
                 (view as TextView).setTextColor(if (focused) Color.WHITE else accent)
+                view.background = if (focused) GradientDrawable().apply {
+                    cornerRadius = dp(7).toFloat()
+                    setColor(Color.argb(120, 48, 77, 111))
+                    setStroke(dp(1), Color.argb(190, 190, 220, 255))
+                } else null
                 if (focused) playNavigationSound()
             }
             setOnKeyListener { view, keyCode, event ->
@@ -290,6 +287,12 @@ class MainActivity : Activity() {
         }
         left.addView(dashboardWeatherLabel)
         panel.addView(left, LinearLayout.LayoutParams(dp(258), -1))
+        panel.addView(View(this).apply {
+            setBackgroundColor(Color.argb(72, 185, 207, 237))
+        }, LinearLayout.LayoutParams(dp(1), dp(72)).apply {
+            leftMargin = dp(12)
+            rightMargin = dp(12)
+        })
 
         val prayerPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -411,6 +414,11 @@ class MainActivity : Activity() {
         dashboardNextPrayerLabel?.text = "SALAT BERIKUTNYA  •  ${next.first}  ${next.second}"
     }
 
+    private fun safeDialogWidth(maxWidthDp: Int): Int {
+        val screenWidth = resources.displayMetrics.widthPixels
+        return minOf(dp(maxWidthDp), (screenWidth * 0.82f).toInt())
+    }
+
     private fun showLocationPicker() {
         val current = DashboardServices.selectedCity(this)
         val panel = LinearLayout(this).apply {
@@ -452,9 +460,9 @@ class MainActivity : Activity() {
             setOnFocusChangeListener { view, focused ->
                 if (focused) playNavigationSound()
                 view.alpha = 1f
-                view.scaleX = if (focused) 1.015f else 1f
-                view.scaleY = if (focused) 1.015f else 1f
-                view.elevation = if (focused) dp(8).toFloat() else 0f
+                view.scaleX = 1f
+                view.scaleY = 1f
+                view.elevation = if (focused) dp(4).toFloat() else 0f
                 view.background = GradientDrawable().apply {
                     cornerRadius = dp(10).toFloat()
                     setColor(if (focused) Color.rgb(74, 126, 180) else Color.rgb(35, 57, 83))
@@ -471,7 +479,7 @@ class MainActivity : Activity() {
             isVerticalScrollBarEnabled = false
             clipChildren = false
             clipToPadding = false
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setPadding(dp(10), dp(8), dp(10), dp(14))
             addView(resultList, FrameLayout.LayoutParams(-1, -2))
         }
         panel.addView(resultScroll, LinearLayout.LayoutParams(-1, dp(270)))
@@ -508,9 +516,9 @@ class MainActivity : Activity() {
                     setOnFocusChangeListener { view, focused ->
                         if (focused) playNavigationSound()
                         view.alpha = 1f
-                        view.scaleX = if (focused) 1.015f else 1f
-                        view.scaleY = if (focused) 1.015f else 1f
-                        view.elevation = if (focused) dp(6).toFloat() else 0f
+                        view.scaleX = 1f
+                        view.scaleY = 1f
+                        view.elevation = if (focused) dp(4).toFloat() else 0f
                         view.background = GradientDrawable().apply {
                             cornerRadius = dp(9).toFloat()
                             setColor(if (focused) Color.rgb(58, 91, 130) else Color.argb(120, 30, 43, 62))
@@ -548,11 +556,7 @@ class MainActivity : Activity() {
         }
         render(DashboardServices.cities)
         dialog.show()
-        dialog.window?.setLayout(
-            minOf(dp(650), (resources.displayMetrics.widthPixels * 0.90f).toInt()),
-            -2
-        )
-        dialog.window?.decorView?.setPadding(dp(8), dp(4), dp(8), dp(4))
+        dialog.window?.setLayout(safeDialogWidth(600), -2)
     }
 
     private fun checkForAzan() {
@@ -947,15 +951,12 @@ class MainActivity : Activity() {
                             continueWatchingCard = view
                             playNavigationSound()
                             lastFocusedTitle = "LANJUTKAN MENONTON"
-                            applyContinueWatchingBackdrop(artworkFile)
+                            applyContinueWatchingBackdrop(artworkFile, view)
                         } else {
                             view.post {
-                                if (!view.hasFocus() && !isFinishing) {
-                                    val focusedView = root.findFocus()
-                                    val description = focusedView?.contentDescription?.toString().orEmpty()
-                                    if (!description.startsWith("Lanjutkan menonton", ignoreCase = true)) {
-                                        applyWallpaper(wallpaperTarget)
-                                    }
+                                if (!view.hasFocus() && continueWatchingCard?.hasFocus() != true && !isFinishing) {
+                                    root.setBackgroundColor(Color.TRANSPARENT)
+                                    applyWallpaper(wallpaperTarget)
                                 }
                             }
                         }
@@ -1111,8 +1112,10 @@ class MainActivity : Activity() {
      * a soft, darkened backdrop. A small decoded bitmap is intentionally enlarged to
      * create a blur-like effect that also works on Android 11 (API 30).
      */
-    private fun applyContinueWatchingBackdrop(artworkFile: File?) {
+    private fun applyContinueWatchingBackdrop(artworkFile: File?, focusOwner: View) {
+        if (!focusOwner.hasFocus()) return
         if (artworkFile == null || !artworkFile.isFile || artworkFile.length() <= 0L) {
+            root.setBackgroundColor(Color.TRANSPARENT)
             applyWallpaper(wallpaperTarget)
             return
         }
@@ -1131,7 +1134,7 @@ class MainActivity : Activity() {
                     )
                 )
                 runOnUiThread {
-                    if (!isFinishing && continueWatchingCard?.hasFocus() == true) {
+                    if (!isFinishing && focusOwner.hasFocus() && continueWatchingCard === focusOwner) {
                         root.background = LayerDrawable(arrayOf(image, blurScrim))
                     } else {
                         bitmap.recycle()
@@ -1407,7 +1410,19 @@ class MainActivity : Activity() {
     }
 
     private fun launchTvApp(packageName: String, activityName: String) {
-        // Prefer package launch intent; also supports apps without a Leanback entry.
+        // Launch the exact exported activity selected from the TV/regular app catalogue first.
+        val categories = listOf(
+            Intent.CATEGORY_LEANBACK_LAUNCHER,
+            Intent.CATEGORY_LAUNCHER
+        )
+        categories.forEach { category ->
+            try {
+                startActivity(Intent(Intent.ACTION_MAIN)
+                    .addCategory(category)
+                    .setClassName(packageName, activityName))
+                return
+            } catch (_: Exception) { }
+        }
         try {
             val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
             if (launchIntent != null) {
@@ -1415,19 +1430,7 @@ class MainActivity : Activity() {
                 return
             }
         } catch (_: Exception) { }
-        try {
-            startActivity(Intent(Intent.ACTION_MAIN)
-                .addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-                .setClassName(packageName, activityName))
-        } catch (_: Exception) {
-            try {
-                startActivity(Intent(Intent.ACTION_MAIN)
-                    .addCategory(Intent.CATEGORY_LAUNCHER)
-                    .setClassName(packageName, activityName))
-            } catch (_: Exception) {
-                toast("Aplikasi tidak dapat dibuka. Coba jalankan dari menu sistem TV.")
-            }
-        }
+        toast("Aplikasi tidak dapat dibuka. Coba jalankan dari menu sistem TV.")
     }
 
     private fun showGlassSidebar() {
@@ -1590,7 +1593,9 @@ class MainActivity : Activity() {
     ) {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(10), dp(16), dp(12))
+            setPadding(dp(12), dp(10), dp(12), dp(12))
+            clipChildren = false
+            clipToPadding = false
         }
         content.addView(label("Pilih kartu lalu tekan OK pada remote.", 11, Color.rgb(169, 190, 216), false)
             .apply { setPadding(dp(4), 0, dp(4), dp(10)) })
@@ -1598,15 +1603,17 @@ class MainActivity : Activity() {
             isVerticalScrollBarEnabled = false
             clipChildren = false
             clipToPadding = false
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setPadding(dp(10), dp(8), dp(10), dp(16))
         }
         val rows = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             clipChildren = false
             clipToPadding = false
+            setPadding(0, dp(2), 0, dp(14))
         }
         scroll.addView(rows, FrameLayout.LayoutParams(-1, -2))
-        content.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        content.addView(scroll, LinearLayout.LayoutParams(-1,
+            minOf(dp(440), (resources.displayMetrics.heightPixels * 0.54f).toInt())))
         val allCards = mutableListOf<Triple<String, android.graphics.drawable.Drawable?, (() -> Unit)>>()
         apps.forEach { app ->
             val info = app.activityInfo
@@ -1640,9 +1647,9 @@ class MainActivity : Activity() {
                     isClickable = true
                     setOnFocusChangeListener { view, focused ->
                         if (focused) playNavigationSound()
-                        view.scaleX = if (focused) 1.035f else 1f
-                        view.scaleY = if (focused) 1.035f else 1f
-                        view.elevation = if (focused) dp(8).toFloat() else 0f
+                        view.scaleX = 1f
+                        view.scaleY = 1f
+                        view.elevation = if (focused) dp(5).toFloat() else 0f
                         view.background = GradientDrawable().apply {
                             cornerRadius = dp(14).toFloat()
                             setColor(if (focused) Color.rgb(57, 87, 123) else Color.argb(118, 23, 34, 51))
@@ -1687,10 +1694,9 @@ class MainActivity : Activity() {
         dialog.show()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
         dialog.window?.setLayout(
-            minOf(dp(900), (resources.displayMetrics.widthPixels * 0.90f).toInt()),
-            (resources.displayMetrics.heightPixels * 0.88f).toInt()
+            safeDialogWidth(780),
+            (resources.displayMetrics.heightPixels * 0.86f).toInt()
         )
-        dialog.window?.decorView?.setPadding(dp(8), dp(4), dp(8), dp(4))
     }
 
     private fun manageEntertainmentApps() {
@@ -1703,7 +1709,9 @@ class MainActivity : Activity() {
         val selected = prefs.getStringSet("entertainment_packages", emptySet())?.toMutableSet() ?: mutableSetOf()
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(8), dp(14), dp(8))
+            setPadding(dp(12), dp(8), dp(12), dp(10))
+            clipChildren = false
+            clipToPadding = false
         }
         val scroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
@@ -1741,9 +1749,9 @@ class MainActivity : Activity() {
                     setOnFocusChangeListener { view, focused ->
                         if (focused) playNavigationSound()
                         view.alpha = 1f
-                        view.scaleX = if (focused) 1.025f else 1f
-                        view.scaleY = if (focused) 1.025f else 1f
-                        view.elevation = if (focused) dp(7).toFloat() else 0f
+                        view.scaleX = 1f
+                        view.scaleY = 1f
+                        view.elevation = if (focused) dp(5).toFloat() else 0f
                         view.background = GradientDrawable().apply {
                             cornerRadius = dp(11).toFloat()
                             setColor(if (focused) Color.rgb(62, 99, 143) else Color.argb(115, 25, 36, 53))
@@ -1794,10 +1802,9 @@ class MainActivity : Activity() {
         }
         dialog.show()
         dialog.window?.setLayout(
-            minOf(dp(780), (resources.displayMetrics.widthPixels * 0.90f).toInt()),
-            (resources.displayMetrics.heightPixels * 0.86f).toInt()
+            safeDialogWidth(650),
+            (resources.displayMetrics.heightPixels * 0.82f).toInt()
         )
-        dialog.window?.decorView?.setPadding(dp(8), dp(4), dp(8), dp(4))
     }
 
     private fun currentGreeting(): String {
@@ -1971,8 +1978,7 @@ class MainActivity : Activity() {
         }
         dialog.show()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-        dialog.window?.setLayout(dp(700), (resources.displayMetrics.heightPixels * 0.82f).toInt())
-        dialog.window?.decorView?.setPadding(dp(10), dp(4), dp(10), dp(4))
+        dialog.window?.setLayout(safeDialogWidth(700), (resources.displayMetrics.heightPixels * 0.82f).toInt())
     }
 
     private fun favoritePackages(): List<String> {
@@ -2012,9 +2018,21 @@ class MainActivity : Activity() {
                 isFocusable = true
                 isClickable = true
                 contentDescription = "Favorit ${resolve.loadLabel(packageManager)}"
-                setOnClickListener { launchTvApp(info.packageName, info.name) }
+                setOnClickListener {
+                    playSelectSound()
+                    launchTvApp(info.packageName, info.name)
+                }
+                setOnKeyListener { view, keyCode, event ->
+                    if (event.action == KeyEvent.ACTION_DOWN &&
+                        (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER ||
+                         keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                        view.performClick()
+                        true
+                    } else false
+                }
                 setOnFocusChangeListener { view, focused ->
-                    view.alpha = if (focused) 1f else 0.88f
+                    view.alpha = if (focused) 1f else 0.90f
+                    view.elevation = if (focused) dp(4).toFloat() else 0f
                     if (focused) playNavigationSound()
                 }
             }
@@ -2138,6 +2156,9 @@ class MainActivity : Activity() {
         }
         val scroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
+            clipChildren = false
+            clipToPadding = false
+            setPadding(dp(10), dp(8), dp(10), dp(16))
             addView(list, FrameLayout.LayoutParams(-1, -2))
         }
         val dialog = AlertDialog.Builder(this)
@@ -2169,9 +2190,9 @@ class MainActivity : Activity() {
                     setOnFocusChangeListener { view, focused ->
                         if (focused) playNavigationSound()
                         view.alpha = 1f
-                        view.scaleX = if (focused) 1.025f else 1f
-                        view.scaleY = if (focused) 1.025f else 1f
-                        view.elevation = if (focused) dp(8).toFloat() else 0f
+                        view.scaleX = 1f
+                        view.scaleY = 1f
+                        view.elevation = if (focused) dp(5).toFloat() else 0f
                         view.background = GradientDrawable().apply {
                             cornerRadius = dp(11).toFloat()
                             setColor(
@@ -2229,8 +2250,7 @@ class MainActivity : Activity() {
             }
         }
         dialog.show()
-        dialog.window?.setLayout(minOf(dp(780), (resources.displayMetrics.widthPixels * 0.90f).toInt()), (resources.displayMetrics.heightPixels * 0.86f).toInt())
-        dialog.window?.decorView?.setPadding(dp(8), dp(4), dp(8), dp(4))
+        dialog.window?.setLayout(safeDialogWidth(650), (resources.displayMetrics.heightPixels * 0.82f).toInt())
     }
 
     private fun openGoogleAmbientSettings() {
@@ -2268,6 +2288,9 @@ class MainActivity : Activity() {
     }
 
     private fun applyWallpaper(target: FrameLayout) {
+        if (target === wallpaperTarget && continueWatchingCard?.hasFocus() != true) {
+            root.setBackgroundColor(Color.TRANSPARENT)
+        }
         val index = getSharedPreferences("glass_tv", MODE_PRIVATE)
             .getInt("wallpaper_index", 0).mod(wallpaperUrls.size)
         val file = File(cacheDir, "glasstv_wallpaper_$index.jpg")
