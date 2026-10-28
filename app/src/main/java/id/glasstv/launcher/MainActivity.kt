@@ -891,7 +891,7 @@ class MainActivity : Activity() {
         val accentLine = View(this).apply {
             val accentDrawable = GradientDrawable()
             accentDrawable.setCornerRadius(dp(2).toFloat())
-            accentDrawable.setColor(Color.rgb(199, 185, 153))
+            accentDrawable.setColor(accent)
             setBackground(accentDrawable)
         }
         card.addView(accentLine, LinearLayout.LayoutParams(dp(25), dp(2)).apply {
@@ -1524,7 +1524,7 @@ class MainActivity : Activity() {
                 background = GradientDrawable().apply {
                     cornerRadius = dp(12).toFloat()
                     setColor(Color.argb(80, 24, 39, 58))
-                    setStroke(dp(1), Color.argb(65, 126, 190, 255))
+                    setStroke(dp(1), accentAlpha(65))
                 }
                 isFocusable = true
                 isClickable = true
@@ -1534,7 +1534,7 @@ class MainActivity : Activity() {
                     view.background = GradientDrawable().apply {
                         cornerRadius = dp(12).toFloat()
                         setColor(if (focused) focusSurface() else Color.argb(80, 24, 39, 58))
-                        setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(65, 126, 190, 255))
+                        setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else accentAlpha(65))
                     }
                 }
                 setOnClickListener {
@@ -1685,7 +1685,7 @@ class MainActivity : Activity() {
                     background = GradientDrawable().apply {
                         cornerRadius = dp(14).toFloat()
                         setColor(Color.argb(118, 23, 34, 51))
-                        setStroke(dp(1), Color.argb(75, 153, 194, 255))
+                        setStroke(dp(1), accentAlpha(75))
                     }
                     isFocusable = true
                     isClickable = true
@@ -1697,7 +1697,7 @@ class MainActivity : Activity() {
                         view.background = GradientDrawable().apply {
                             cornerRadius = dp(14).toFloat()
                             setColor(if (focused) focusSurface() else Color.argb(118, 23, 34, 51))
-                            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(75, 153, 194, 255))
+                            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else accentAlpha(75))
                         }
                     }
                     setOnClickListener { playSelectSound(); click() }
@@ -2191,7 +2191,7 @@ class MainActivity : Activity() {
                 clipChildren = false
                 clipToPadding = false
             }
-            section.addView(label(channel.title.uppercase(Locale.getDefault()), 10, Color.rgb(166, 188, 216), true))
+            section.addView(label(channel.title.uppercase(Locale.getDefault()), 10, Color.rgb(210, 218, 228), true))
             val horizontal = HorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled = false
                 clipChildren = false
