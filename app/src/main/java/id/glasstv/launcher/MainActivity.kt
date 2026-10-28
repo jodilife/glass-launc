@@ -174,6 +174,39 @@ class MainActivity : Activity() {
         brand.addView(label("TV", 25, accent, true))
         brand.addView(label("  /  HOME ENTERTAINMENT", 10, Color.rgb(128, 148, 174), true))
         header.addView(brand)
+        val menuButton = TextView(this).apply {
+            text = "☰  MENU"
+            textSize = 10f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setPadding(dp(12), dp(7), dp(12), dp(7))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(11).toFloat()
+                setColor(Color.argb(125, 28, 42, 62))
+                setStroke(dp(1), Color.argb(145, 126, 190, 255))
+            }
+            isFocusable = true
+            isClickable = true
+            contentDescription = "Buka menu samping GlassTV"
+            setOnFocusChangeListener { view, focused ->
+                if (focused) playNavigationSound()
+                view.elevation = if (focused) dp(6).toFloat() else 0f
+                view.background = GradientDrawable().apply {
+                    cornerRadius = dp(11).toFloat()
+                    setColor(if (focused) Color.rgb(58, 91, 130) else Color.argb(125, 28, 42, 62))
+                    setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(145, 126, 190, 255))
+                }
+            }
+            setOnClickListener { playSelectSound(); showGlassSidebar() }
+            setOnKeyListener { view, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                    keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                    view.performClick(); true
+                } else false
+            }
+        }
+        header.addView(menuButton, LinearLayout.LayoutParams(-2, dp(34)).apply { leftMargin = dp(16); rightMargin = dp(14) })
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         val time = SimpleDateFormat("EEE, dd MMM  •  HH:mm", Locale.getDefault()).format(Date())
         headerTimeLabel = label(time, 15, Color.rgb(185, 199, 219), false)
@@ -1384,6 +1417,132 @@ class MainActivity : Activity() {
         } catch (_: Exception) {
             toast("Aplikasi tidak dapat dibuka. Coba jalankan dari menu sistem TV.")
         }
+    }
+
+    private fun showGlassSidebar() {
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(Color.argb(176, 3, 7, 14))
+            isFocusableInTouchMode = true
+            setOnClickListener { wallpaperTarget.removeView(this) }
+            setOnKeyListener { view, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_BACK) {
+                    wallpaperTarget.removeView(view); true
+                } else false
+            }
+        }
+        val canvas = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.argb(236, 24, 35, 51), Color.argb(229, 10, 17, 28))
+            ).apply {
+                cornerRadius = dp(26).toFloat()
+                setStroke(dp(1), Color.argb(180, 126, 190, 255))
+            }
+            elevation = dp(18).toFloat()
+            isClickable = true
+        }
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(10), dp(12), dp(10))
+        }
+        nav.addView(label("GLASSTV", 20, Color.WHITE, true).apply { setPadding(dp(8), dp(4), 0, dp(2)) })
+        nav.addView(label("CONTROL CENTER", 9, accent, true).apply { setPadding(dp(8), 0, 0, dp(18)) })
+        val menuItems = listOf(
+            "Live TV" to { openLiveTv() },
+            "Entertainment" to { openApps() },
+            "All Apps" to { openAllApps() },
+            "Kamera CCTV" to { showCameras() },
+            "Pengaturan" to { showSettings() },
+            "Lokasi & cuaca" to { showLocationPicker() }
+        )
+        var firstItem: View? = null
+        menuItems.forEachIndexed { index, item ->
+            val tile = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(11), dp(10), dp(11))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(12).toFloat()
+                    setColor(Color.argb(80, 24, 39, 58))
+                    setStroke(dp(1), Color.argb(65, 126, 190, 255))
+                }
+                isFocusable = true
+                isClickable = true
+                setOnFocusChangeListener { view, focused ->
+                    if (focused) playNavigationSound()
+                    view.elevation = if (focused) dp(7).toFloat() else 0f
+                    view.background = GradientDrawable().apply {
+                        cornerRadius = dp(12).toFloat()
+                        setColor(if (focused) Color.rgb(59, 91, 129) else Color.argb(80, 24, 39, 58))
+                        setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(65, 126, 190, 255))
+                    }
+                }
+                setOnClickListener {
+                    playSelectSound()
+                    wallpaperTarget.removeView(overlay)
+                    item.second()
+                }
+                setOnKeyListener { view, keyCode, event ->
+                    if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                        keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                        view.performClick(); true
+                    } else false
+                }
+            }
+            tile.addView(label(String.format(Locale.ROOT, "%02d", index + 1), 10, accent, true).apply {
+                gravity = Gravity.CENTER
+            }, LinearLayout.LayoutParams(dp(26), -2))
+            tile.addView(label(item.first, 13, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
+            nav.addView(tile, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+            if (firstItem == null) firstItem = tile
+        }
+        nav.addView(View(this), LinearLayout.LayoutParams(1, 0, 1f))
+        nav.addView(label("Pilih menu dengan remote TV", 10, Color.rgb(154, 174, 200), false).apply {
+            setPadding(dp(8), dp(8), 0, dp(4))
+        })
+        canvas.addView(nav, LinearLayout.LayoutParams(dp(270), -1))
+        val preview = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(30), dp(22), dp(28), dp(22))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.argb(98, 56, 78, 105), Color.argb(42, 18, 28, 43))
+            ).apply {
+                cornerRadius = dp(20).toFloat()
+                setStroke(dp(1), Color.argb(75, 190, 216, 255))
+            }
+        }
+        preview.addView(label("RUANG HIBURAN", 10, accent, true))
+        preview.addView(label("Semua yang ingin Anda tonton.", 24, Color.WHITE, true).apply {
+            setPadding(0, dp(8), 0, dp(8))
+            maxLines = 2
+        })
+        preview.addView(label("Lanjutkan tontonan, pantau CCTV, atau buka aplikasi favorit dari satu tempat.", 13, Color.rgb(192, 207, 226), false).apply {
+            maxLines = 3
+            setPadding(0, 0, 0, dp(18))
+        })
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val audioTitle = prefs.getString("audio_title", null)?.takeIf { it.isNotBlank() }
+        if (audioTitle != null) {
+            preview.addView(label("SEDANG DIPUTAR", 9, accent, true).apply { setPadding(0, 0, 0, dp(4)) })
+            preview.addView(label(audioTitle, 15, Color.WHITE, true).apply { maxLines = 2 })
+            preview.addView(label(prefs.getString("audio_artist", "").orEmpty(), 11, Color.rgb(169, 189, 214), false)
+                .apply { setPadding(0, dp(3), 0, dp(14)); maxLines = 1 })
+        }
+        val snapshot = dashboardSnapshot
+        preview.addView(label("CUACA  /  " + (snapshot?.city ?: "Jakarta Timur"), 10, accent, true)
+            .apply { setPadding(0, dp(8), 0, dp(4)) })
+        preview.addView(label(snapshot?.let { "${it.temperature}  •  ${it.condition}" } ?: "Memuat cuaca dan waktu salat…",
+            13, Color.WHITE, false).apply { maxLines = 2 })
+        canvas.addView(preview, LinearLayout.LayoutParams(0, -1, 1f).apply { leftMargin = dp(12) })
+        overlay.addView(canvas, FrameLayout.LayoutParams(-1, -1).apply {
+            setMargins(dp(28), dp(28), dp(28), dp(28))
+        })
+        wallpaperTarget.addView(overlay, FrameLayout.LayoutParams(-1, -1))
+        firstItem?.requestFocus()
     }
 
     private fun openAllApps() {
