@@ -60,7 +60,7 @@ class MainActivity : Activity() {
         root.addView(header, LinearLayout.LayoutParams(-1, dp(46)))
 
         val subtitle = label("YOUR SCREEN. YOUR SPACE.", 12, accent, true).apply {
-            letterSpacing = 0.12f
+            setLetterSpacing(0.12f)
             setPadding(0, dp(4), 0, dp(18))
         }
         root.addView(subtitle)
@@ -79,7 +79,7 @@ class MainActivity : Activity() {
             clipToPadding = false
         }
         hero.addView(label("GLASS INTERFACE   /   ANDROID TV", 12, accent, true).apply {
-            letterSpacing = 0.08f
+            setLetterSpacing(0.08f)
         })
         hero.addView(label("Selamat datang kembali", 28, Color.WHITE, true).apply {
             setPadding(0, dp(12), 0, dp(8))
@@ -111,7 +111,8 @@ class MainActivity : Activity() {
             clipChildren = false
             clipToPadding = false
         }
-        addAction(row, "Aplikasi", "Daftar aplikasi TV") { openApps() }
+        addAction(row, "Live TV", "Siaran antena") { openLiveTv() }
+        addAction(row, "Entertainment", "Aplikasi TV & musik") { openApps() }
         addAction(row, "Kamera CCTV", "4 slot kamera • RTSP") { showCameras() }
         addAction(row, "Sumber video", "Buka URL HTTP(S)") { askVideoUrl() }
         addAction(row, "Pengaturan", "Info launcher") { showSettings() }
@@ -268,6 +269,32 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun openLiveTv() {
+        val packageName = "com.mitv.livetv"
+        try {
+            // Prefer the TV manufacturer's own Live TV application so tuner/channel
+            // setup remains handled by the OEM service.
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            if (launchIntent != null) {
+                startActivity(launchIntent)
+                return
+            }
+
+            // Some OEM TV apps expose a Leanback launcher activity without a
+            // conventional getLaunchIntentForPackage result.
+            val leanbackIntent = Intent(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                .setPackage(packageName)
+            if (leanbackIntent.resolveActivity(packageManager) != null) {
+                startActivity(leanbackIntent)
+            } else {
+                toast("Aplikasi Live TV bawaan tidak ditemukan. Periksa apakah com.mitv.livetv masih terpasang.")
+            }
+        } catch (_: Exception) {
+            toast("Live TV tidak dapat dibuka. Coba buka aplikasi TV bawaan dari menu sistem.")
+        }
+    }
+
     private fun openApps() {
         val pm = packageManager
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
@@ -296,12 +323,13 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this)
             .setTitle("GlassTV Launcher — prototipe")
             .setMessage(
-                "Versi 0.1.2 (Glass Border Fix)\n\n" +
+                "Versi 0.2.0 (Entertainment Dashboard)\n\n" +
                 "• Target: Android TV 11\n" +
-                "• Navigasi remote: fokus D-pad aktif\n" +
+                "• Live TV: membuka aplikasi tuner bawaan Xiaomi/MediaTek\n" +
+                "• Entertainment: daftar aplikasi TV yang terpasang dan dapat diluncurkan\n" +
                 "• Kamera: 4 URL RTSP tersimpan lokal; stream via pemutar eksternal\n" +
-                "• Live TV internal: belum terintegrasi; perlu inventarisasi perangkat/vendor API\n\n" +
-                "Jangan jadikan launcher default sebelum pengujian ADB dan tombol Home berhasil."
+                "• Video: membuka URL HTTP(S) melalui pemutar yang kompatibel\n\n" +
+                "Preview video langsung di dalam kartu belum diaktifkan. Uji tombol OK/Back di TV sebelum menjadikan launcher default."
             )
             .setPositiveButton("OK", null).show()
     }
