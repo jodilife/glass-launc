@@ -379,7 +379,7 @@ class CctvActivity : Activity() {
             .setView(ScrollView(this).apply {
                 isFillViewport = false
                 clipToPadding = false
-                addView(form, ScrollView.LayoutParams(-1, -2))
+                addView(form)
             })
             .setPositiveButton("Simpan") { _, _ ->
                 val name = nameInput.text.toString().trim().ifBlank { "Kamera ${index + 1}" }
