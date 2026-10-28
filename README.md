@@ -11,7 +11,14 @@ Prototipe launcher Android TV bergaya dark glassmorphism untuk MiTV-MOSR1 / Andr
 - `config.xml` saat ini merupakan template dokumentasi; aplikasi belum membaca file tersebut secara otomatis.
 - Backup script mengumpulkan inventaris dan konfigurasi ADB, bukan backup firmware/data aplikasi penuh.
 - Debloat tidak dijalankan oleh skrip mana pun. Jangan menonaktifkan paket sistem secara massal.
-- APK **debug** thumbnail-test memakai ID paket `id.glasstv.launcher.thumbnailtest` supaya dapat dipasang berdampingan dengan aplikasi lama `id.glasstv.launcher`. Dengan begitu, pengujian tidak memerlukan uninstall atau penghapusan data aplikasi lama. Data kedua aplikasi terpisah.
+- APK **debug** thumbnail-test memakai ID paket `id.glasstv.launcher.dashboardtest` supaya dapat dipasang berdampingan dengan aplikasi lama `id.glasstv.launcher`. Dengan begitu, pengujian tidak memerlukan uninstall atau penghapusan data aplikasi lama. Data kedua aplikasi terpisah.
+
+## URL kamera dan kredensial (lokal saja)
+
+- Jangan simpan URL RTSP lengkap, alamat IP kamera, username, atau password kamera di source code, `config.xml`, README, screenshot, atau commit Git.
+- `config.xml` pada repositori publik sengaja berisi empat slot kosong sebagai contoh. Aplikasi saat dijalankan menyimpan URL yang dimasukkan pengguna di SharedPreferences lokal pada TV; nilai yang sudah tersimpan tidak dihapus oleh perubahan template source.
+- File lokal seperti `config.local.xml` dan `camera-config.local.xml` diabaikan oleh Git melalui `.gitignore`. Jangan menghapus aturan tersebut untuk mengunggah konfigurasi lokal.
+- Jika suatu password/URL pernah dipublikasikan di commit lama, menghapusnya dari file terbaru tidak menghapus salinan pada riwayat Git. Ganti password kamera yang pernah terpapar, kemudian perbarui URL RTSP dari menu **Kamera CCTV** pada TV. Jangan uninstall launcher atau hapus data aplikasinya demi langkah ini.
 
 ## Prasyarat
 
@@ -90,8 +97,8 @@ Jika APK diunduh dari GitHub Actions, instal secara manual:
 
 ```powershell
 adb -s 192.168.1.50:5555 install -r .\app-debug.apk
-adb -s 192.168.1.50:5555 shell cmd notification allow_listener id.glasstv.launcher.thumbnailtest/id.glasstv.launcher.PlaybackListenerService 0
-adb -s 192.168.1.50:5555 shell am start -n id.glasstv.launcher.thumbnailtest/id.glasstv.launcher.MainActivity
+adb -s 192.168.1.50:5555 shell cmd notification allow_listener id.glasstv.launcher.dashboardtest/id.glasstv.launcher.PlaybackListenerService 0
+adb -s 192.168.1.50:5555 shell am start -n id.glasstv.launcher.dashboardtest/id.glasstv.launcher.MainActivity
 ```
 
 Screenshot:
@@ -122,7 +129,7 @@ Versi 0.3.0 menambahkan baris **Lanjutkan Menonton** yang mencoba membaca metada
 2. Pada pengaturan Android, aktifkan akses notifikasi untuk **GlassTV Continue Watching**. Launcher hanya membaca metadata sesi media, bukan isi teks notifikasi.
 3. Jika memakai APK debug/preview, izinkan akses notifikasi untuk paket preview. Untuk MiTV yang tidak menyediakan halaman pengaturan standar, jalankan:
    ```powershell
-   adb -s IP_TV:5555 shell cmd notification allow_listener id.glasstv.launcher.thumbnailtest/id.glasstv.launcher.PlaybackListenerService 0
+   adb -s IP_TV:5555 shell cmd notification allow_listener id.glasstv.launcher.dashboardtest/id.glasstv.launcher.PlaybackListenerService 0
    ```
 4. Putar video berdurasi minimal 3 menit dan tunggu sampai posisi pemutaran melewati 15 detik.
 5. Kembali ke launcher. Jika aplikasi menerbitkan metadata dan posisi sesi media yang kompatibel, judul dan progress akan muncul. Pilih kartu untuk membuka aplikasi sumber.
@@ -132,10 +139,11 @@ Batasan:
 - Akses notifikasi bersifat opsional dan harus diaktifkan pengguna secara manual.
 - Tidak semua build YouTube/SmartTube mempublikasikan judul, durasi, atau posisi dengan cara yang dapat dibaca launcher.
 - Jika tidak ada data yang kompatibel, kartu tetap menampilkan petunjuk aktivasi, bukan data tontonan palsu.
-- Fitur ini belum diverifikasi di perangkat MiTV-MOSR1 secara langsung.
+- **Uji perangkat (28 Oktober 2026):** pengguna mengonfirmasi kartu berfungsi pada MiTV-MOSR1 Android 11 menggunakan build debug terpisah. Log menunjukkan `Saved real thumbnail for org.smarttube.stable using metadata_uri (640x360)`; pengguna juga mengonfirmasi dashboard menampilkan gambar setelah kembali dari SmartTube.
+- Hasil uji ini berlaku untuk kombinasi perangkat, firmware, dan versi SmartTube yang dicoba; aplikasi/firmware lain dapat menerbitkan metadata yang berbeda.
 
 ## Roadmap
 
-1. Uji pengambilan sesi media YouTube dan SmartTube di MiTV-MOSR1.
-2. Perbaiki navigasi remote dan tata letak berdasarkan screenshot TV aktual.
+1. Rapikan dan verifikasi alur rilis untuk paket utama `id.glasstv.launcher` tanpa kehilangan data dari instalasi bertanda tangan berbeda.
+2. Perbaiki navigasi remote dan tata letak berdasarkan screenshot TV aktual bila ditemukan masalah lanjutan.
 3. Evaluasi Watch Next Android TV bila firmware/aplikasi menyediakan data yang dapat diakses launcher.
