@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -11,6 +12,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
+import android.widget.ImageView
 import android.view.KeyEvent
 import android.view.View
 import android.widget.EditText
@@ -18,6 +20,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -246,6 +249,39 @@ class MainActivity : Activity() {
             }
         } else {
             val (pkg, title, _) = latestPackage
+            val artworkName = prefs.getString("watch_artwork_$pkg", null)
+            val artworkFile = artworkName?.let { File(filesDir, it) }
+            val thumbnail = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(Color.rgb(28, 41, 59))
+                }
+                clipToOutline = true
+                contentDescription = "Gambar tontonan: $title"
+                var imageLoaded = false
+                if (artworkFile != null && artworkFile.isFile) {
+                    try {
+                        val bitmap = BitmapFactory.decodeFile(artworkFile.absolutePath)
+                        if (bitmap != null) {
+                            setImageBitmap(bitmap)
+                            imageLoaded = true
+                        }
+                    } catch (_: Exception) { }
+                }
+                if (!imageLoaded) {
+                    try {
+                        setImageDrawable(packageManager.getApplicationIcon(pkg))
+                    } catch (_: Exception) {
+                        setBackgroundColor(Color.rgb(28, 41, 59))
+                    }
+                }
+            }
+            val thumbParams = LinearLayout.LayoutParams(dp(108), dp(62)).apply {
+                marginEnd = dp(14)
+            }
+            card.addView(thumbnail, thumbParams)
+
             val copy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             val appName = try {
                 packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
