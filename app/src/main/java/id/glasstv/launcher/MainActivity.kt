@@ -744,7 +744,7 @@ class MainActivity : Activity() {
                         } else {
                             view.post {
                                 if (!view.hasFocus() && continueWatchingCard?.hasFocus() != true && !isFinishing) {
-                                    applyWallpaper(root)
+                                    applyWallpaper(wallpaperTarget)
                                 }
                             }
                         }
@@ -830,7 +830,7 @@ class MainActivity : Activity() {
      */
     private fun applyContinueWatchingBackdrop(artworkFile: File?) {
         if (artworkFile == null || !artworkFile.isFile || artworkFile.length() <= 0L) {
-            applyWallpaper(root)
+            applyWallpaper(wallpaperTarget)
             return
         }
         Thread({
