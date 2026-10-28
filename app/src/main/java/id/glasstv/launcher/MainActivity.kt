@@ -98,6 +98,7 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
+        releaseHomePreviewPlayers()
         actions.clear()
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
