@@ -140,6 +140,11 @@ class MainActivity : Activity() {
             isFocusableInTouchMode = true
             clipChildren = false
             clipToPadding = false
+            setOnKeyListener { _, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_MENU) {
+                    showGlassSidebar(); true
+                } else false
+            }
         }
 
         wallpaperTarget = FrameLayout(this).apply {
@@ -174,39 +179,6 @@ class MainActivity : Activity() {
         brand.addView(label("TV", 25, accent, true))
         brand.addView(label("  /  HOME ENTERTAINMENT", 10, Color.rgb(128, 148, 174), true))
         header.addView(brand)
-        val menuButton = TextView(this).apply {
-            text = "☰  MENU"
-            textSize = 10f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            setPadding(dp(12), dp(7), dp(12), dp(7))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(11).toFloat()
-                setColor(Color.argb(125, 28, 42, 62))
-                setStroke(dp(1), Color.argb(145, 126, 190, 255))
-            }
-            isFocusable = true
-            isClickable = true
-            contentDescription = "Buka menu samping GlassTV"
-            setOnFocusChangeListener { view, focused ->
-                if (focused) playNavigationSound()
-                view.elevation = if (focused) dp(6).toFloat() else 0f
-                view.background = GradientDrawable().apply {
-                    cornerRadius = dp(11).toFloat()
-                    setColor(if (focused) Color.rgb(58, 91, 130) else Color.argb(125, 28, 42, 62))
-                    setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(145, 126, 190, 255))
-                }
-            }
-            setOnClickListener { playSelectSound(); showGlassSidebar() }
-            setOnKeyListener { view, keyCode, event ->
-                if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                    keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                    view.performClick(); true
-                } else false
-            }
-        }
-        header.addView(menuButton, LinearLayout.LayoutParams(-2, dp(34)).apply { leftMargin = dp(16); rightMargin = dp(14) })
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         val time = SimpleDateFormat("EEE, dd MMM  •  HH:mm", Locale.getDefault()).format(Date())
         headerTimeLabel = label(time, 15, Color.rgb(185, 199, 219), false)
@@ -216,7 +188,6 @@ class MainActivity : Activity() {
         addDashboardPanel()
 
         addFavoriteDock(root)
-        addPreviewChannelRows(root)
         val mediaRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.TOP
@@ -227,6 +198,7 @@ class MainActivity : Activity() {
         addContinueWatching(mediaRow)
         addHomeCctvPreview(mediaRow)
         addBackgroundAudioRow(root)
+        addPreviewChannelRows(root)
 
         val section = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -443,7 +415,9 @@ class MainActivity : Activity() {
         val current = DashboardServices.selectedCity(this)
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(8), dp(18), dp(8))
+            setPadding(dp(22), dp(8), dp(22), dp(8))
+            clipChildren = false
+            clipToPadding = false
         }
         panel.addView(label("Cari kota atau kabupaten di Indonesia", 12, Color.rgb(180, 198, 220), true))
         val query = EditText(this).apply {
@@ -798,6 +772,7 @@ class MainActivity : Activity() {
                 if (focused) {
                     playNavigationSound()
                     lastFocusedTitle = title
+                    applyWallpaper(wallpaperTarget)
                 }
 
                 view.background = cardBackground(focused)
@@ -964,7 +939,9 @@ class MainActivity : Activity() {
                             applyContinueWatchingBackdrop(artworkFile)
                         } else {
                             view.post {
-                                if (!view.hasFocus() && continueWatchingCard?.hasFocus() != true && !isFinishing) {
+                                if (!view.hasFocus() && !isFinishing &&
+                                    (continueWatchingCard?.hasFocus() != true ||
+                                     continueWatchingCard !== view)) {
                                     applyWallpaper(wallpaperTarget)
                                 }
                             }
@@ -1403,11 +1380,18 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun queryTvApps() = packageManager.queryIntentActivities(
-        Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0
-    ).filter { it.activityInfo.packageName != packageName }
-        .distinctBy { it.activityInfo.packageName }
-        .sortedBy { it.loadLabel(packageManager).toString().lowercase(Locale.getDefault()) }
+    private fun queryTvApps(): List<android.content.pm.ResolveInfo> {
+        val tvApps = packageManager.queryIntentActivities(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0
+        )
+        val regularApps = packageManager.queryIntentActivities(
+            Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0
+        )
+        return (tvApps + regularApps)
+            .filter { it.activityInfo.packageName != packageName && it.activityInfo.exported }
+            .distinctBy { "${it.activityInfo.packageName}/${it.activityInfo.name}" }
+            .sortedBy { it.loadLabel(packageManager).toString().lowercase(Locale.getDefault()) }
+    }
 
     private fun launchTvApp(packageName: String, activityName: String) {
         try {
@@ -1674,7 +1658,10 @@ class MainActivity : Activity() {
             .create()
         dialog.show()
         dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
-        dialog.window?.setLayout(dp(780), (resources.displayMetrics.heightPixels * 0.82f).toInt())
+        dialog.window?.setLayout(
+            minOf(dp(780), (resources.displayMetrics.widthPixels * 0.88f).toInt()),
+            (resources.displayMetrics.heightPixels * 0.82f).toInt()
+        )
     }
 
     private fun manageEntertainmentApps() {
