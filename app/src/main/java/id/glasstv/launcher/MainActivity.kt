@@ -179,7 +179,6 @@ class MainActivity : Activity() {
         addAction(row, "Entertainment", "Pilihan aplikasi") { openApps() }
         addAction(row, "All Apps", "Semua aplikasi TV") { openAllApps() }
         addAction(row, "Kamera CCTV", "2 kamera • RTSP") { showCameras() }
-        addAction(row, "Sumber video", "Buka URL HTTP(S)") { askVideoUrl() }
         addAction(row, "Pengaturan", "Preferensi GlassTV") { showSettings() }
         root.addView(row, LinearLayout.LayoutParams(-1, dp(72)))
         val mediaRow = LinearLayout(this).apply {
@@ -214,7 +213,11 @@ class MainActivity : Activity() {
             setPadding(dp(18), dp(9), dp(16), dp(9))
             background = GradientDrawable(
                 GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(24, 34, 51), Color.rgb(14, 20, 31), Color.rgb(10, 15, 24))
+                intArrayOf(
+                    Color.argb(190, 24, 34, 51),
+                    Color.argb(178, 14, 20, 31),
+                    Color.argb(165, 10, 15, 24)
+                )
             ).apply {
                 cornerRadius = dp(20).toFloat()
                 setStroke(dp(1), Color.argb(76, 153, 194, 255))
@@ -436,8 +439,8 @@ class MainActivity : Activity() {
                 setPadding(dp(6), dp(3), dp(6), dp(3))
                 background = GradientDrawable().apply {
                     cornerRadius = dp(10).toFloat()
-                    setColor(Color.rgb(15, 22, 34))
-                    setStroke(dp(1), Color.argb(125, 126, 190, 255))
+                    setColor(Color.argb(142, 15, 22, 34))
+                    setStroke(dp(1), Color.argb(105, 126, 190, 255))
                 }
                 isFocusable = true
                 isFocusableInTouchMode = true
@@ -446,9 +449,9 @@ class MainActivity : Activity() {
                     if (focused) playNavigationSound()
                     view.background = GradientDrawable().apply {
                         cornerRadius = dp(10).toFloat()
-                        setColor(if (focused) Color.rgb(32, 48, 70) else Color.rgb(15, 22, 34))
+                        setColor(if (focused) Color.argb(205, 32, 48, 70) else Color.argb(142, 15, 22, 34))
                         setStroke(if (focused) dp(2) else dp(1),
-                            if (focused) accent else Color.argb(125, 126, 190, 255))
+                            if (focused) accent else Color.argb(105, 126, 190, 255))
                     }
                 }
                 setOnKeyListener { view, keyCode, event ->
@@ -505,7 +508,7 @@ class MainActivity : Activity() {
             row.addView(panel, lp)
         }
         section.addView(row, LinearLayout.LayoutParams(-1, -2))
-        mediaRow.addView(section, LinearLayout.LayoutParams(0, -1, 1.15f))
+        mediaRow.addView(section, LinearLayout.LayoutParams(0, -1, 1.05f))
     }
 
     private fun releaseHomePreviewPlayers() {
@@ -523,8 +526,8 @@ class MainActivity : Activity() {
                 shape = GradientDrawable.RECTANGLE
                 setCornerRadius(cornerRadius)
                 setColor(
-                    if (focused) Color.argb(210, 38, 58, 88)
-                    else Color.argb(160, 22, 32, 48)
+                    if (focused) Color.argb(190, 38, 58, 88)
+                    else Color.argb(125, 22, 32, 48)
                 )
                 setStroke(
                     if (focused) dp(2) else dp(1),
@@ -591,7 +594,6 @@ class MainActivity : Activity() {
             "Entertainment" -> "PILIHAN APLIKASI"
             "All Apps" -> "SEMUA APLIKASI"
             "Kamera CCTV" -> "PANTAU LANGSUNG"
-            "Sumber video" -> "STREAMING URL"
             else -> "PREFERENSI"
         }
         card.addView(label("$number  /  $category", 8, Color.rgb(164, 183, 208), true).apply {
@@ -645,7 +647,7 @@ class MainActivity : Activity() {
 
         val outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 0, dp(10), dp(4))
+            setPadding(0, 0, dp(8), dp(4))
         }
         val heading = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -778,13 +780,20 @@ class MainActivity : Activity() {
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     setPadding(0, dp(3), 0, 0)
                 })
-                val lp = LinearLayout.LayoutParams(0, dp(92), 1f)
-                lp.setMargins(0, 0, if (index == count - 1 || index == watchItems.take(count).lastIndex) 0 else dp(6), 0)
+                val lp = LinearLayout.LayoutParams(dp(104), dp(92))
+                lp.setMargins(0, 0, if (index == count - 1 || index == watchItems.take(count).lastIndex) 0 else dp(7), 0)
                 cardRow.addView(card, lp)
             }
         }
-        outer.addView(cardRow, LinearLayout.LayoutParams(-1, dp(98)))
-        mediaRow.addView(outer, LinearLayout.LayoutParams(0, -1, 2.6f))
+        val cardScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            clipChildren = false
+            clipToPadding = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        cardScroll.addView(cardRow, HorizontalScrollView.LayoutParams(-2, dp(98)))
+        outer.addView(cardScroll, LinearLayout.LayoutParams(-1, dp(98)))
+        mediaRow.addView(outer, LinearLayout.LayoutParams(0, -1, 1.85f))
     }
 
     /**
@@ -824,9 +833,9 @@ class MainActivity : Activity() {
 
     private fun continueCardBackground(focused: Boolean) = GradientDrawable().apply {
         cornerRadius = dp(12).toFloat()
-        setColor(if (focused) Color.argb(205, 28, 39, 54) else Color.argb(125, 17, 23, 32))
+        setColor(if (focused) Color.argb(190, 28, 39, 54) else Color.argb(92, 17, 23, 32))
         setStroke(if (focused) dp(2) else dp(1),
-            if (focused) accent else Color.argb(100, 126, 190, 255))
+            if (focused) accent else Color.argb(82, 126, 190, 255))
     }
 
     private fun formatWatchTime(ms: Long): String {
