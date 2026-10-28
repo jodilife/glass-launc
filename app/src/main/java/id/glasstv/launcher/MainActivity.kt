@@ -85,6 +85,7 @@ class MainActivity : Activity() {
     private var dashboardLocationLabel: TextView? = null
     private var dashboardWeatherLabel: TextView? = null
     private var dashboardNextPrayerLabel: TextView? = null
+    private var dashboardAzanButton: TextView? = null
     private var dashboardSnapshot: DashboardServices.Snapshot? = null
     private var toneGenerator: ToneGenerator? = null
     private var azanPlayer: MediaPlayer? = null
@@ -289,14 +290,63 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
         }
+        val prayerHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, dp(4), dp(5))
+        }
         dashboardNextPrayerLabel = label("SALAT BERIKUTNYA  •  Memuat jadwal…", 11, Color.rgb(224, 233, 247), true).apply {
-            gravity = Gravity.CENTER
+            gravity = Gravity.CENTER_VERTICAL
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(8), 0, dp(8), dp(8))
+            setPadding(dp(4), 0, dp(6), 0)
             setLetterSpacing(0.035f)
         }
-        prayerPanel.addView(dashboardNextPrayerLabel)
+        prayerHeader.addView(dashboardNextPrayerLabel, LinearLayout.LayoutParams(0, dp(34), 1f))
+        dashboardAzanButton = TextView(this).apply {
+            textSize = 9.5f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setPadding(dp(9), dp(5), dp(9), dp(5))
+            isFocusable = true
+            isClickable = true
+            setOnFocusChangeListener { view, focused ->
+                if (focused) playNavigationSound()
+                view.elevation = if (focused) dp(7).toFloat() else dp(1).toFloat()
+                view.background = GradientDrawable().apply {
+                    cornerRadius = dp(10).toFloat()
+                    setColor(if (focused) Color.rgb(67, 113, 157) else Color.argb(150, 24, 40, 59))
+                    setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(150, 126, 190, 255))
+                }
+            }
+            setOnClickListener {
+                val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+                val enabled = prefs.getBoolean("azan_enabled", true)
+                val player = azanPlayer
+                if (player != null) {
+                    try { player.stop() } catch (_: Exception) { }
+                    try { player.release() } catch (_: Exception) { }
+                    azanPlayer = null
+                    updateAzanQuickButton()
+                    toast("Suara azan dihentikan")
+                } else {
+                    prefs.edit().putBoolean("azan_enabled", !enabled).apply()
+                    if (enabled) toast("Azan otomatis dimatikan") else toast("Azan otomatis diaktifkan")
+                    updateAzanQuickButton()
+                }
+                playSelectSound()
+            }
+            setOnKeyListener { view, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                    keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                    view.performClick(); true
+                } else false
+            }
+        }
+        prayerHeader.addView(dashboardAzanButton, LinearLayout.LayoutParams(-2, dp(32)))
+        prayerPanel.addView(prayerHeader, LinearLayout.LayoutParams(-1, dp(36)))
+        updateAzanQuickButton()
         val prayerRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         prayerTimeLabels.clear()
         listOf("Subuh", "Syuruk", "Zuhur", "Asar", "Maghrib", "Isya").forEach { name ->
@@ -507,25 +557,43 @@ class MainActivity : Activity() {
         playAzan()
     }
 
+    private fun updateAzanQuickButton() {
+        val button = dashboardAzanButton ?: return
+        val enabled = getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("azan_enabled", true)
+        button.text = when {
+            azanPlayer != null -> "HENTIKAN AZAN"
+            enabled -> "AZAN AKTIF"
+            else -> "AZAN MATI"
+        }
+        button.contentDescription = when {
+            azanPlayer != null -> "Hentikan suara azan yang sedang diputar"
+            enabled -> "Matikan azan otomatis"
+            else -> "Aktifkan azan otomatis"
+        }
+    }
+
     private fun playAzan() {
         try {
             azanPlayer?.release()
             azanPlayer = MediaPlayer().apply {
                 setAudioStreamType(AudioManager.STREAM_MUSIC)
                 setDataSource(azanAudioUrl)
-                setOnPreparedListener { it.start() }
+                setOnPreparedListener { it.start(); runOnUiThread { updateAzanQuickButton() } }
                 setOnCompletionListener {
                     try { it.release() } catch (_: Exception) { }
                     if (azanPlayer === it) azanPlayer = null
+                    runOnUiThread { updateAzanQuickButton() }
                 }
                 setOnErrorListener { player, _, _ ->
                     try { player.release() } catch (_: Exception) { }
                     if (azanPlayer === player) azanPlayer = null
+                    runOnUiThread { updateAzanQuickButton() }
                     toast("Suara azan tidak dapat diputar. Periksa koneksi internet TV.")
                     true
                 }
                 prepareAsync()
             }
+            updateAzanQuickButton()
             toast("Waktu salat tiba")
         } catch (_: Exception) { toast("Tidak dapat memulai suara azan.") }
     }
@@ -1324,12 +1392,7 @@ class MainActivity : Activity() {
             toast("Tidak ditemukan aplikasi TV lain.")
             return
         }
-        val labels = apps.map { it.loadLabel(packageManager).toString() }.toTypedArray()
-        AlertDialog.Builder(this).setTitle("All Apps")
-            .setItems(labels) { _, which ->
-                val info = apps[which].activityInfo
-                launchTvApp(info.packageName, info.name)
-            }.setNegativeButton("Tutup", null).show()
+        showAppGrid("SEMUA APLIKASI", apps)
     }
 
     private fun openApps() {
@@ -1337,27 +1400,122 @@ class MainActivity : Activity() {
         val selected = getSharedPreferences("glass_tv", MODE_PRIVATE)
             .getStringSet("entertainment_packages", emptySet())?.toSet().orEmpty()
         val favorites = apps.filter { it.activityInfo.packageName in selected }
-        val menu = mutableListOf<String>()
-        favorites.forEach { menu.add(it.loadLabel(packageManager).toString()) }
-        val allIndex = menu.size
-        menu.add("Semua aplikasi…")
-        val manageIndex = menu.size
-        menu.add("Atur daftar Entertainment…")
-        if (menu.size == 2 && apps.isEmpty()) {
-            toast("Tidak ditemukan aplikasi TV lain.")
-            return
+        if (favorites.isEmpty()) {
+            showAppGrid("ENTERTAINMENT", emptyList(), listOf(
+                "Pilih aplikasi" to { manageEntertainmentApps() },
+                "Semua aplikasi" to { openAllApps() }
+            ))
+        } else {
+            showAppGrid("ENTERTAINMENT", favorites, listOf(
+                "Atur Entertainment" to { manageEntertainmentApps() },
+                "Semua aplikasi" to { openAllApps() }
+            ))
         }
-        AlertDialog.Builder(this).setTitle("Entertainment")
-            .setItems(menu.toTypedArray()) { _, which ->
-                when {
-                    which < allIndex -> {
-                        val info = favorites[which].activityInfo
-                        launchTvApp(info.packageName, info.name)
+    }
+
+    private fun showAppGrid(
+        title: String,
+        apps: List<android.content.pm.ResolveInfo>,
+        extraActions: List<Pair<String, () -> Unit>> = emptyList()
+    ) {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(12))
+        }
+        content.addView(label("Pilih kartu lalu tekan OK pada remote.", 11, Color.rgb(169, 190, 216), false)
+            .apply { setPadding(dp(4), 0, dp(4), dp(10)) })
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            clipChildren = false
+            clipToPadding = false
+        }
+        val rows = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
+            clipToPadding = false
+        }
+        scroll.addView(rows, FrameLayout.LayoutParams(-1, -2))
+        content.addView(scroll, LinearLayout.LayoutParams(-1, dp(420)))
+        val allCards = mutableListOf<Triple<String, android.graphics.drawable.Drawable?, (() -> Unit)>>()
+        apps.forEach { app ->
+            val info = app.activityInfo
+            allCards.add(Triple(app.loadLabel(packageManager).toString(), try { app.loadIcon(packageManager) } catch (_: Exception) { null }, {
+                launchTvApp(info.packageName, info.name)
+            }))
+        }
+        extraActions.forEachIndexed { index, action ->
+            val iconId = if (index == 0) android.R.drawable.ic_menu_manage else android.R.drawable.ic_menu_more
+            allCards.add(Triple(action.first, getDrawable(iconId), action.second))
+        }
+        val columns = 5
+        allCards.chunked(columns).forEach { group ->
+            val line = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                clipChildren = false
+                clipToPadding = false
+            }
+            group.forEach { (name, iconDrawable, click) ->
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER
+                    setPadding(dp(5), dp(8), dp(5), dp(7))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(14).toFloat()
+                        setColor(Color.argb(118, 23, 34, 51))
+                        setStroke(dp(1), Color.argb(75, 153, 194, 255))
                     }
-                    which == allIndex -> openAllApps()
-                    which == manageIndex -> manageEntertainmentApps()
+                    isFocusable = true
+                    isClickable = true
+                    setOnFocusChangeListener { view, focused ->
+                        if (focused) playNavigationSound()
+                        view.scaleX = if (focused) 1.035f else 1f
+                        view.scaleY = if (focused) 1.035f else 1f
+                        view.elevation = if (focused) dp(8).toFloat() else 0f
+                        view.background = GradientDrawable().apply {
+                            cornerRadius = dp(14).toFloat()
+                            setColor(if (focused) Color.rgb(57, 87, 123) else Color.argb(118, 23, 34, 51))
+                            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else Color.argb(75, 153, 194, 255))
+                        }
+                    }
+                    setOnClickListener { playSelectSound(); click() }
+                    setOnKeyListener { view, keyCode, event ->
+                        if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                            keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                            view.performClick(); true
+                        } else false
+                    }
                 }
-            }.setNegativeButton("Tutup", null).show()
+                val icon = ImageView(this).apply {
+                    setImageDrawable(iconDrawable)
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                }
+                card.addView(icon, LinearLayout.LayoutParams(dp(44), dp(44)))
+                card.addView(label(name, 10, Color.WHITE, true).apply {
+                    gravity = Gravity.CENTER
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(0, dp(5), 0, 0)
+                }, LinearLayout.LayoutParams(-1, dp(31)))
+                line.addView(card, LinearLayout.LayoutParams(0, dp(100), 1f).apply {
+                    setMargins(dp(4), dp(4), dp(4), dp(4))
+                })
+            }
+            repeat(columns - group.size) {
+                line.addView(View(this), LinearLayout.LayoutParams(0, dp(100), 1f).apply {
+                    setMargins(dp(4), dp(4), dp(4), dp(4))
+                })
+            }
+            rows.addView(line, LinearLayout.LayoutParams(-1, dp(108)))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(content)
+            .setNegativeButton("Tutup", null)
+            .create()
+        dialog.show()
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+        dialog.window?.setLayout(dp(780), (resources.displayMetrics.heightPixels * 0.82f).toInt())
     }
 
     private fun manageEntertainmentApps() {
@@ -1956,5 +2114,42 @@ class MainActivity : Activity() {
         }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-    private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    private fun toast(message: String) {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(11), dp(18), dp(11))
+            background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.rgb(36, 55, 79), Color.rgb(16, 25, 39))
+            ).apply {
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(1), Color.argb(190, 126, 190, 255))
+            }
+            elevation = dp(12).toFloat()
+        }
+        val mark = TextView(this).apply {
+            text = "G"
+            textSize = 15f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.argb(130, 126, 190, 255))
+            }
+        }
+        panel.addView(mark, LinearLayout.LayoutParams(dp(30), dp(30)).apply { rightMargin = dp(11) })
+        panel.addView(TextView(this).apply {
+            text = message
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            maxLines = 3
+        }, LinearLayout.LayoutParams(-2, -2))
+        Toast(this).apply {
+            duration = Toast.LENGTH_LONG
+            view = panel
+            setGravity(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, dp(32))
+        }.show()
+    }
 }
