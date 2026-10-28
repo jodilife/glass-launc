@@ -30,12 +30,28 @@ class MainActivity : Activity() {
     private val accent = Color.rgb(126, 190, 255)
     private lateinit var root: LinearLayout
     private val actions = mutableListOf<View>()
+    private var continueWatchingCard: View? = null
+    private var lastFocusedTitle: String = "Live TV"
+    private var refreshOnResume = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = bg
         window.navigationBarColor = bg
         showHome()
+    }
+
+    override fun onPause() {
+        refreshOnResume = true
+        super.onPause()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (refreshOnResume) {
+            refreshOnResume = false
+            showHome()
+        }
     }
 
     private fun showHome() {
@@ -125,7 +141,16 @@ class MainActivity : Activity() {
         addAction(row, "Pengaturan", "Info launcher") { showSettings() }
         root.addView(row, LinearLayout.LayoutParams(-1, dp(78)))
         setContentView(root)
-        if (actions.isNotEmpty()) root.post { actions.firstOrNull()?.requestFocus() }
+        root.post {
+            if (lastFocusedTitle == "LANJUTKAN MENONTON") {
+                continueWatchingCard?.requestFocus()
+            } else {
+                val target = actions.firstOrNull {
+                    it.contentDescription?.toString()?.startsWith(lastFocusedTitle) == true
+                } ?: actions.firstOrNull()
+                target?.requestFocus()
+            }
+        }
     }
 
     private fun addAction(row: LinearLayout, title: String, desc: String, click: () -> Unit) {
@@ -154,6 +179,7 @@ class MainActivity : Activity() {
             view.setBackground(cardBackground(focused))
             view.setScaleX(if (focused) 1.04f else 1.0f)
             view.setScaleY(if (focused) 1.04f else 1.0f)
+            if (focused) lastFocusedTitle = title
         }
         card.setOnKeyListener { view, keyCode, event ->
             if (event.action != KeyEvent.ACTION_DOWN) {
@@ -228,8 +254,10 @@ class MainActivity : Activity() {
                 view.background = continueCardBackground(focused)
                 view.scaleX = if (focused) 1.015f else 1f
                 view.scaleY = if (focused) 1.015f else 1f
+                if (focused) lastFocusedTitle = "LANJUTKAN MENONTON"
             }
         }
+        continueWatchingCard = card
 
         if (latestPackage == null) {
             val copy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
