@@ -135,7 +135,7 @@ class MainActivity : Activity() {
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(32), dp(10), dp(32), dp(10))
-            background = Color.TRANSPARENT
+            setBackgroundColor(Color.TRANSPARENT)
             isFocusableInTouchMode = true
             clipChildren = false
             clipToPadding = false
@@ -156,7 +156,7 @@ class MainActivity : Activity() {
             clipToPadding = false
             descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         }
-        homeScroll.addView(root, ScrollView.LayoutParams(-1, -2))
+        homeScroll.addView(root, FrameLayout.LayoutParams(-1, -2))
         wallpaperTarget.addView(homeScroll, FrameLayout.LayoutParams(-1, -1))
         applyWallpaper(wallpaperTarget)
         scheduleWallpaperRotation()
