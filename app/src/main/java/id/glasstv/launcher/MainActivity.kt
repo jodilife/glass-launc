@@ -600,9 +600,14 @@ class MainActivity : Activity() {
         dashboardClockLabel?.text = SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
             timeZone = zone
         }.format(now)
-        dashboardTimezoneLabel?.text = SimpleDateFormat("z", Locale("id", "ID")).apply {
-            timeZone = zone
-        }.format(now)
+        dashboardTimezoneLabel?.text = when (zoneId) {
+            "Asia/Jakarta" -> "WIB"
+            "Asia/Makassar" -> "WITA"
+            "Asia/Jayapura" -> "WIT"
+            else -> SimpleDateFormat("z", Locale("id", "ID")).apply {
+                timeZone = zone
+            }.format(now)
+        }
         headerTimeLabel?.text = SimpleDateFormat("EEEE, dd MMM  •  HH:mm", Locale("id", "ID")).apply {
             timeZone = zone
         }.format(now)
