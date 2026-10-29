@@ -27,19 +27,33 @@ import androidx.media3.ui.PlayerView
 @OptIn(UnstableApi::class)
 class CctvActivity : Activity() {
     private val backgroundColor = Color.rgb(9, 13, 22)
-    private val accent = Color.rgb(126, 190, 255)
+    private val accent: Int by lazy {
+        when (getSharedPreferences("glass_tv", MODE_PRIVATE).getString("theme_accent", "blue")) {
+            "silver" -> Color.rgb(188, 197, 208)
+            "white" -> Color.rgb(242, 245, 249)
+            "graphite" -> Color.rgb(142, 153, 166)
+            "purple" -> Color.rgb(194, 169, 255)
+            "mint" -> Color.rgb(126, 222, 196)
+            "amber" -> Color.rgb(255, 198, 112)
+            "rose" -> Color.rgb(255, 161, 181)
+            else -> Color.rgb(126, 190, 255)
+        }
+    }
     private val cameraNames = mutableListOf<String>()
     private val cameraUrls = mutableListOf<String>()
     private val cells = mutableListOf<FrameLayout>()
     private val playerViews = mutableListOf<PlayerView>()
     private val nameLabels = mutableListOf<TextView>()
     private val statusLabels = mutableListOf<TextView>()
-    private val players: MutableList<ExoPlayer?> = MutableList(2) { null }
+    private val players: MutableList<ExoPlayer?> = MutableList(4) { null }
 
     private lateinit var root: LinearLayout
     private lateinit var content: FrameLayout
     private lateinit var grid: GridLayout
     private lateinit var actionButton: TextView
+    private lateinit var layoutButton: TextView
+    private lateinit var detailLabel: TextView
+    private lateinit var layoutOption: CctvLayoutOption
     private var fullscreenIndex = -1
     private var activityStarted = false
 
@@ -57,18 +71,19 @@ class CctvActivity : Activity() {
             )
             cameraUrls.add(prefs.getString("camera_$number", null)?.trim().orEmpty())
         }
+        layoutOption = CctvLayouts.selected(this)
         buildUi()
     }
 
     override fun onStart() {
         super.onStart()
         activityStarted = true
-        for (index in 0..1) startPlayer(index)
+        for (index in 0 until layoutOption.cameraCount) startPlayer(index)
     }
 
     override fun onStop() {
         activityStarted = false
-        for (index in 0..1) releasePlayer(index)
+        for (index in 0..3) releasePlayer(index)
         super.onStop()
     }
 
@@ -107,30 +122,43 @@ class CctvActivity : Activity() {
                 if (fullscreenIndex >= 0) returnToGrid() else showCameraManager()
             }
         }
+        layoutButton = TextView(this).apply {
+            text = "TATA LETAK"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(9), dp(12), dp(9))
+            isFocusable = true
+            isFocusableInTouchMode = true
+            isClickable = true
+            background = actionBackground(false)
+            setOnFocusChangeListener { view, focused -> view.background = actionBackground(focused) }
+            setOnClickListener { showLayoutPicker() }
+        }
+        header.addView(layoutButton, LinearLayout.LayoutParams(-2, dp(42)).apply { rightMargin = dp(8) })
         header.addView(actionButton, LinearLayout.LayoutParams(-2, dp(42)))
         root.addView(header, LinearLayout.LayoutParams(-1, dp(46)))
 
-        root.addView(
-            label(
-                "2 kamera • RTSP langsung • OK untuk layar penuh • BACK untuk kembali",
-                12, Color.rgb(166, 185, 210), false
-            ).apply { setPadding(0, dp(2), 0, dp(8)) },
-            LinearLayout.LayoutParams(-1, -2)
-        )
+        detailLabel = label(
+            "${layoutOption.label} • RTSP langsung • OK untuk layar penuh",
+            12, Color.rgb(166, 185, 210), false
+        ).apply { setPadding(0, dp(2), 0, dp(8)) }
+        root.addView(detailLabel, LinearLayout.LayoutParams(-1, -2))
 
         content = FrameLayout(this)
         grid = GridLayout(this).apply {
-            columnCount = 2
-            rowCount = 1
+            columnCount = layoutOption.columns
+            rowCount = layoutOption.rows
             useDefaultMargins = false
             alignmentMode = GridLayout.ALIGN_BOUNDS
             setBackgroundColor(backgroundColor)
         }
 
-        for (index in 0..1) {
+        for (index in 0..3) {
             val cell = createCell(index)
             cells.add(cell)
-            grid.addView(cell, gridParams(index))
+            if (index < layoutOption.cameraCount) grid.addView(cell, gridParams(index))
         }
         content.addView(grid, FrameLayout.LayoutParams(-1, -1))
         root.addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -220,8 +248,8 @@ class CctvActivity : Activity() {
 
     private fun gridParams(index: Int): GridLayout.LayoutParams =
         GridLayout.LayoutParams(
-            GridLayout.spec(index / 2, 1, 1f),
-            GridLayout.spec(index % 2, 1, 1f)
+            GridLayout.spec(index / layoutOption.columns, 1, 1f),
+            GridLayout.spec(index % layoutOption.columns, 1, 1f)
         ).apply {
             width = 0
             height = 0
@@ -286,8 +314,8 @@ class CctvActivity : Activity() {
 
     private fun releasePlayer(index: Int) {
         playerViews.getOrNull(index)?.player = null
-        players[index]?.release()
-        players[index] = null
+        try { players.getOrNull(index)?.release() } catch (_: Exception) { }
+        if (index in players.indices) players[index] = null
     }
 
     private fun enterFullscreen(index: Int) {
@@ -312,14 +340,44 @@ class CctvActivity : Activity() {
     }
 
     private fun showCameraManager() {
-        val entries = (0..3).map { index ->
+        val cameraEntries = (0..3).map { index ->
             "${cameraNames[index]}  •  " +
                 if (cameraUrls[index].isBlank()) "Belum diatur" else "RTSP tersimpan"
-        }.toTypedArray()
+        }
+        val entries = (cameraEntries + "Jumlah kamera & tata letak…").toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Atur Kamera CCTV")
-            .setItems(entries) { _, which -> showCameraEditor(which) }
+            .setItems(entries) { _, which ->
+                if (which == 4) showLayoutPicker() else showCameraEditor(which)
+            }
             .setNegativeButton("Kembali", null)
+            .show()
+    }
+
+    private fun showLayoutPicker() {
+        val checked = CctvLayouts.options.indexOfFirst { it.id == layoutOption.id }.coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("Jumlah & tata letak kamera")
+            .setSingleChoiceItems(CctvLayouts.options.map { it.label }.toTypedArray(), checked) { picker, which ->
+                val chosen = CctvLayouts.options[which]
+                if (fullscreenIndex >= 0) returnToGrid()
+                layoutOption = chosen
+                CctvLayouts.save(this, chosen)
+                grid.removeAllViews()
+                grid.columnCount = chosen.columns
+                grid.rowCount = chosen.rows
+                for (index in 0 until chosen.cameraCount) {
+                    grid.addView(cells[index], gridParams(index))
+                }
+                detailLabel.text = "${chosen.label} • RTSP langsung • OK untuk layar penuh"
+                for (index in 0..3) {
+                    if (index >= chosen.cameraCount) releasePlayer(index)
+                    else if (activityStarted) startPlayer(index)
+                }
+                picker.dismiss()
+                cells.firstOrNull()?.requestFocus()
+            }
+            .setNegativeButton("Batal", null)
             .show()
     }
 
@@ -411,12 +469,14 @@ class CctvActivity : Activity() {
             .putString("camera_name_${index + 1}", name)
             .putString("camera_${index + 1}", url)
             .apply()
-        nameLabels[index].text = name
-        cells[index].contentDescription = "$name, kamera ${index + 1}"
+        nameLabels.getOrNull(index)?.text = name
+        cells.getOrNull(index)?.contentDescription = "$name, kamera ${index + 1}"
         releasePlayer(index)
-        statusLabels[index].text = if (url.isBlank()) "BELUM DIATUR  •  OK UNTUK SETUP" else "MENYIAPKAN STREAM…"
-        statusLabels[index].setTextColor(if (url.isBlank()) Color.rgb(220, 205, 154) else accent)
-        if (activityStarted) startPlayer(index)
+        statusLabels.getOrNull(index)?.let { status ->
+            status.text = if (url.isBlank()) "BELUM DIATUR  •  OK UNTUK SETUP" else "MENYIAPKAN STREAM…"
+            status.setTextColor(if (url.isBlank()) Color.rgb(220, 205, 154) else accent)
+        }
+        if (activityStarted && index < layoutOption.cameraCount) startPlayer(index)
         toast("Pengaturan ${name} disimpan di TV")
     }
 
