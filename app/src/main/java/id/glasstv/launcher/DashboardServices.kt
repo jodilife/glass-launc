@@ -10,7 +10,6 @@ import java.net.URLEncoder
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
-import java.time.ZoneId
 
 /**
  * Small dashboard data source. Weather forecasts are provided by BMKG at kelurahan level.
@@ -189,7 +188,7 @@ internal object DashboardServices {
     private fun resolveTimeZone(lat: Double, lon: Double, suggested: String): String {
         if (suggested.isNotBlank()) {
             try {
-                if (suggested in ZoneId.getAvailableZoneIds()) return suggested
+                if (suggested in TimeZone.getAvailableIDs()) return suggested
             } catch (_: Exception) { }
         }
         if (lat in -11.5..6.5 && lon in 94.0..141.5) {
