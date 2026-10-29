@@ -1411,7 +1411,8 @@ class MainActivity : Activity() {
                 val bitmap = BitmapFactory.decodeFile(artworkFile.absolutePath) ?: return@Thread
                 runOnUiThread {
                     if (!isFinishing && focusOwner.hasFocus() && continueWatchingCard === focusOwner) {
-                        root.background = darkArtworkBackdrop(bitmap)
+                        root.setBackgroundColor(Color.TRANSPARENT)
+                        wallpaperTarget.background = darkArtworkBackdrop(bitmap)
                     } else bitmap.recycle()
                 }
             } catch (_: Exception) { }
@@ -1465,7 +1466,8 @@ class MainActivity : Activity() {
             } else loaded
             runOnUiThread {
                 if (!isFinishing && focusOwner.hasFocus() && previewBackdropCard === focusOwner) {
-                    root.background = darkArtworkBackdrop(bitmap)
+                    root.setBackgroundColor(Color.TRANSPARENT)
+                    wallpaperTarget.background = darkArtworkBackdrop(bitmap)
                 } else bitmap.recycle()
             }
         }, "glasstv-preview-backdrop").start()
