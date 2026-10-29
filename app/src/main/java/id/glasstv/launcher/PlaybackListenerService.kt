@@ -2,6 +2,7 @@ package id.glasstv.launcher
 
 import android.content.ComponentName
 import android.app.Notification
+import android.app.PendingIntent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -19,9 +20,9 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 
 /**
- * Optional bridge from Android media sessions to the launcher's Continue Watching row.
- * The user must explicitly enable notification access in Android Settings.
- * Only media metadata/state is read; notification text is never inspected.
+ * Bridge from Android media sessions to Continue Watching and SmartTube's own recommendation
+ * notifications. The user must explicitly enable notification access in Android Settings.
+ * Notification title/text is only read for SmartTube notifications categorized as recommendations.
  */
 class PlaybackListenerService : NotificationListenerService() {
     private val controllers = mutableMapOf<String, MediaController>()
@@ -32,6 +33,7 @@ class PlaybackListenerService : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
+        try { activeNotifications?.forEach { captureSmartTubeRecommendation(it) } } catch (_: Exception) { }
         refreshSessions()
     }
 
@@ -41,10 +43,11 @@ class PlaybackListenerService : NotificationListenerService() {
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
-        // Some TV players omit artwork from MediaMetadata but include it in the media notification.
-        // Read image extras only; do not inspect notification title, body, or other text.
         val pkg = sbn.packageName
-        if (isSupportedPackage(pkg)) {
+        if (isSmartTubeRecommendation(sbn)) {
+            captureSmartTubeRecommendation(sbn)
+        } else if (isSupportedPackage(pkg)) {
+            // For playback notifications we read image payloads only, not their text.
             extractNotificationArtwork(sbn.notification)?.let { bitmap ->
                 notificationArtwork[pkg] = bitmap
             }
@@ -53,7 +56,88 @@ class PlaybackListenerService : NotificationListenerService() {
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        if (isSmartTubeRecommendation(sbn)) removeSmartTubeRecommendation(sbn)
         refreshSessions()
+    }
+
+    private fun isSmartTubePackage(pkg: String): Boolean {
+        val p = pkg.lowercase()
+        return p.contains("smarttube") || p.contains("smartyoutubetv2") || p.contains("teamsmart")
+    }
+
+    private fun isSmartTubeRecommendation(sbn: StatusBarNotification): Boolean =
+        isSmartTubePackage(sbn.packageName) &&
+            sbn.notification.category == Notification.CATEGORY_RECOMMENDATION
+
+    private fun recommendationId(sbn: StatusBarNotification): String =
+        Integer.toHexString(sbn.key.hashCode())
+
+    private fun captureSmartTubeRecommendation(sbn: StatusBarNotification) {
+        if (!isSmartTubeRecommendation(sbn)) return
+        val notification = sbn.notification
+        val extras = notification.extras
+        val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim()
+            ?.takeIf { it.isNotBlank() } ?: return
+        val description = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim().orEmpty()
+        val id = recommendationId(sbn)
+        notification.contentIntent?.let { smartTubePendingIntents[id] = it }
+        var artworkName = getSharedPreferences(PREFS, MODE_PRIVATE)
+            .getString("smarttube_rec_artwork_$id", null)
+        val image = try {
+            (extras.getParcelable(Notification.EXTRA_LARGE_ICON) as? Bitmap)
+                ?: (extras.getParcelable(Notification.EXTRA_PICTURE) as? Bitmap)
+                ?: (extras.getParcelable(Notification.EXTRA_BIG_PICTURE) as? Bitmap)
+        } catch (_: Exception) { null }
+        if (image != null && !image.isRecycled) {
+            val name = "smarttube_rec_$id.jpg"
+            try {
+                FileOutputStream(File(filesDir, name)).use { output ->
+                    if (image.compress(Bitmap.CompressFormat.JPEG, 84, output)) artworkName = name
+                }
+            } catch (_: Exception) { }
+        }
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val existing = prefs.getString("smarttube_rec_ids", "").orEmpty()
+            .split(",").filter { it.isNotBlank() && it != id }
+        val ordered = (listOf(id) + existing).take(8)
+        val edit = prefs.edit()
+            .putString("smarttube_rec_ids", ordered.joinToString(","))
+            .putString("smarttube_rec_title_$id", title)
+            .putString("smarttube_rec_description_$id", description)
+            .putString("smarttube_rec_package_$id", sbn.packageName)
+            .putLong("smarttube_rec_updated_$id", System.currentTimeMillis())
+        if (artworkName != null) edit.putString("smarttube_rec_artwork_$id", artworkName)
+        edit.apply()
+        (listOf(id) + existing).drop(8).forEach { stale ->
+            val staleArtwork = prefs.getString("smarttube_rec_artwork_$stale", null)
+            if (!staleArtwork.isNullOrBlank()) File(filesDir, staleArtwork).delete()
+            prefs.edit()
+                .remove("smarttube_rec_title_$stale")
+                .remove("smarttube_rec_description_$stale")
+                .remove("smarttube_rec_package_$stale")
+                .remove("smarttube_rec_artwork_$stale")
+                .remove("smarttube_rec_updated_$stale")
+                .apply()
+            smartTubePendingIntents.remove(stale)
+        }
+    }
+
+    private fun removeSmartTubeRecommendation(sbn: StatusBarNotification) {
+        val id = recommendationId(sbn)
+        smartTubePendingIntents.remove(id)
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val ids = prefs.getString("smarttube_rec_ids", "").orEmpty()
+            .split(",").filter { it.isNotBlank() && it != id }
+        val artwork = prefs.getString("smarttube_rec_artwork_$id", null)
+        if (!artwork.isNullOrBlank()) File(filesDir, artwork).delete()
+        prefs.edit()
+            .putString("smarttube_rec_ids", ids.joinToString(","))
+            .remove("smarttube_rec_title_$id")
+            .remove("smarttube_rec_description_$id")
+            .remove("smarttube_rec_package_$id")
+            .remove("smarttube_rec_artwork_$id")
+            .remove("smarttube_rec_updated_$id")
+            .apply()
     }
 
     private fun refreshSessions() {
@@ -339,8 +423,8 @@ class PlaybackListenerService : NotificationListenerService() {
 
     private fun isSupportedPackage(pkg: String): Boolean {
         val p = pkg.lowercase()
-        return p.contains("youtube") || p.contains("smarttube") || p.contains("teamsmart") ||
-            isAudioPackage(p)
+        return p.contains("youtube") || p.contains("smarttube") || p.contains("smartyoutubetv2") ||
+            p.contains("teamsmart") || isAudioPackage(p)
     }
 
     private fun isAudioPackage(pkg: String): Boolean {
@@ -364,6 +448,19 @@ class PlaybackListenerService : NotificationListenerService() {
     }
 
     companion object {
+        private val smartTubePendingIntents = ConcurrentHashMap<String, PendingIntent>()
+
+        fun launchSmartTubeRecommendation(id: String): Boolean {
+            val pending = smartTubePendingIntents[id] ?: return false
+            return try {
+                pending.send()
+                true
+            } catch (_: Exception) {
+                smartTubePendingIntents.remove(id)
+                false
+            }
+        }
+
         private const val TAG = "GlassTVPlayback"
         private const val PREFS = "glass_tv"
         private const val MIN_DURATION_MS = 3 * 60 * 1000L
