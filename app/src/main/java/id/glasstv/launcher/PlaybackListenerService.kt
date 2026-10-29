@@ -86,7 +86,6 @@ class PlaybackListenerService : NotificationListenerService() {
         val image = try {
             (extras.getParcelable(Notification.EXTRA_LARGE_ICON) as? Bitmap)
                 ?: (extras.getParcelable(Notification.EXTRA_PICTURE) as? Bitmap)
-                ?: (extras.getParcelable(Notification.EXTRA_BIG_PICTURE) as? Bitmap)
         } catch (_: Exception) { null }
         if (image != null && !image.isRecycled) {
             val name = "smarttube_rec_$id.jpg"
