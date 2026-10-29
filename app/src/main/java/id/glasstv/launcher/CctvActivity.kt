@@ -446,10 +446,13 @@ class CctvActivity : Activity() {
                 val user = userInput.text.toString().trim()
                 val pass = passInput.text.toString()
                 val host = ipInput.text.toString().trim()
-                val path = pathInput.text.toString().trim().trimStart('/').ifBlank { "Streaming/Channels/102" }
+                val rawPath = pathInput.text.toString().trim().trimStart('/').ifBlank { "Streaming/Channels/102" }
+                val path = if (rawPath.matches(Regex("\\d+"))) {
+                    "Streaming/Channels/" + rawPath
+                } else rawPath
                 if (path.contains("://") || path.contains("@") || path.contains("?") ||
                     path.contains(" ") || path.contains("..")) {
-                    toast("Path RTSP harus relatif, contoh Streaming/Channels/102.")
+                    toast("Isi 101/102 atau path relatif seperti Streaming/Channels/102.")
                     return@setPositiveButton
                 }
                 if (user.isBlank() || pass.isBlank() || host.isBlank()) {
