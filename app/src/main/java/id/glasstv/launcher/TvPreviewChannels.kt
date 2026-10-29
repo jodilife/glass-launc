@@ -2,7 +2,6 @@ package id.glasstv.launcher
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.database.Cursor
 import android.media.tv.TvContract
 import android.net.Uri
@@ -16,10 +15,8 @@ internal object TvPreviewChannels {
     data class Program(val title: String, val artwork: String?, val intentUri: String?)
     data class Channel(val title: String, val packageName: String, val programs: List<Program>)
 
-    private const val READ_TV_LISTINGS = "android.permission.READ_TV_LISTINGS"
-
     fun read(context: Context, maxChannels: Int = 4, maxPrograms: Int = 8): List<Channel> {
-        if (context.checkSelfPermission(READ_TV_LISTINGS) != PackageManager.PERMISSION_GRANTED) return emptyList()
+        // Query the provider directly; the legacy READ_EPG_DATA permission is deprecated.
         return try {
             val channels = query(context, TvContract.Channels.CONTENT_URI) { cursor ->
                 val type = cursor.string(TvContract.Channels.COLUMN_TYPE) ?: return@query null
