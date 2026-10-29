@@ -8,8 +8,8 @@ import android.net.Uri
 
 /**
  * Reads only public Android TV Preview Channels published by installed apps.
- * Content is intentionally not fabricated: rows appear only when a provider publishes programs
- * and the launcher has READ_TV_LISTINGS access on this TV.
+ * Content is intentionally not fabricated: rows appear only when an installed provider exposes
+ * readable preview programs. If there are none, the Home screen shows an honest SmartTube shortcut.
  */
 internal object TvPreviewChannels {
     data class Program(val title: String, val artwork: String?, val intentUri: String?)
