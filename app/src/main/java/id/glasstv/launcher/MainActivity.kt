@@ -539,6 +539,7 @@ class MainActivity : Activity() {
         }
         prayerHeader.addView(dashboardAzanButton, LinearLayout.LayoutParams(-2, dp(32)))
         prayerPanel.addView(prayerHeader, LinearLayout.LayoutParams(-1, dp(36)))
+        prayerHeader.translationY = -dp(3).toFloat()
         updateAzanQuickButton()
         val prayerRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         prayerTimeLabels.clear()
