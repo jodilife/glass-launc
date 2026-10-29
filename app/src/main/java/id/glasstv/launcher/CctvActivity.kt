@@ -324,7 +324,7 @@ class CctvActivity : Activity() {
         content.removeView(grid)
         content.addView(cells[index], FrameLayout.LayoutParams(-1, -1))
         fullscreenIndex = index
-        actionButton.text = "KEMBALI KE 2×2"
+        actionButton.text = "KEMBALI KE GRID"
         cells[index].requestFocus()
     }
 
