@@ -2451,7 +2451,7 @@ class MainActivity : Activity() {
 
     private fun addPreviewChannelRows(container: LinearLayout) {
         val channels = TvPreviewChannels.read(this)
-        val smartTubePackage = listOf("org.smarttube.stable", "com.liskovsoft.smarttubetv.beta")
+        val smartTubePackage = listOf("org.smarttube.stable", "com.liskovsoft.smarttubetv.beta", "com.liskovsoft.smartyoutubetv2.tv")
             .firstOrNull { packageName ->
                 try {
                     packageManager.getApplicationInfo(packageName, 0)
