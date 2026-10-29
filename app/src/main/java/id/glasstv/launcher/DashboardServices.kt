@@ -9,6 +9,8 @@ import java.net.URL
 import java.net.URLEncoder
 import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
+import java.time.ZoneId
 
 /**
  * Small dashboard data source. Weather forecasts are provided by BMKG at kelurahan level.
@@ -17,14 +19,21 @@ import java.util.Locale
  * precaution adjustment.
  */
 internal object DashboardServices {
-    data class City(val name: String, val lat: Double, val lon: Double, val bmkgCode: String = "")
+    data class City(
+        val name: String,
+        val lat: Double,
+        val lon: Double,
+        val bmkgCode: String = "",
+        val timeZone: String = "Asia/Jakarta"
+    )
     data class Snapshot(
         val city: String,
         val temperature: String,
         val condition: String,
         val prayerNames: List<String>,
         val prayerTimes: List<String>,
-        val fetchedAt: Long
+        val fetchedAt: Long,
+        val timeZone: String = "Asia/Jakarta"
     )
 
     // BMKG adm4 codes correspond to kelurahan-level forecast pages.
@@ -49,7 +58,11 @@ internal object DashboardServices {
         if (preset != null) return preset
         val lat = prefs.getString("dashboard_city_lat", null)?.toDoubleOrNull()
         val lon = prefs.getString("dashboard_city_lon", null)?.toDoubleOrNull()
-        if (lat != null && lon != null) return City(name, lat, lon, prefs.getString("dashboard_city_bmkg", "").orEmpty())
+        if (lat != null && lon != null) {
+            val savedZone = prefs.getString("dashboard_city_timezone", null).orEmpty()
+            val zone = resolveTimeZone(lat, lon, savedZone)
+            return City(name, lat, lon, prefs.getString("dashboard_city_bmkg", "").orEmpty(), zone)
+        }
         return cities.first()
     }
 
@@ -59,6 +72,7 @@ internal object DashboardServices {
             .putString("dashboard_city_lat", city.lat.toString())
             .putString("dashboard_city_lon", city.lon.toString())
             .putString("dashboard_city_bmkg", city.bmkgCode)
+            .putString("dashboard_city_timezone", resolveTimeZone(city.lat, city.lon, city.timeZone))
             .apply()
         context.getSharedPreferences("dashboard_cache", Context.MODE_PRIVATE).edit().clear().apply()
     }
@@ -79,7 +93,9 @@ internal object DashboardServices {
                         if (name.isBlank() || !lat.isFinite() || !lon.isFinite()) continue
                         val region = item.optString("admin1").trim()
                         val displayName = if (region.isNotBlank() && !name.equals(region, true)) "$name, $region" else name
-                        found.add(City(displayName, lat, lon, ""))
+                        val requestedZone = item.optString("timezone", "")
+                        val zone = resolveTimeZone(lat, lon, requestedZone)
+                        found.add(City(displayName, lat, lon, "", zone))
                     }
                 }
                 Handler(Looper.getMainLooper()).post { callback(found.distinctBy { it.name }, null) }
@@ -96,7 +112,8 @@ internal object DashboardServices {
         val condition = p.getString("condition", "") ?: ""
         val times = prayerKeys.map { p.getString("prayer_$it", "") ?: "" }
         if (times.any { !it.matches(Regex("\\d{2}:\\d{2}")) }) return null
-        return Snapshot(city, temp, condition, prayerNames, times, p.getLong("fetched", 0L))
+        val zone = p.getString("timezone", "Asia/Jakarta").orEmpty()
+        return Snapshot(city, temp, condition, prayerNames, times, p.getLong("fetched", 0L), zone)
     }
 
     fun fetch(context: Context, callback: (Snapshot?, String?) -> Unit) {
@@ -114,14 +131,16 @@ internal object DashboardServices {
                         ?: weather.optString("weather_desc_en", "").takeIf { it.isNotBlank() }
                         ?: "Cuaca terkini"
                 } else {
-                    val weatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&current=temperature_2m,weather_code&timezone=Asia%2FJakarta"
+                    val weatherZone = URLEncoder.encode(city.timeZone, "UTF-8")
+                    val weatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&current=temperature_2m,weather_code&timezone=$weatherZone"
                     val current = JSONObject(get(weatherUrl)).getJSONObject("current")
                     val degrees = current.optDouble("temperature_2m", Double.NaN)
                     temp = if (degrees.isFinite()) "${degrees.toInt()}°C" else "Suhu --"
                     condition = weatherDescription(current.optInt("weather_code", -1))
                 }
                 val timestamp = System.currentTimeMillis() / 1000L
-                val prayerUrl = "https://api.aladhan.com/v1/timings/$timestamp?latitude=${city.lat}&longitude=${city.lon}&method=20&timezonestring=Asia%2FJakarta&tune=0,2,0,2,2,2,0,2,0"
+                val prayerZone = URLEncoder.encode(city.timeZone, "UTF-8")
+                val prayerUrl = "https://api.aladhan.com/v1/timings/$timestamp?latitude=${city.lat}&longitude=${city.lon}&method=20&timezonestring=$prayerZone&tune=0,2,0,2,2,2,0,2,0"
                 val prayer = JSONObject(get(prayerUrl)).getJSONObject("data")
                     .getJSONObject("timings")
                 val times = prayerKeys.map { key ->
@@ -129,11 +148,12 @@ internal object DashboardServices {
                     if (!raw.matches(Regex("\\d{2}:\\d{2}"))) throw IllegalStateException("Format waktu $key tidak valid")
                     raw
                 }
-                val snapshot = Snapshot(city.name, temp, condition, prayerNames, times, System.currentTimeMillis())
+                val snapshot = Snapshot(city.name, temp, condition, prayerNames, times, System.currentTimeMillis(), city.timeZone)
                 val prefs = app.getSharedPreferences("dashboard_cache", Context.MODE_PRIVATE).edit()
                     .putString("city", snapshot.city)
                     .putString("temperature", snapshot.temperature)
                     .putString("condition", snapshot.condition)
+                    .putString("timezone", snapshot.timeZone)
                     .putLong("fetched", snapshot.fetchedAt)
                 prayerKeys.forEachIndexed { i, key -> prefs.putString("prayer_$key", times[i]) }
                 prefs.apply()
@@ -144,8 +164,9 @@ internal object DashboardServices {
         }, "glasstv-dashboard-data").start()
     }
 
-    fun nextPrayer(snapshot: Snapshot, now: Calendar = Calendar.getInstance()): Pair<String, String> {
-        val minute = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
+    fun nextPrayer(snapshot: Snapshot, now: Calendar? = null): Pair<String, String> {
+        val current = now ?: Calendar.getInstance(TimeZone.getTimeZone(snapshot.timeZone))
+        val minute = current.get(Calendar.HOUR_OF_DAY) * 60 + current.get(Calendar.MINUTE)
         for (i in snapshot.prayerTimes.indices) {
             val parts = snapshot.prayerTimes[i].split(":")
             val value = parts[0].toInt() * 60 + parts[1].toInt()
@@ -154,14 +175,31 @@ internal object DashboardServices {
         return snapshot.prayerNames[0] to snapshot.prayerTimes[0] // tomorrow's Subuh is the next prayer after Isya
     }
 
-    fun duePrayer(snapshot: Snapshot, now: Calendar = Calendar.getInstance()): Int {
-        val minute = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
+    fun duePrayer(snapshot: Snapshot, now: Calendar? = null): Int {
+        val current = now ?: Calendar.getInstance(TimeZone.getTimeZone(snapshot.timeZone))
+        val minute = current.get(Calendar.HOUR_OF_DAY) * 60 + current.get(Calendar.MINUTE)
         for (i in snapshot.prayerTimes.indices) {
             if (i == 1) continue // Syuruk is displayed but does not have an azan.
             val parts = snapshot.prayerTimes[i].split(":")
             if (parts[0].toInt() * 60 + parts[1].toInt() == minute) return i
         }
         return -1
+    }
+
+    private fun resolveTimeZone(lat: Double, lon: Double, suggested: String): String {
+        if (suggested.isNotBlank()) {
+            try {
+                if (suggested in ZoneId.getAvailableZoneIds()) return suggested
+            } catch (_: Exception) { }
+        }
+        if (lat in -11.5..6.5 && lon in 94.0..141.5) {
+            return when {
+                lon >= 130.0 -> "Asia/Jayapura"
+                lon >= 114.5 -> "Asia/Makassar"
+                else -> "Asia/Jakarta"
+            }
+        }
+        return TimeZone.getDefault().id
     }
 
     private fun weatherDescription(code: Int): String = when (code) {
