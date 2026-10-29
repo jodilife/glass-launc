@@ -148,6 +148,8 @@ class MainActivity : Activity() {
     private val actions = mutableListOf<View>()
     private var continueWatchingCard: View? = null
     private var continueBackdropArtwork: File? = null
+    private var previewBackdropCard: View? = null
+    private val tvListingsPermissionRequestCode = 8301
     private var lastFocusedTitle: String = "Live TV"
     private var refreshOnResume = false
     private val homePreviewPlayers = mutableListOf<ExoPlayer>()
@@ -394,6 +396,7 @@ class MainActivity : Activity() {
         renderDashboardSnapshot(dashboardSnapshot, null)
         resetIdleTimer()
         startDashboardUpdates()
+        root.postDelayed({ if (!isFinishing) maybePromptTvListingsPermission() }, 650L)
     }
 
     private fun addDashboardPanel() {
@@ -456,20 +459,28 @@ class MainActivity : Activity() {
             setLineSpacing(dp(1).toFloat(), 1.0f)
         }
         details.addView(dashboardWeatherLabel)
-        left.addView(details, LinearLayout.LayoutParams(0, -1, 1.65f).apply { rightMargin = dp(6) })
+        left.addView(details, LinearLayout.LayoutParams(0, -1, 1.45f).apply { rightMargin = dp(6) })
         val clockColumn = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(dp(5), 0, 0, 0)
+            setPadding(dp(3), 0, dp(1), 0)
+            clipChildren = false
+            clipToPadding = false
         }
-        dashboardClockLabel = label("--:--", 30, Color.WHITE, true).apply {
+        dashboardClockLabel = label("--:--", 35, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             maxLines = 1
+            includeFontPadding = false
+            letterSpacing = -0.025f
         }
-        dashboardTimezoneLabel = label("WIB", 10, accent, true).apply { gravity = Gravity.CENTER }
-        clockColumn.addView(dashboardClockLabel)
-        clockColumn.addView(dashboardTimezoneLabel)
-        left.addView(clockColumn, LinearLayout.LayoutParams(0, -1, 0.95f))
+        dashboardTimezoneLabel = label("WIB", 11, accent, true).apply {
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            setPadding(dp(2), dp(7), 0, 0)
+        }
+        clockColumn.addView(dashboardClockLabel, LinearLayout.LayoutParams(-2, -2))
+        clockColumn.addView(dashboardTimezoneLabel, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(2) })
+        left.addView(clockColumn, LinearLayout.LayoutParams(0, -1, 1.2f))
         weatherPanelView = left
         panel.addView(left, LinearLayout.LayoutParams(0, -1, 1f).apply {
             rightMargin = dp(6)
@@ -478,7 +489,7 @@ class MainActivity : Activity() {
         val prayerPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(12), dp(6), dp(12), dp(6))
+            setPadding(dp(12), dp(2), dp(12), dp(9))
             background = dashboardCardBackground()
             clipChildren = false
             clipToPadding = false
@@ -486,7 +497,7 @@ class MainActivity : Activity() {
         val prayerHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), 0, dp(4), dp(5))
+            setPadding(dp(4), 0, dp(4), 0)
         }
         dashboardNextPrayerLabel = label("Waktu Sholat · Kalender Hijriyah", 10, Color.rgb(224, 233, 247), true).apply {
             gravity = Gravity.CENTER_VERTICAL
@@ -539,7 +550,7 @@ class MainActivity : Activity() {
         }
         prayerHeader.addView(dashboardAzanButton, LinearLayout.LayoutParams(-2, dp(32)))
         prayerPanel.addView(prayerHeader, LinearLayout.LayoutParams(-1, dp(36)))
-        prayerHeader.translationY = -dp(3).toFloat()
+        prayerHeader.translationY = -dp(8).toFloat()
         updateAzanQuickButton()
         val prayerRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         prayerTimeLabels.clear()
@@ -1217,12 +1228,14 @@ class MainActivity : Activity() {
                     setOnFocusChangeListener { view, focused ->
                         if (focused) {
                             continueWatchingCard = view
+                            previewBackdropCard = null
                             playNavigationSound()
                             lastFocusedTitle = "LANJUTKAN MENONTON"
                             applyContinueWatchingBackdrop(artworkFile, view)
                         } else {
                             view.post {
-                                if (!view.hasFocus() && continueWatchingCard?.hasFocus() != true && !isFinishing) {
+                                if (!view.hasFocus() && continueWatchingCard?.hasFocus() != true &&
+                                    previewBackdropCard?.hasFocus() != true && !isFinishing) {
                                     root.setBackgroundColor(Color.TRANSPARENT)
                                     applyWallpaper(wallpaperTarget)
                                 }
@@ -1382,8 +1395,12 @@ class MainActivity : Activity() {
      * a soft, darkened backdrop. A small decoded bitmap is intentionally enlarged to
      * create a blur-like effect that also works on Android 11 (API 30).
      */
+    /**
+     * Selected artwork becomes the Home background. A smoked gradient keeps dashboard text readable.
+     */
     private fun applyContinueWatchingBackdrop(artworkFile: File?, focusOwner: View) {
         if (!focusOwner.hasFocus()) return
+        previewBackdropCard = null
         if (artworkFile == null || !artworkFile.isFile || artworkFile.length() <= 0L) {
             root.setBackgroundColor(Color.TRANSPARENT)
             applyWallpaper(wallpaperTarget)
@@ -1391,27 +1408,80 @@ class MainActivity : Activity() {
         }
         Thread({
             try {
-                // Decode at a moderate reduction: retain the artwork's composition instead of an overly enlarged pixelated image.
-                val options = BitmapFactory.Options().apply { inSampleSize = 3 }
-                val bitmap = BitmapFactory.decodeFile(artworkFile.absolutePath, options) ?: return@Thread
-                val image = BitmapDrawable(resources, bitmap).apply { gravity = Gravity.FILL }
-                val blurScrim = GradientDrawable(
-                    GradientDrawable.Orientation.TOP_BOTTOM,
-                    intArrayOf(
-                        Color.argb(72, 4, 8, 16),
-                        Color.argb(96, 5, 9, 17),
-                        Color.argb(132, 4, 7, 13)
-                    )
-                )
+                val bitmap = BitmapFactory.decodeFile(artworkFile.absolutePath) ?: return@Thread
                 runOnUiThread {
                     if (!isFinishing && focusOwner.hasFocus() && continueWatchingCard === focusOwner) {
-                        root.background = LayerDrawable(arrayOf(image, blurScrim))
-                    } else {
-                        bitmap.recycle()
-                    }
+                        root.background = darkArtworkBackdrop(bitmap)
+                    } else bitmap.recycle()
                 }
             } catch (_: Exception) { }
         }, "glasstv-watch-backdrop").start()
+    }
+
+    private fun applyPreviewProgramBackdrop(source: String?, focusOwner: View) {
+        previewBackdropCard = focusOwner
+        if (source.isNullOrBlank()) {
+            root.setBackgroundColor(Color.TRANSPARENT)
+            applyWallpaper(wallpaperTarget)
+            return
+        }
+        Thread({
+            var loaded: Bitmap? = null
+            try {
+                val uri = Uri.parse(source)
+                loaded = when (uri.scheme?.lowercase()) {
+                    "content", "file", "android.resource" ->
+                        contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+                    "http", "https" -> {
+                        val connection = URL(source).openConnection() as HttpURLConnection
+                        try {
+                            connection.connectTimeout = 4500
+                            connection.readTimeout = 6500
+                            connection.setRequestProperty("User-Agent", "GlassTVLauncher/0.6")
+                            connection.inputStream.use { BitmapFactory.decodeStream(it) }
+                        } finally { connection.disconnect() }
+                    }
+                    else -> null
+                }
+            } catch (_: Exception) { }
+            if (loaded == null) {
+                runOnUiThread {
+                    if (!isFinishing && focusOwner.hasFocus() && previewBackdropCard === focusOwner) {
+                        root.setBackgroundColor(Color.TRANSPARENT)
+                        applyWallpaper(wallpaperTarget)
+                    }
+                }
+                return@Thread
+            }
+            val maxDim = maxOf(loaded.width, loaded.height)
+            val bitmap = if (maxDim > 1440) {
+                val ratio = 1440f / maxDim
+                val resized = Bitmap.createScaledBitmap(
+                    loaded, (loaded.width * ratio).toInt().coerceAtLeast(1),
+                    (loaded.height * ratio).toInt().coerceAtLeast(1), true
+                )
+                if (resized !== loaded) loaded.recycle()
+                resized
+            } else loaded
+            runOnUiThread {
+                if (!isFinishing && focusOwner.hasFocus() && previewBackdropCard === focusOwner) {
+                    root.background = darkArtworkBackdrop(bitmap)
+                } else bitmap.recycle()
+            }
+        }, "glasstv-preview-backdrop").start()
+    }
+
+    private fun darkArtworkBackdrop(bitmap: Bitmap): LayerDrawable {
+        val image = BitmapDrawable(resources, bitmap).apply { gravity = Gravity.FILL }
+        val scrim = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(
+                Color.argb(100, 3, 6, 13),
+                Color.argb(143, 3, 5, 11),
+                Color.argb(184, 2, 4, 9)
+            )
+        )
+        return LayerDrawable(arrayOf(image, scrim))
     }
 
     private fun continueCardBackground(focused: Boolean) = GradientDrawable().apply {
@@ -2238,6 +2308,20 @@ class MainActivity : Activity() {
         settingRow("Aplikasi Entertainment", "Pilih aplikasi yang muncul di bagian hiburan") {
             dialog.dismiss(); manageEntertainmentApps()
         }
+        val listingsAllowed = hasTvListingsPermission()
+        settingRow("Rekomendasi & riwayat Android TV",
+            "Izinkan Read all TV listings agar rekomendasi dan Watch Next dapat dibaca",
+            if (listingsAllowed) "AKTIF" else "IZINKAN") {
+            dialog.dismiss()
+            showTvListingsPermissionDialog()
+        }
+        val rowOrder = prefs.getString("preview_row_order", "recommendations_first")
+        settingRow("Urutan rekomendasi & riwayat",
+            "Pilih baris rekomendasi atau Watch Next yang tampil lebih dahulu",
+            if (rowOrder == "history_first") "RIWAYAT DULU" else "REKOMENDASI DULU") {
+            dialog.dismiss()
+            showPreviewRowOrderPicker()
+        }
         settingRow("Dock aplikasi favorit", "Atur ikon aplikasi favorit dan urutannya") {
             dialog.dismiss(); manageFavoriteDock()
         }
@@ -2270,7 +2354,7 @@ class MainActivity : Activity() {
         settingRow("Uji suara azan", "Putar contoh audio untuk memastikan suara berfungsi") {
             dialog.dismiss(); playAzan()
         }
-        settingRow("Bersihkan cache aplikasi", "Minta Android membersihkan cache dengan konfirmasi sistem") {
+        settingRow("Bersihkan cache aplikasi", "Bersihkan cache GlassTV dan minta Android trim cache aplikasi lain") {
             dialog.dismiss()
             requestClearAppCaches()
         }
@@ -2451,22 +2535,19 @@ class MainActivity : Activity() {
 
     private fun addPreviewChannelRows(container: LinearLayout) {
         val channels = TvPreviewChannels.read(this)
-        val smartTubePackage = listOf("org.smarttube.stable", "com.liskovsoft.smarttubetv.beta", "com.liskovsoft.smartyoutubetv2.tv")
-            .firstOrNull { packageName ->
-                try {
-                    packageManager.getApplicationInfo(packageName, 0)
-                    true
-                } catch (_: Exception) { false }
+        if (channels.isEmpty()) return
+        val historyFirst = getSharedPreferences("glass_tv", MODE_PRIVATE)
+            .getString("preview_row_order", "recommendations_first") == "history_first"
+        val orderedChannels = channels.withIndex().sortedBy { indexed ->
+            val isHistory = indexed.value.category == "history"
+            val rank = if (historyFirst) {
+                if (isHistory) 0 else 1
+            } else {
+                if (isHistory) 1 else 0
             }
-        val hasSmartTubeRecommendations = smartTubePackage != null &&
-            addSmartTubeRecommendationCards(container, smartTubePackage)
-        if (channels.isEmpty()) {
-            if (smartTubePackage != null && !hasSmartTubeRecommendations) {
-                addSmartTubeRecommendationShortcut(container, smartTubePackage)
-            }
-            return
-        }
-        channels.forEach { channel ->
+            rank * 1000 + indexed.index
+        }.map { it.value }
+        orderedChannels.forEach { channel ->
             val section = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(0, dp(5), 0, dp(6))
@@ -2478,6 +2559,7 @@ class MainActivity : Activity() {
                 isHorizontalScrollBarEnabled = false
                 clipChildren = false
                 clipToPadding = false
+                overScrollMode = View.OVER_SCROLL_NEVER
             }
             val cards = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -2495,13 +2577,15 @@ class MainActivity : Activity() {
                         setStroke(dp(1), accentAlpha(78))
                     }
                     isFocusable = true
+                    isFocusableInTouchMode = true
                     isClickable = true
                     contentDescription = program.title
                     setOnClickListener {
+                        playSelectSound()
                         val intent = TvPreviewChannels.launchIntent(this@MainActivity, channel, program)
                         if (intent != null) {
                             try { startActivity(intent) } catch (_: Exception) { toast("Video tidak dapat dibuka.") }
-                        } else toast("Aplikasi " + channel.packageName + " tidak dapat dibuka.")
+                        } else toast("Aplikasi pemilik rekomendasi tidak dapat dibuka.")
                     }
                     setOnFocusChangeListener { view, focused ->
                         view.background = GradientDrawable().apply {
@@ -2509,7 +2593,27 @@ class MainActivity : Activity() {
                             setColor(if (focused) focusSurface(205) else Color.argb(118, 22, 32, 48))
                             setStroke(dp(if (focused) 2 else 1), accentAlpha(if (focused) 210 else 78))
                         }
-                        if (focused) playNavigationSound()
+                        if (focused) {
+                            playNavigationSound()
+                            previewBackdropCard = view
+                            applyPreviewProgramBackdrop(program.artwork, view)
+                        } else {
+                            view.post {
+                                if (previewBackdropCard === view && !view.hasFocus()) {
+                                    previewBackdropCard = null
+                                    if (continueWatchingCard?.hasFocus() != true && !isFinishing) {
+                                        root.setBackgroundColor(Color.TRANSPARENT)
+                                        applyWallpaper(wallpaperTarget)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    setOnKeyListener { view, keyCode, event ->
+                        if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                            keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                            view.performClick(); true
+                        } else false
                     }
                 }
                 val art = ImageView(this).apply {
@@ -2532,192 +2636,6 @@ class MainActivity : Activity() {
             section.addView(horizontal, LinearLayout.LayoutParams(-1, dp(134)))
             container.addView(section, LinearLayout.LayoutParams(-1, dp(155)))
         }
-        if (smartTubePackage != null && channels.none { it.packageName == smartTubePackage } &&
-            !hasSmartTubeRecommendations) {
-            addSmartTubeRecommendationShortcut(container, smartTubePackage)
-        }
-    }
-
-    private fun addSmartTubeRecommendationCards(container: LinearLayout, appPackage: String): Boolean {
-        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        val now = System.currentTimeMillis()
-        val ids = prefs.getString("smarttube_rec_ids", "").orEmpty()
-            .split(",").filter { it.isNotBlank() }
-        data class SmartTubeRecommendation(
-            val id: String,
-            val title: String,
-            val description: String,
-            val artwork: File?
-        )
-        val items = ids.mapNotNull { id ->
-            val title = prefs.getString("smarttube_rec_title_$id", null)?.trim()
-                ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            val updated = prefs.getLong("smarttube_rec_updated_$id", 0L)
-            if (updated <= 0L || now - updated > 7 * 24 * 60 * 60 * 1000L) return@mapNotNull null
-            val artworkName = prefs.getString("smarttube_rec_artwork_$id", null)
-            val artwork = artworkName?.let { File(filesDir, it) }?.takeIf { it.isFile && it.length() > 0L }
-            SmartTubeRecommendation(
-                id,
-                title,
-                prefs.getString("smarttube_rec_description_$id", "").orEmpty(),
-                artwork
-            )
-        }.take(6)
-        if (items.isEmpty()) return false
-
-        val section = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(6), 0, dp(5))
-            clipChildren = false
-            clipToPadding = false
-        }
-        section.addView(label("REKOMENDASI SMARTTUBE", 11, Color.rgb(210, 218, 228), true))
-        val cards = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(2), dp(5), dp(2), dp(5))
-            clipChildren = false
-            clipToPadding = false
-        }
-        items.forEach { item ->
-            val tile = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(5), dp(5), dp(5), dp(5))
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(10).toFloat()
-                    setColor(Color.argb(118, 22, 32, 48))
-                    setStroke(dp(1), accentAlpha(85))
-                }
-                isFocusable = true
-                isFocusableInTouchMode = true
-                isClickable = true
-                contentDescription = "Rekomendasi SmartTube: ${item.title}"
-                setOnFocusChangeListener { view, focused ->
-                    view.background = GradientDrawable().apply {
-                        cornerRadius = dp(10).toFloat()
-                        setColor(if (focused) focusSurface(215) else Color.argb(118, 22, 32, 48))
-                        setStroke(dp(if (focused) 2 else 1), accentAlpha(if (focused) 220 else 85))
-                    }
-                    if (focused) playNavigationSound()
-                }
-                setOnClickListener {
-                    playSelectSound()
-                    if (!PlaybackListenerService.launchSmartTubeRecommendation(item.id)) {
-                        val launch = packageManager.getLeanbackLaunchIntentForPackage(appPackage)
-                            ?: packageManager.getLaunchIntentForPackage(appPackage)
-                        if (launch != null) {
-                            try { startActivity(launch) } catch (_: Exception) { toast("SmartTube tidak dapat dibuka.") }
-                        } else toast("Rekomendasi tersimpan, tetapi SmartTube tidak dapat dibuka.")
-                    }
-                }
-                setOnKeyListener { view, keyCode, event ->
-                    if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                        keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                        view.performClick(); true
-                    } else false
-                }
-            }
-            val art = ImageView(this).apply {
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(7).toFloat()
-                    setColor(Color.rgb(24, 32, 45))
-                }
-                clipToOutline = true
-                item.artwork?.let { file ->
-                    try { setImageBitmap(BitmapFactory.decodeFile(file.absolutePath)) } catch (_: Exception) { }
-                }
-                if (drawable == null) {
-                    try { setImageDrawable(packageManager.getApplicationIcon(appPackage)); scaleType = ImageView.ScaleType.FIT_CENTER }
-                    catch (_: Exception) { }
-                }
-            }
-            tile.addView(art, LinearLayout.LayoutParams(dp(164), dp(78)))
-            tile.addView(label(item.title, 11, Color.WHITE, true).apply {
-                maxLines = 2
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(dp(2), dp(4), dp(2), 0)
-            }, LinearLayout.LayoutParams(dp(164), dp(32)))
-            if (item.description.isNotBlank()) {
-                tile.addView(label(item.description, 9, Color.rgb(165, 184, 208), false).apply {
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    setPadding(dp(2), dp(2), dp(2), 0)
-                }, LinearLayout.LayoutParams(dp(164), dp(14)))
-            }
-            cards.addView(tile, LinearLayout.LayoutParams(-2, dp(if (item.description.isNotBlank()) 140 else 124))
-                .apply { rightMargin = dp(9) })
-        }
-        val scroll = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            clipChildren = false
-            clipToPadding = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-            addView(cards)
-        }
-        section.addView(scroll, LinearLayout.LayoutParams(-1, dp(150)))
-        container.addView(section, LinearLayout.LayoutParams(-1, dp(178)))
-        return true
-    }
-
-    private fun addSmartTubeRecommendationShortcut(container: LinearLayout, appPackage: String) {
-        val section = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(7), 0, dp(5))
-            clipChildren = false
-            clipToPadding = false
-        }
-        section.addView(label("REKOMENDASI SMARTTUBE", 11, Color.rgb(210, 218, 228), true))
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(8), dp(14), dp(8))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat()
-                setColor(Color.argb(145, 18, 28, 43))
-                setStroke(dp(1), accentAlpha(105))
-            }
-            isFocusable = true
-            isFocusableInTouchMode = true
-            isClickable = true
-            contentDescription = "Buka SmartTube untuk rekomendasi video"
-            setOnFocusChangeListener { view, focused ->
-                view.background = GradientDrawable().apply {
-                    cornerRadius = dp(12).toFloat()
-                    setColor(if (focused) focusSurface(220) else Color.argb(145, 18, 28, 43))
-                    setStroke(dp(if (focused) 2 else 1), accentAlpha(if (focused) 220 else 105))
-                }
-                if (focused) playNavigationSound()
-            }
-            setOnClickListener {
-                playSelectSound()
-                val launch = packageManager.getLeanbackLaunchIntentForPackage(appPackage)
-                    ?: packageManager.getLaunchIntentForPackage(appPackage)
-                if (launch != null) {
-                    try { startActivity(launch) } catch (_: Exception) { toast("SmartTube tidak dapat dibuka.") }
-                } else toast("Aplikasi SmartTube tidak dapat dibuka dari launcher.")
-            }
-            setOnKeyListener { view, keyCode, event ->
-                if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                    keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                    view.performClick(); true
-                } else false
-            }
-        }
-        val icon = ImageView(this).apply {
-            try { setImageDrawable(packageManager.getApplicationIcon(appPackage)) } catch (_: Exception) { }
-            scaleType = ImageView.ScaleType.FIT_CENTER
-        }
-        card.addView(icon, LinearLayout.LayoutParams(dp(42), dp(42)))
-        val textCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), 0, 0, 0)
-        }
-        textCol.addView(label("Buka SmartTube", 13, Color.WHITE, true))
-        textCol.addView(label("Lihat rekomendasi video terbaru di aplikasi", 10, Color.rgb(170, 189, 213), false))
-        card.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
-        card.addView(label("BUKA  ›", 10, accent, true))
-        section.addView(card, LinearLayout.LayoutParams(-1, dp(62)))
-        container.addView(section, LinearLayout.LayoutParams(-1, dp(86)))
     }
 
     private fun loadPreviewArtwork(source: String?, target: ImageView) {
@@ -2898,15 +2816,82 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun showPreviewRowOrderPicker() {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val selected = prefs.getString("preview_row_order", "recommendations_first")
+        val options = arrayOf("Rekomendasi lebih dahulu", "Riwayat & Lanjutkan Menonton lebih dahulu")
+        AlertDialog.Builder(this)
+            .setTitle("Urutan baris Home")
+            .setSingleChoiceItems(options, if (selected == "history_first") 1 else 0) { picker, which ->
+                val value = if (which == 1) "history_first" else "recommendations_first"
+                prefs.edit().putString("preview_row_order", value).apply()
+                picker.dismiss()
+                showHome()
+                showSettings()
+                toast(if (value == "history_first") "Riwayat ditampilkan lebih dahulu" else "Rekomendasi ditampilkan lebih dahulu")
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun hasTvListingsPermission(): Boolean =
+        checkSelfPermission("android.permission.READ_TV_LISTINGS") ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    private fun maybePromptTvListingsPermission() {
+        if (hasTvListingsPermission()) return
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (prefs.getBoolean("tv_listings_permission_prompt_shown", false)) return
+        prefs.edit().putBoolean("tv_listings_permission_prompt_shown", true).apply()
+        showTvListingsPermissionDialog()
+    }
+
+    private fun showTvListingsPermissionDialog() {
+        if (hasTvListingsPermission()) {
+            toast("Izin rekomendasi & riwayat Android TV sudah aktif.")
+            showHome()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Aktifkan rekomendasi & riwayat")
+            .setMessage("GlassTV membutuhkan izin Read all TV listings untuk membaca rekomendasi dan Watch Next yang diterbitkan aplikasi TV. Izin ini tidak menghapus data tontonan.")
+            .setPositiveButton("Minta izin") { _, _ ->
+                requestPermissions(arrayOf("android.permission.READ_TV_LISTINGS"), tvListingsPermissionRequestCode)
+            }
+            .setNeutralButton("Buka info aplikasi") { _, _ -> openApplicationDetails(packageName) }
+            .setNegativeButton("Nanti", null)
+            .show()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != tvListingsPermissionRequestCode) return
+        if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            toast("Izin TV listings aktif. Rekomendasi dan riwayat sedang dimuat.")
+        } else {
+            toast("Izin TV listings belum aktif. Aktifkan dari Pengaturan GlassTV.")
+        }
+        showHome()
+    }
+
     private fun requestClearAppCaches() {
         AlertDialog.Builder(this)
             .setTitle("Bersihkan cache aplikasi")
-            .setMessage("Android TV akan membuka pengaturan aplikasi. Pilih aplikasi lalu tekan Bersihkan cache. Jangan pilih Hapus data jika ingin mempertahankan login, pengaturan, dan riwayat tontonan.")
-            .setPositiveButton("Buka pengaturan") { _, _ ->
-                try { startActivity(Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS)) }
-                catch (_: Exception) {
-                    try { startActivity(Intent(Settings.ACTION_SETTINGS)) }
-                    catch (_: Exception) { toast("Buka Setelan Android → Aplikasi untuk membersihkan cache.") }
+            .setMessage("GlassTV akan membersihkan cache miliknya sekarang. Untuk cache aplikasi lain, Android TV perlu mengizinkan akses debugging satu kali. Perintah hanya pm trim-caches, tidak menghapus login atau data aplikasi. Jika debugging tidak tersedia, hanya cache GlassTV yang dibersihkan.")
+            .setPositiveButton("Bersihkan sekarang") { _, _ ->
+                CacheCleaner.cleanNow(this) { bytesFreed, beforePercent, afterPercent, systemTrimmed ->
+                    val mb = (bytesFreed / (1024L * 1024L)).coerceAtLeast(0L)
+                    val message = if (systemTrimmed) {
+                        "Cache TV dibersihkan. Ruang pulih sekitar " + mb + " MB; pemakaian " +
+                            beforePercent + "% → " + afterPercent + "%."
+                    } else {
+                        "Cache GlassTV dibersihkan (" + mb + " MB). Cache aplikasi lain belum di-trim; periksa izin Network/USB debugging."
+                    }
+                    toast(message)
                 }
             }
             .setNegativeButton("Batal", null)
