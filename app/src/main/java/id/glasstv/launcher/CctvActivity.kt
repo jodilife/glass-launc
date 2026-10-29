@@ -391,6 +391,7 @@ class CctvActivity : Activity() {
         val currentUser = credentials.getOrNull(0).orEmpty()
         val currentPass = credentials.getOrNull(1).orEmpty()
         val currentHost = parsed?.host.orEmpty()
+        val currentPath = parsed?.path?.trimStart('/')?.takeIf { it.isNotBlank() } ?: "Streaming/Channels/102"
         val form = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(6), dp(20), dp(4))
@@ -428,8 +429,9 @@ class CctvActivity : Activity() {
         val userInput = addField("Username RTSP", "user", currentUser)
         val passInput = addField("Password RTSP", "pass", currentPass, password = true)
         val ipInput = addField("IP kamera", "192.168.1.9", currentHost)
+        val pathInput = addField("Path RTSP / nomor stream", "Streaming/Channels/102", currentPath)
 
-        form.addView(label("Format otomatis: rtsp://user:pass@IP:8554/Streaming/Channels/102", 10,
+        form.addView(label("Contoh: Streaming/Channels/102 — ganti ke 101 atau path lain sesuai kamera", 10,
             Color.rgb(145, 169, 199), false).apply { setPadding(0, dp(8), 0, 0) })
 
         AlertDialog.Builder(this)
@@ -444,6 +446,12 @@ class CctvActivity : Activity() {
                 val user = userInput.text.toString().trim()
                 val pass = passInput.text.toString()
                 val host = ipInput.text.toString().trim()
+                val path = pathInput.text.toString().trim().trimStart('/').ifBlank { "Streaming/Channels/102" }
+                if (path.contains("://") || path.contains("@") || path.contains("?") ||
+                    path.contains(" ") || path.contains("..")) {
+                    toast("Path RTSP harus relatif, contoh Streaming/Channels/102.")
+                    return@setPositiveButton
+                }
                 if (user.isBlank() || pass.isBlank() || host.isBlank()) {
                     toast("Isi username, password, dan IP kamera.")
                     return@setPositiveButton
@@ -452,7 +460,7 @@ class CctvActivity : Activity() {
                     toast("IP/host tidak valid. Masukkan IP saja, tanpa rtsp:// atau path.")
                     return@setPositiveButton
                 }
-                val url = "rtsp://${android.net.Uri.encode(user)}:${android.net.Uri.encode(pass)}@${host}:8554/Streaming/Channels/102"
+                val url = "rtsp://${android.net.Uri.encode(user)}:${android.net.Uri.encode(pass)}@${host}:8554/${path}"
                 saveCamera(index, name, url)
             }
             .setNeutralButton("Hapus URL") { _, _ ->
