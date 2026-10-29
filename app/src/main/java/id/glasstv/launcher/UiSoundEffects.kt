@@ -115,7 +115,7 @@ internal object UiSoundEffects {
     }
 
     private fun createWave(cacheDir: File, profile: String, kind: String): File {
-        val file = File(cacheDir, "glasstv_\${profile}_\${kind}.wav")
+        val file = File(cacheDir, "glasstv_${profile}_${kind}.wav")
         if (file.isFile && file.length() > 44L) return file
         val rate = 24000
         val seconds = if (kind == "nav") 0.075 else 0.125
