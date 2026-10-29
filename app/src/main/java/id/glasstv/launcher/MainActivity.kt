@@ -2237,6 +2237,12 @@ class MainActivity : Activity() {
         settingRow("Warna aksen", "Ubah sorotan rekomendasi dan pemutar musik", accentName()) {
             dialog.dismiss(); showAccentPicker()
         }
+        settingRow("Tata letak CCTV", "Atur jumlah kamera dan susunan baris/kolom", CctvLayouts.selected(this).label) {
+            dialog.dismiss(); showCctvLayoutPicker()
+        }
+        settingRow("Gaya suara konsol", "Bunyi navigasi bergaya konsol", UiSoundEffects.profileLabel(UiSoundEffects.activeProfile(this))) {
+            dialog.dismiss(); showSoundProfilePicker()
+        }
         val soundOn = prefs.getBoolean("ui_sound_enabled", true)
         settingRow("Suara navigasi", "Bunyi singkat saat fokus dan memilih kartu", if (soundOn) "AKTIF" else "MATI") {
             prefs.edit().putBoolean("ui_sound_enabled", !soundOn).apply()
@@ -2256,6 +2262,14 @@ class MainActivity : Activity() {
         }
         settingRow("Uji suara azan", "Putar contoh audio untuk memastikan suara berfungsi") {
             dialog.dismiss(); playAzan()
+        }
+        settingRow("Bersihkan cache aplikasi", "Minta Android membersihkan cache dengan konfirmasi sistem") {
+            dialog.dismiss()
+            requestClearAppCaches()
+        }
+        settingRow("Kelola aplikasi & hentikan", "Pilih aplikasi lalu gunakan Info aplikasi untuk Cache atau Paksa berhenti") {
+            dialog.dismiss()
+            showAppMaintenanceDialog()
         }
         settingRow("Wallpaper video", "Pilih video lokal sebagai latar bergerak tanpa suara") {
             dialog.dismiss()
@@ -2430,7 +2444,17 @@ class MainActivity : Activity() {
 
     private fun addPreviewChannelRows(container: LinearLayout) {
         val channels = TvPreviewChannels.read(this)
-        if (channels.isEmpty()) return
+        val smartTubePackage = listOf("org.smarttube.stable", "com.liskovsoft.smarttubetv.beta")
+            .firstOrNull { packageName ->
+                try {
+                    packageManager.getApplicationInfo(packageName, 0)
+                    true
+                } catch (_: Exception) { false }
+            }
+        if (channels.isEmpty()) {
+            if (smartTubePackage != null) addSmartTubeRecommendationShortcut(container, smartTubePackage)
+            return
+        }
         channels.forEach { channel ->
             val section = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -2497,6 +2521,70 @@ class MainActivity : Activity() {
             section.addView(horizontal, LinearLayout.LayoutParams(-1, dp(134)))
             container.addView(section, LinearLayout.LayoutParams(-1, dp(155)))
         }
+        if (smartTubePackage != null && channels.none { it.packageName == smartTubePackage }) {
+            addSmartTubeRecommendationShortcut(container, smartTubePackage)
+        }
+    }
+
+    private fun addSmartTubeRecommendationShortcut(container: LinearLayout, appPackage: String) {
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(7), 0, dp(5))
+            clipChildren = false
+            clipToPadding = false
+        }
+        section.addView(label("REKOMENDASI SMARTTUBE", 11, Color.rgb(210, 218, 228), true))
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(8), dp(14), dp(8))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(Color.argb(145, 18, 28, 43))
+                setStroke(dp(1), accentAlpha(105))
+            }
+            isFocusable = true
+            isFocusableInTouchMode = true
+            isClickable = true
+            contentDescription = "Buka SmartTube untuk rekomendasi video"
+            setOnFocusChangeListener { view, focused ->
+                view.background = GradientDrawable().apply {
+                    cornerRadius = dp(12).toFloat()
+                    setColor(if (focused) focusSurface(220) else Color.argb(145, 18, 28, 43))
+                    setStroke(dp(if (focused) 2 else 1), accentAlpha(if (focused) 220 else 105))
+                }
+                if (focused) playNavigationSound()
+            }
+            setOnClickListener {
+                playSelectSound()
+                val launch = packageManager.getLeanbackLaunchIntentForPackage(appPackage)
+                    ?: packageManager.getLaunchIntentForPackage(appPackage)
+                if (launch != null) {
+                    try { startActivity(launch) } catch (_: Exception) { toast("SmartTube tidak dapat dibuka.") }
+                } else toast("Aplikasi SmartTube tidak dapat dibuka dari launcher.")
+            }
+            setOnKeyListener { view, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                    keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                    view.performClick(); true
+                } else false
+            }
+        }
+        val icon = ImageView(this).apply {
+            try { setImageDrawable(packageManager.getApplicationIcon(appPackage)) } catch (_: Exception) { }
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        card.addView(icon, LinearLayout.LayoutParams(dp(42), dp(42)))
+        val textCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, 0, 0)
+        }
+        textCol.addView(label("Buka SmartTube", 13, Color.WHITE, true))
+        textCol.addView(label("Lihat rekomendasi video terbaru di aplikasi", 10, Color.rgb(170, 189, 213), false))
+        card.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
+        card.addView(label("BUKA  ›", 10, accent, true))
+        section.addView(card, LinearLayout.LayoutParams(-1, dp(62)))
+        container.addView(section, LinearLayout.LayoutParams(-1, dp(86)))
     }
 
     private fun loadPreviewArtwork(source: String?, target: ImageView) {
@@ -2640,6 +2728,83 @@ class MainActivity : Activity() {
         }
         dialog.show()
         dialog.window?.setLayout(safeDialogWidth(650), (resources.displayMetrics.heightPixels * 0.82f).toInt())
+    }
+
+    private fun showCctvLayoutPicker() {
+        val options = CctvLayouts.options
+        val selected = CctvLayouts.selected(this)
+        val checked = options.indexOfFirst { it.id == selected.id }.coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("Tata letak CCTV")
+            .setSingleChoiceItems(options.map { it.label }.toTypedArray(), checked) { picker, which ->
+                val option = options[which]
+                CctvLayouts.save(this, option)
+                picker.dismiss()
+                showHome()
+                toast("Tata letak CCTV: ${option.label}")
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun showSoundProfilePicker() {
+        val profiles = listOf("ps5", "switch", "xbox", "off")
+        val labels = arrayOf("PlayStation 5 — lembut dan futuristis", "Nintendo Switch — klik lebih tajam",
+            "Xbox — nada lebih hangat", "Mati — tanpa suara")
+        val current = profiles.indexOf(UiSoundEffects.activeProfile(this)).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("Gaya suara konsol")
+            .setSingleChoiceItems(labels, current) { picker, which ->
+                val profile = profiles[which]
+                UiSoundEffects.setProfile(this, profile)
+                picker.dismiss()
+                if (profile != "off") UiSoundEffects.playSelect(this)
+                showSettings()
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun requestClearAppCaches() {
+        AlertDialog.Builder(this)
+            .setTitle("Bersihkan cache aplikasi")
+            .setMessage("Android akan meminta konfirmasi untuk membersihkan cache aplikasi. Ini ditujukan pada file sementara; jangan memilih opsi hapus data jika ingin mempertahankan login dan riwayat tontonan.")
+            .setPositiveButton("Lanjutkan") { _, _ ->
+                try {
+                    startActivity(Intent(Intent.ACTION_CLEAR_APP_CACHE))
+                } catch (_: Exception) {
+                    try { startActivity(Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS)) }
+                    catch (_: Exception) { toast("Buka Setelan Android → Aplikasi untuk membersihkan cache.") }
+                }
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun showAppMaintenanceDialog() {
+        val apps = queryTvApps().distinctBy { it.activityInfo.packageName }
+        if (apps.isEmpty()) {
+            toast("Tidak ada aplikasi TV yang bisa dikelola.")
+            return
+        }
+        val entries = apps.map { resolve ->
+            "${resolve.loadLabel(packageManager)}  ·  ${resolve.activityInfo.packageName}"
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Pilih aplikasi")
+            .setMessage("Buka halaman Info aplikasi Android untuk melihat cache atau menekan Paksa berhenti. Android tidak mengizinkan launcher biasa menghentikan paksa aplikasi lain secara diam-diam.")
+            .setItems(entries) { _, which -> openApplicationDetails(apps[which].activityInfo.packageName) }
+            .setNegativeButton("Tutup", null)
+            .show()
+    }
+
+    private fun openApplicationDetails(appPackage: String) {
+        try {
+            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$appPackage")))
+        } catch (_: Exception) {
+            try { startActivity(Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS)) }
+            catch (_: Exception) { toast("Pengaturan aplikasi tidak tersedia pada TV ini.") }
+        }
     }
 
     private fun openGoogleAmbientSettings() {
