@@ -175,6 +175,7 @@ class MainActivity : Activity() {
     private var dashboardGreetingLabel: TextView? = null
     private var dashboardClockLabel: TextView? = null
     private var dashboardDateLabel: TextView? = null
+    private var dashboardTimezoneLabel: TextView? = null
     private var dashboardLocationLabel: TextView? = null
     private var dashboardWeatherLabel: TextView? = null
     private var dashboardNextPrayerLabel: TextView? = null
@@ -198,6 +199,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        UiSoundEffects.initialize(this)
         window.statusBarColor = bg
         window.navigationBarColor = bg
         showHome()
@@ -245,6 +247,7 @@ class MainActivity : Activity() {
         prayerItemViews.clear()
         prayerNameLabels.clear()
         homeHeaderView = null
+        dashboardTimezoneLabel = null
         headerPrayerMetaLabel = null
         headerNextPrayerLabel = null
         homeMediaRowView = null
@@ -403,20 +406,27 @@ class MainActivity : Activity() {
             clipToPadding = false
         }
         val left = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+            orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(14), dp(7), dp(10), dp(7))
             background = dashboardCardBackground()
             clipChildren = false
             clipToPadding = false
         }
-        dashboardGreetingLabel = label("Selamat malam", 13, Color.WHITE, true)
-        left.addView(dashboardGreetingLabel)
-        dashboardDateLabel = label("--", 11, Color.rgb(174, 192, 216), false)
-        left.addView(dashboardDateLabel)
-        dashboardClockLabel = label("--:--", 26, Color.WHITE, true)
-        left.addView(dashboardClockLabel)
-        dashboardLocationLabel = label("📍 Jakarta Timur", 12, accent, true).apply {
+        val details = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            clipChildren = false
+            clipToPadding = false
+        }
+        dashboardGreetingLabel = label("Selamat Pagi", 13, Color.WHITE, true)
+        details.addView(dashboardGreetingLabel)
+        dashboardDateLabel = label("--", 10, Color.rgb(174, 192, 216), false).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        details.addView(dashboardDateLabel)
+        dashboardLocationLabel = label("📍 Jakarta Timur", 11, accent, true).apply {
             setPadding(dp(5), dp(3), dp(5), dp(3))
             isFocusable = true
             isClickable = true
@@ -427,7 +437,7 @@ class MainActivity : Activity() {
                 view.background = if (focused) GradientDrawable().apply {
                     cornerRadius = dp(7).toFloat()
                     setColor(Color.argb(120, 48, 77, 111))
-                    setStroke(dp(1), Color.argb(190, 190, 220, 255))
+                    setStroke(dp(1), accentAlpha(210))
                 } else null
                 if (focused) playNavigationSound()
             }
@@ -438,15 +448,28 @@ class MainActivity : Activity() {
                 } else false
             }
         }
-        left.addView(dashboardLocationLabel)
+        details.addView(dashboardLocationLabel)
         dashboardWeatherLabel = label("Memuat cuaca BMKG…", 11, Color.rgb(232, 237, 246), false).apply {
             setPadding(0, dp(2), 0, 0)
             maxLines = 2
-            minHeight = dp(28)
             ellipsize = android.text.TextUtils.TruncateAt.END
             setLineSpacing(dp(1).toFloat(), 1.0f)
         }
-        left.addView(dashboardWeatherLabel)
+        details.addView(dashboardWeatherLabel)
+        left.addView(details, LinearLayout.LayoutParams(0, -1, 1.65f).apply { rightMargin = dp(6) })
+        val clockColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(5), 0, 0, 0)
+        }
+        dashboardClockLabel = label("--:--", 30, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            maxLines = 1
+        }
+        dashboardTimezoneLabel = label("WIB", 10, accent, true).apply { gravity = Gravity.CENTER }
+        clockColumn.addView(dashboardClockLabel)
+        clockColumn.addView(dashboardTimezoneLabel)
+        left.addView(clockColumn, LinearLayout.LayoutParams(0, -1, 0.95f))
         weatherPanelView = left
         panel.addView(left, LinearLayout.LayoutParams(0, -1, 1f).apply {
             rightMargin = dp(6)
@@ -567,10 +590,21 @@ class MainActivity : Activity() {
 
     private fun updateDashboardClock() {
         val now = Date()
+        val zoneId = dashboardSnapshot?.timeZone ?: DashboardServices.selectedCity(this).timeZone
+        val zone = java.util.TimeZone.getTimeZone(zoneId)
         dashboardGreetingLabel?.text = currentGreeting()
-        dashboardDateLabel?.text = SimpleDateFormat("EEEE, dd MMMM yyyy", Locale("id", "ID")).format(now)
-        dashboardClockLabel?.text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(now)
-        headerTimeLabel?.text = SimpleDateFormat("EEEE, dd MMM  •  HH:mm", Locale("id", "ID")).format(now)
+        dashboardDateLabel?.text = SimpleDateFormat("EEE, dd MMM yyyy", Locale("id", "ID")).apply {
+            timeZone = zone
+        }.format(now)
+        dashboardClockLabel?.text = SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
+            timeZone = zone
+        }.format(now)
+        dashboardTimezoneLabel?.text = SimpleDateFormat("z", Locale("id", "ID")).apply {
+            timeZone = zone
+        }.format(now)
+        headerTimeLabel?.text = SimpleDateFormat("EEEE, dd MMM  •  HH:mm", Locale("id", "ID")).apply {
+            timeZone = zone
+        }.format(now)
         updateHeaderPrayerInfo()
     }
 
@@ -590,11 +624,11 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun hijriDate(date: Date): String {
+    private fun hijriDate(date: Date, timeZoneId: String = "Asia/Jakarta"): String {
         if (android.os.Build.VERSION.SDK_INT < 24) return "Kalender Hijriyah"
         return try {
             val cal = android.icu.util.IslamicCalendar().apply {
-                timeZone = android.icu.util.TimeZone.getTimeZone("Asia/Jakarta")
+                timeZone = android.icu.util.TimeZone.getTimeZone(timeZoneId)
                 time = date
             }
             val months = arrayOf("Muharam", "Safar", "Rabiulawal", "Rabiulakhir", "Jumadilawal", "Jumadilakhir",
@@ -607,8 +641,10 @@ class MainActivity : Activity() {
     }
 
     private fun updateHeaderPrayerInfo() {
-        val city = dashboardSnapshot?.city ?: DashboardServices.selectedCity(this).name
-        headerPrayerMetaLabel?.text = "Waktu Sholat $city - ${hijriDate(Date())}"
+        val selected = DashboardServices.selectedCity(this)
+        val city = dashboardSnapshot?.city ?: selected.name
+        val zone = dashboardSnapshot?.timeZone ?: selected.timeZone
+        headerPrayerMetaLabel?.text = "Waktu Sholat $city - ${hijriDate(Date(), zone)}"
         val snapshot = dashboardSnapshot
         if (snapshot == null) {
             headerNextPrayerLabel?.text = "Salat berikutnya · --:--"
@@ -622,10 +658,10 @@ class MainActivity : Activity() {
         if (snapshot == null) return
         dashboardLocationLabel?.text = "📍 ${snapshot.city}"
         val shortCondition = snapshot.condition.take(24).trimEnd()
-        dashboardWeatherLabel?.text = "${snapshot.temperature}  •  ${shortCondition}\nPrakiraan BMKG" + if (error != null) " · tersimpan" else ""
+        dashboardWeatherLabel?.text = "${snapshot.temperature}  •  ${shortCondition}" + if (error != null) " · tersimpan" else ""
         snapshot.prayerTimes.forEachIndexed { index, time -> prayerTimeLabels.getOrNull(index)?.text = time }
         val next = DashboardServices.nextPrayer(snapshot)
-        val hijri = hijriDate(Date())
+        val hijri = hijriDate(Date(), snapshot.timeZone)
         dashboardNextPrayerLabel?.text = "Waktu Sholat ${snapshot.city} - $hijri"
         val nextIndex = snapshot.prayerNames.indexOf(next.first).takeIf { it >= 0 } ?: 0
         prayerItemViews.forEachIndexed { index, item ->
@@ -844,19 +880,11 @@ class MainActivity : Activity() {
     }
 
     private fun playNavigationSound() {
-        if (!getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("ui_sound_enabled", true)) return
-        try {
-            if (toneGenerator == null) toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 18)
-            toneGenerator?.startTone(ToneGenerator.TONE_PROP_BEEP2, 28)
-        } catch (_: Exception) { }
+        UiSoundEffects.playNavigation(this)
     }
 
     private fun playSelectSound() {
-        if (!getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("ui_sound_enabled", true)) return
-        try {
-            if (toneGenerator == null) toneGenerator = ToneGenerator(AudioManager.STREAM_MUSIC, 18)
-            toneGenerator?.startTone(ToneGenerator.TONE_PROP_ACK, 55)
-        } catch (_: Exception) { }
+        UiSoundEffects.playSelect(this)
     }
 
     /** Two live RTSP previews are shown directly on the home screen. */
@@ -890,7 +918,8 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        for (index in 1..2) {
+        val cameraCount = CctvLayouts.selected(this).cameraCount
+        for (index in 1..cameraCount) {
             val name = prefs.getString("camera_name_$index", "Kamera $index")
                 ?.takeIf { it.isNotBlank() } ?: "Kamera $index"
             val url = prefs.getString("camera_$index", null)?.trim().orEmpty()
@@ -964,7 +993,7 @@ class MainActivity : Activity() {
                 panel.addView(label("URL RTSP tidak valid", 10, Color.rgb(220, 160, 150), false))
             }
             val lp = LinearLayout.LayoutParams(0, dp(98), 1f)
-            lp.setMargins(0, 0, if (index == 1) dp(8) else 0, 0)
+            lp.setMargins(0, 0, if (index < cameraCount) dp(5) else 0, 0)
             row.addView(panel, lp)
         }
         section.addView(row, LinearLayout.LayoutParams(-1, dp(98)))
@@ -2079,7 +2108,8 @@ class MainActivity : Activity() {
     }
 
     private fun currentGreeting(): String {
-        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val zoneId = DashboardServices.selectedCity(this).timeZone
+        val hour = Calendar.getInstance(java.util.TimeZone.getTimeZone(zoneId)).get(Calendar.HOUR_OF_DAY)
         val salutation = when {
             hour < 11 -> "Selamat pagi"
             hour < 15 -> "Selamat siang"
@@ -2636,6 +2666,7 @@ class MainActivity : Activity() {
         releaseVideoWallpaperPlayer()
         try { toneGenerator?.release() } catch (_: Exception) { }
         toneGenerator = null
+        UiSoundEffects.release()
         try { azanPlayer?.release() } catch (_: Exception) { }
         azanPlayer = null
         super.onDestroy()
