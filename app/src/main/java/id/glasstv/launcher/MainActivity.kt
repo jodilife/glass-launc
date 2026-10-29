@@ -918,8 +918,9 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val cameraCount = CctvLayouts.selected(this).cameraCount
-        for (index in 1..cameraCount) {
+        // Keep the Home preview intentionally compact; the selected grid is used on the full CCTV page.
+        val homeCameraCount = 2
+        for (index in 1..homeCameraCount) {
             val name = prefs.getString("camera_name_$index", "Kamera $index")
                 ?.takeIf { it.isNotBlank() } ?: "Kamera $index"
             val url = prefs.getString("camera_$index", null)?.trim().orEmpty()
@@ -993,7 +994,7 @@ class MainActivity : Activity() {
                 panel.addView(label("URL RTSP tidak valid", 10, Color.rgb(220, 160, 150), false))
             }
             val lp = LinearLayout.LayoutParams(0, dp(98), 1f)
-            lp.setMargins(0, 0, if (index < cameraCount) dp(5) else 0, 0)
+            lp.setMargins(0, 0, if (index < homeCameraCount) dp(5) else 0, 0)
             row.addView(panel, lp)
         }
         section.addView(row, LinearLayout.LayoutParams(-1, dp(98)))
@@ -2768,12 +2769,11 @@ class MainActivity : Activity() {
     private fun requestClearAppCaches() {
         AlertDialog.Builder(this)
             .setTitle("Bersihkan cache aplikasi")
-            .setMessage("Android akan meminta konfirmasi untuk membersihkan cache aplikasi. Ini ditujukan pada file sementara; jangan memilih opsi hapus data jika ingin mempertahankan login dan riwayat tontonan.")
-            .setPositiveButton("Lanjutkan") { _, _ ->
-                try {
-                    startActivity(Intent(Intent.ACTION_CLEAR_APP_CACHE))
-                } catch (_: Exception) {
-                    try { startActivity(Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS)) }
+            .setMessage("Android TV akan membuka pengaturan aplikasi. Pilih aplikasi lalu tekan Bersihkan cache. Jangan pilih Hapus data jika ingin mempertahankan login, pengaturan, dan riwayat tontonan.")
+            .setPositiveButton("Buka pengaturan") { _, _ ->
+                try { startActivity(Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS)) }
+                catch (_: Exception) {
+                    try { startActivity(Intent(Settings.ACTION_SETTINGS)) }
                     catch (_: Exception) { toast("Buka Setelan Android → Aplikasi untuk membersihkan cache.") }
                 }
             }
