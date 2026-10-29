@@ -2458,8 +2458,12 @@ class MainActivity : Activity() {
                     true
                 } catch (_: Exception) { false }
             }
+        val hasSmartTubeRecommendations = smartTubePackage != null &&
+            addSmartTubeRecommendationCards(container, smartTubePackage)
         if (channels.isEmpty()) {
-            if (smartTubePackage != null) addSmartTubeRecommendationShortcut(container, smartTubePackage)
+            if (smartTubePackage != null && !hasSmartTubeRecommendations) {
+                addSmartTubeRecommendationShortcut(container, smartTubePackage)
+            }
             return
         }
         channels.forEach { channel ->
@@ -2528,9 +2532,131 @@ class MainActivity : Activity() {
             section.addView(horizontal, LinearLayout.LayoutParams(-1, dp(134)))
             container.addView(section, LinearLayout.LayoutParams(-1, dp(155)))
         }
-        if (smartTubePackage != null && channels.none { it.packageName == smartTubePackage }) {
+        if (smartTubePackage != null && channels.none { it.packageName == smartTubePackage } &&
+            !hasSmartTubeRecommendations) {
             addSmartTubeRecommendationShortcut(container, smartTubePackage)
         }
+    }
+
+    private fun addSmartTubeRecommendationCards(container: LinearLayout, appPackage: String): Boolean {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        val ids = prefs.getString("smarttube_rec_ids", "").orEmpty()
+            .split(",").filter { it.isNotBlank() }
+        data class SmartTubeRecommendation(
+            val id: String,
+            val title: String,
+            val description: String,
+            val artwork: File?
+        )
+        val items = ids.mapNotNull { id ->
+            val title = prefs.getString("smarttube_rec_title_$id", null)?.trim()
+                ?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val updated = prefs.getLong("smarttube_rec_updated_$id", 0L)
+            if (updated <= 0L || now - updated > 7 * 24 * 60 * 60 * 1000L) return@mapNotNull null
+            val artworkName = prefs.getString("smarttube_rec_artwork_$id", null)
+            val artwork = artworkName?.let { File(filesDir, it) }?.takeIf { it.isFile && it.length() > 0L }
+            SmartTubeRecommendation(
+                id,
+                title,
+                prefs.getString("smarttube_rec_description_$id", "").orEmpty(),
+                artwork
+            )
+        }.take(6)
+        if (items.isEmpty()) return false
+
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(6), 0, dp(5))
+            clipChildren = false
+            clipToPadding = false
+        }
+        section.addView(label("REKOMENDASI SMARTTUBE", 11, Color.rgb(210, 218, 228), true))
+        val cards = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(2), dp(5), dp(2), dp(5))
+            clipChildren = false
+            clipToPadding = false
+        }
+        items.forEach { item ->
+            val tile = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(5), dp(5), dp(5), dp(5))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(10).toFloat()
+                    setColor(Color.argb(118, 22, 32, 48))
+                    setStroke(dp(1), accentAlpha(85))
+                }
+                isFocusable = true
+                isFocusableInTouchMode = true
+                isClickable = true
+                contentDescription = "Rekomendasi SmartTube: ${item.title}"
+                setOnFocusChangeListener { view, focused ->
+                    view.background = GradientDrawable().apply {
+                        cornerRadius = dp(10).toFloat()
+                        setColor(if (focused) focusSurface(215) else Color.argb(118, 22, 32, 48))
+                        setStroke(dp(if (focused) 2 else 1), accentAlpha(if (focused) 220 else 85))
+                    }
+                    if (focused) playNavigationSound()
+                }
+                setOnClickListener {
+                    playSelectSound()
+                    if (!PlaybackListenerService.launchSmartTubeRecommendation(item.id)) {
+                        val launch = packageManager.getLeanbackLaunchIntentForPackage(appPackage)
+                            ?: packageManager.getLaunchIntentForPackage(appPackage)
+                        if (launch != null) {
+                            try { startActivity(launch) } catch (_: Exception) { toast("SmartTube tidak dapat dibuka.") }
+                        } else toast("Rekomendasi tersimpan, tetapi SmartTube tidak dapat dibuka.")
+                    }
+                }
+                setOnKeyListener { view, keyCode, event ->
+                    if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                        keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                        view.performClick(); true
+                    } else false
+                }
+            }
+            val art = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(7).toFloat()
+                    setColor(Color.rgb(24, 32, 45))
+                }
+                clipToOutline = true
+                item.artwork?.let { file ->
+                    try { setImageBitmap(BitmapFactory.decodeFile(file.absolutePath)) } catch (_: Exception) { }
+                }
+                if (drawable == null) {
+                    try { setImageDrawable(packageManager.getApplicationIcon(appPackage)); scaleType = ImageView.ScaleType.FIT_CENTER }
+                    catch (_: Exception) { }
+                }
+            }
+            tile.addView(art, LinearLayout.LayoutParams(dp(164), dp(78)))
+            tile.addView(label(item.title, 11, Color.WHITE, true).apply {
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp(2), dp(4), dp(2), 0)
+            }, LinearLayout.LayoutParams(dp(164), dp(32)))
+            if (item.description.isNotBlank()) {
+                tile.addView(label(item.description, 9, Color.rgb(165, 184, 208), false).apply {
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(dp(2), dp(2), dp(2), 0)
+                }, LinearLayout.LayoutParams(dp(164), dp(14)))
+            }
+            cards.addView(tile, LinearLayout.LayoutParams(-2, dp(if (item.description.isNotBlank()) 140 else 124))
+                .apply { rightMargin = dp(9) })
+        }
+        val scroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            clipChildren = false
+            clipToPadding = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(cards)
+        }
+        section.addView(scroll, LinearLayout.LayoutParams(-1, dp(150)))
+        container.addView(section, LinearLayout.LayoutParams(-1, dp(178)))
+        return true
     }
 
     private fun addSmartTubeRecommendationShortcut(container: LinearLayout, appPackage: String) {
