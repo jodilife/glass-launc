@@ -12,14 +12,15 @@ internal data class CctvLayoutOption(
 }
 
 internal object CctvLayouts {
+    // Layout IDs use columns × rows, matching common grid notation such as 3x1 = three across.
     val options = listOf(
         CctvLayoutOption("1x1", 1, 1, "1 × 1 — 1 kamera"),
-        CctvLayoutOption("1x2", 1, 2, "1 × 2 — 2 kamera berdampingan"),
-        CctvLayoutOption("2x1", 2, 1, "2 × 1 — 2 kamera vertikal"),
-        CctvLayoutOption("1x3", 1, 3, "1 × 3 — 3 kamera berdampingan"),
-        CctvLayoutOption("3x1", 3, 1, "3 × 1 — 3 kamera vertikal"),
+        CctvLayoutOption("2x1", 1, 2, "2 × 1 — 2 kamera satu baris"),
+        CctvLayoutOption("1x2", 2, 1, "1 × 2 — 2 kamera vertikal"),
+        CctvLayoutOption("3x1", 1, 3, "3 × 1 — 3 kamera satu baris"),
+        CctvLayoutOption("1x3", 3, 1, "1 × 3 — 3 kamera vertikal"),
         CctvLayoutOption("2x2", 2, 2, "2 × 2 — 4 kamera"),
-        CctvLayoutOption("1x4", 1, 4, "1 × 4 — 4 kamera berdampingan")
+        CctvLayoutOption("4x1", 1, 4, "4 × 1 — 4 kamera satu baris")
     )
 
     fun selected(context: Context): CctvLayoutOption {
