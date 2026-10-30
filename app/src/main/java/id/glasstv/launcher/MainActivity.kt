@@ -9,6 +9,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
+import android.text.style.StyleSpan
+import android.text.style.RelativeSizeSpan
+import android.text.style.ForegroundColorSpan
+import android.text.Spanned
+import android.text.SpannableString
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.LayerDrawable
@@ -77,6 +82,8 @@ class MainActivity : Activity() {
             (darkB * (1f - blend) + Color.blue(accent) * blend).toInt())
     }
 
+    private data class PreviewRowView(val key: String, val packageName: String, val view: View)
+    private val previewRowViews = mutableListOf<PreviewRowView>()
     private val favoriteDockTiles = mutableListOf<View>()
     private val prayerItemViews = mutableListOf<View>()
     private val prayerNameLabels = mutableListOf<TextView>()
@@ -178,7 +185,6 @@ class MainActivity : Activity() {
     private var dashboardGreetingLabel: TextView? = null
     private var dashboardClockLabel: TextView? = null
     private var dashboardDateLabel: TextView? = null
-    private var dashboardTimezoneLabel: TextView? = null
     private var dashboardLocationLabel: TextView? = null
     private var dashboardWeatherLabel: TextView? = null
     private var dashboardNextPrayerLabel: TextView? = null
@@ -246,11 +252,11 @@ class MainActivity : Activity() {
         idleMode = false
         idleHandler.removeCallbacks(idleTimeout)
         actions.clear()
+        previewRowViews.clear()
         favoriteDockTiles.clear()
         prayerItemViews.clear()
         prayerNameLabels.clear()
         homeHeaderView = null
-        dashboardTimezoneLabel = null
         headerPrayerMetaLabel = null
         headerNextPrayerLabel = null
         homeMediaRowView = null
@@ -318,7 +324,9 @@ class MainActivity : Activity() {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setPadding(0, dp(2), 0, dp(2))
         }
-        val time = SimpleDateFormat("EEEE, dd MMM  •  HH:mm", Locale("id", "ID")).format(Date())
+        val time = SimpleDateFormat("EEEE, dd MMM  •  HH:mm", Locale("id", "ID")).apply {
+            timeZone = java.util.TimeZone.getTimeZone(DashboardServices.selectedCity(this@MainActivity).timeZone)
+        }.format(Date())
         headerTimeLabel = label(time, 12, Color.rgb(185, 199, 219), false).apply {
             gravity = Gravity.END
             maxLines = 1
@@ -460,28 +468,24 @@ class MainActivity : Activity() {
             setLineSpacing(dp(1).toFloat(), 1.0f)
         }
         details.addView(dashboardWeatherLabel)
-        left.addView(details, LinearLayout.LayoutParams(0, -1, 1.45f).apply { rightMargin = dp(6) })
+        left.addView(details, LinearLayout.LayoutParams(0, -1, 1.2f).apply { rightMargin = dp(5) })
         val clockColumn = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(dp(3), 0, dp(1), 0)
+            setPadding(dp(2), 0, dp(1), 0)
             clipChildren = false
             clipToPadding = false
         }
-        dashboardClockLabel = label("--:--", 35, Color.WHITE, true).apply {
+        dashboardClockLabel = label("--:-- WIB", 42, Color.WHITE, false).apply {
             gravity = Gravity.CENTER
             maxLines = 1
             includeFontPadding = false
-            letterSpacing = -0.025f
+            letterSpacing = -0.045f
+            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+            setShadowLayer(dp(8).toFloat(), 0f, dp(2).toFloat(), Color.argb(115, 0, 0, 0))
         }
-        dashboardTimezoneLabel = label("WIB", 11, accent, true).apply {
-            gravity = Gravity.CENTER
-            includeFontPadding = false
-            setPadding(dp(2), dp(7), 0, 0)
-        }
-        clockColumn.addView(dashboardClockLabel, LinearLayout.LayoutParams(-2, -2))
-        clockColumn.addView(dashboardTimezoneLabel, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(2) })
-        left.addView(clockColumn, LinearLayout.LayoutParams(0, -1, 1.2f))
+        clockColumn.addView(dashboardClockLabel, LinearLayout.LayoutParams(-1, -2))
+        left.addView(clockColumn, LinearLayout.LayoutParams(0, -1, 1.5f))
         weatherPanelView = left
         panel.addView(left, LinearLayout.LayoutParams(0, -1, 1f).apply {
             rightMargin = dp(6)
@@ -612,7 +616,7 @@ class MainActivity : Activity() {
         dashboardClockLabel?.text = SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
             timeZone = zone
         }.format(now)
-        dashboardTimezoneLabel?.text = when (zoneId) {
+        val zoneLabel = when (zoneId) {
             "Asia/Jakarta" -> "WIB"
             "Asia/Makassar" -> "WITA"
             "Asia/Jayapura" -> "WIT"
@@ -620,6 +624,15 @@ class MainActivity : Activity() {
                 timeZone = zone
             }.format(now)
         }
+        val clockValue = SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
+            timeZone = zone
+        }.format(now)
+        val clockText = SpannableString("$clockValue $zoneLabel")
+        val zoneStart = clockValue.length + 1
+        clockText.setSpan(RelativeSizeSpan(0.34f), zoneStart, clockText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        clockText.setSpan(ForegroundColorSpan(accent), zoneStart, clockText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        clockText.setSpan(StyleSpan(Typeface.BOLD), zoneStart, clockText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        dashboardClockLabel?.text = clockText
         headerTimeLabel?.text = SimpleDateFormat("EEEE, dd MMM  •  HH:mm", Locale("id", "ID")).apply {
             timeZone = zone
         }.format(now)
@@ -2318,12 +2331,10 @@ class MainActivity : Activity() {
             dialog.dismiss()
             showTvListingsPermissionDialog()
         }
-        val rowOrder = prefs.getString("preview_row_order", "recommendations_first")
-        settingRow("Urutan rekomendasi & riwayat",
-            "Pilih baris rekomendasi atau Watch Next yang tampil lebih dahulu",
-            if (rowOrder == "history_first") "RIWAYAT DULU" else "REKOMENDASI DULU") {
+        settingRow("Atur rekomendasi & riwayat",
+            "Ubah urutan, sembunyikan baris, dan pilih yang tetap tampil pada mode minimalis") {
             dialog.dismiss()
-            showPreviewRowOrderPicker()
+            managePreviewRows()
         }
         settingRow("Dock aplikasi favorit", "Atur ikon aplikasi favorit dan urutannya") {
             dialog.dismiss(); manageFavoriteDock()
@@ -2536,21 +2547,55 @@ class MainActivity : Activity() {
         container.addView(section, LinearLayout.LayoutParams(-1, dp(68)))
     }
 
+    private fun previewRowKey(channel: TvPreviewChannels.Channel): String =
+        "row_" + Integer.toHexString((channel.packageName + "|" + channel.title).hashCode())
+
+    private fun isSmartTubePreview(packageName: String): Boolean {
+        val value = packageName.lowercase(Locale.ROOT)
+        return value.contains("smarttube") || value.contains("smartyoutubetv2") || value.contains("teamsmart")
+    }
+
+    private fun previewHiddenKeys(): Set<String> =
+        getSharedPreferences("glass_tv", MODE_PRIVATE)
+            .getStringSet("preview_hidden_keys", emptySet())?.toSet() ?: emptySet()
+
+    private fun previewCompactKeepKeys(): Set<String> {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (!prefs.getBoolean("preview_compact_configured", false)) return emptySet()
+        return prefs.getStringSet("preview_compact_keep_keys", emptySet())?.toSet() ?: emptySet()
+    }
+
+    private fun previewRowShouldShow(key: String, packageName: String): Boolean {
+        if (key in previewHiddenKeys()) return false
+        return !idleMode || key in previewCompactKeepKeys() || isSmartTubePreview(packageName)
+    }
+
+    private fun applyPreviewRowVisibility() {
+        previewRowViews.forEach { row ->
+            row.view.visibility = if (previewRowShouldShow(row.key, row.packageName)) View.VISIBLE else View.GONE
+        }
+    }
+
     private fun addPreviewChannelRows(container: LinearLayout) {
         val channels = TvPreviewChannels.read(this)
         if (channels.isEmpty()) return
-        val historyFirst = getSharedPreferences("glass_tv", MODE_PRIVATE)
-            .getString("preview_row_order", "recommendations_first") == "history_first"
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val savedOrder = prefs.getString("preview_channel_order", "").orEmpty()
+            .split(",").filter { it.isNotBlank() }
+        val historyFirst = prefs.getString("preview_row_order", "recommendations_first") == "history_first"
         val orderedChannels = channels.withIndex().sortedBy { indexed ->
-            val isHistory = indexed.value.category == "history"
-            val rank = if (historyFirst) {
-                if (isHistory) 0 else 1
+            val key = previewRowKey(indexed.value)
+            val savedPosition = savedOrder.indexOf(key)
+            if (savedOrder.isNotEmpty()) {
+                if (savedPosition >= 0) savedPosition else savedOrder.size + indexed.index
             } else {
-                if (isHistory) 1 else 0
+                val history = indexed.value.category == "history"
+                (if (historyFirst == history) 0 else 1000) + indexed.index
             }
-            rank * 1000 + indexed.index
         }.map { it.value }
         orderedChannels.forEach { channel ->
+            val rowKey = previewRowKey(channel)
+            if (rowKey in previewHiddenKeys()) return@forEach
             val section = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(0, dp(5), 0, dp(6))
@@ -2637,6 +2682,8 @@ class MainActivity : Activity() {
             }
             horizontal.addView(cards)
             section.addView(horizontal, LinearLayout.LayoutParams(-1, dp(134)))
+            section.visibility = if (previewRowShouldShow(rowKey, channel.packageName)) View.VISIBLE else View.GONE
+            previewRowViews.add(PreviewRowView(rowKey, channel.packageName, section))
             container.addView(section, LinearLayout.LayoutParams(-1, dp(155)))
         }
     }
@@ -2819,6 +2866,170 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun managePreviewRows() {
+        if (!hasTvListingsPermission()) {
+            showTvListingsPermissionDialog()
+            return
+        }
+        val channels = TvPreviewChannels.read(this)
+        if (channels.isEmpty()) {
+            toast("Belum ada kanal rekomendasi atau Watch Next yang diterbitkan aplikasi TV.")
+            return
+        }
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val savedOrder = prefs.getString("preview_channel_order", "").orEmpty()
+            .split(",").filter { it.isNotBlank() }
+        val ordered = channels.withIndex().sortedBy { indexed ->
+            val position = savedOrder.indexOf(previewRowKey(indexed.value))
+            if (position >= 0) position else savedOrder.size + indexed.index
+        }.map { it.value }.toMutableList()
+        val hidden = prefs.getStringSet("preview_hidden_keys", emptySet())?.toMutableSet() ?: mutableSetOf()
+        val keepInCompact = if (prefs.getBoolean("preview_compact_configured", false)) {
+            prefs.getStringSet("preview_compact_keep_keys", emptySet())?.toMutableSet() ?: mutableSetOf()
+        } else {
+            channels.filter { isSmartTubePreview(it.packageName) }
+                .map { previewRowKey(it) }.toMutableSet()
+        }
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(8), dp(12), dp(12))
+            clipChildren = false
+            clipToPadding = false
+        }
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            clipChildren = false
+            clipToPadding = false
+            addView(list, FrameLayout.LayoutParams(-1, -2))
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("ATUR REKOMENDASI & RIWAYAT")
+            .setMessage("Atur urutan baris, tampil/sembunyi di Home, dan baris yang tetap terlihat pada mode minimalis. Rekomendasi SmartTube otomatis dipertahankan pada mode minimalis hingga Anda mengubahnya.")
+            .setView(scroll)
+            .setPositiveButton("Simpan", null)
+            .setNeutralButton("Reset", null)
+            .setNegativeButton("Batal", null)
+            .create()
+
+        fun renderRows() {
+            list.removeAllViews()
+            list.addView(label("Gunakan tombol kiri/kanan untuk memilih fungsi, lalu OK. Tombol panah mengubah urutan.", 11,
+                Color.rgb(170, 189, 213), false).apply { setPadding(dp(3), 0, dp(3), dp(9)) })
+            ordered.forEachIndexed { index, channel ->
+                val key = previewRowKey(channel)
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(12), dp(8), dp(12), dp(8))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(11).toFloat()
+                        setColor(Color.argb(125, 20, 30, 46))
+                        setStroke(dp(1), accentAlpha(68))
+                    }
+                }
+                card.addView(label("${index + 1}. ${channel.title}", 13, Color.WHITE, true).apply {
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                })
+                card.addView(label(channel.packageName.ifBlank { "Sumber: Android TV Watch Next" }, 9,
+                    Color.rgb(155, 178, 205), false).apply {
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(0, dp(2), 0, dp(6))
+                })
+                val actionsRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    clipChildren = false
+                    clipToPadding = false
+                }
+                fun chip(text: String, active: Boolean = false, enabled: Boolean = true, action: () -> Unit) {
+                    val view = TextView(this).apply {
+                        this.text = text
+                        textSize = 9.5f
+                        typeface = Typeface.DEFAULT_BOLD
+                        gravity = Gravity.CENTER
+                        setPadding(dp(7), dp(7), dp(7), dp(7))
+                        setTextColor(if (active) Color.WHITE else Color.rgb(188, 203, 222))
+                        alpha = if (enabled) 1f else 0.35f
+                        isFocusable = enabled
+                        isClickable = enabled
+                        background = GradientDrawable().apply {
+                            cornerRadius = dp(8).toFloat()
+                            setColor(if (active) accentAlpha(140) else Color.argb(110, 34, 47, 66))
+                            setStroke(dp(1), if (active) accentAlpha(210) else accentAlpha(70))
+                        }
+                        setOnFocusChangeListener { v, focused ->
+                            v.elevation = if (focused) dp(5).toFloat() else 0f
+                            v.background = GradientDrawable().apply {
+                                cornerRadius = dp(8).toFloat()
+                                setColor(if (focused) focusSurface(235) else if (active) accentAlpha(140) else Color.argb(110, 34, 47, 66))
+                                setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else if (active) accentAlpha(210) else accentAlpha(70))
+                            }
+                            if (focused) playNavigationSound()
+                        }
+                        setOnClickListener { playSelectSound(); action() }
+                        setOnKeyListener { v, keyCode, event ->
+                            if (event.action == KeyEvent.ACTION_DOWN &&
+                                (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER ||
+                                    keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                v.performClick(); true
+                            } else false
+                        }
+                    }
+                    actionsRow.addView(view, LinearLayout.LayoutParams(0, dp(34), 1f).apply {
+                        rightMargin = dp(4)
+                    })
+                }
+                chip(if (key in hidden) "SEMBUNYI" else "HOME: TAMPIL", active = key !in hidden) {
+                    if (key in hidden) hidden.remove(key) else hidden.add(key)
+                    renderRows()
+                }
+                chip(if (key in keepInCompact) "MINIMALIS: TAMPIL" else "MINIMALIS: SEMBUNYI",
+                    active = key in keepInCompact) {
+                    if (key in keepInCompact) keepInCompact.remove(key) else keepInCompact.add(key)
+                    renderRows()
+                }
+                chip("▲", enabled = index > 0) {
+                    java.util.Collections.swap(ordered, index, index - 1)
+                    renderRows()
+                }
+                chip("▼", enabled = index < ordered.lastIndex) {
+                    java.util.Collections.swap(ordered, index, index + 1)
+                    renderRows()
+                }
+                card.addView(actionsRow)
+                list.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(7) })
+            }
+        }
+        renderRows()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                prefs.edit()
+                    .putString("preview_channel_order", ordered.joinToString(",") { previewRowKey(it) })
+                    .putStringSet("preview_hidden_keys", hidden.toSet())
+                    .putStringSet("preview_compact_keep_keys", keepInCompact.toSet())
+                    .putBoolean("preview_compact_configured", true)
+                    .apply()
+                dialog.dismiss()
+                showHome()
+                showSettings()
+                toast("Susunan rekomendasi dan riwayat disimpan")
+            }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                hidden.clear()
+                keepInCompact.clear()
+                channels.filter { isSmartTubePreview(it.packageName) }
+                    .forEach { keepInCompact.add(previewRowKey(it)) }
+                ordered.clear()
+                ordered.addAll(channels)
+                renderRows()
+            }
+        }
+        dialog.show()
+        dialog.window?.setLayout(safeDialogWidth(780),
+            (resources.displayMetrics.heightPixels * 0.84f).toInt())
+    }
+
     private fun showPreviewRowOrderPicker() {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val selected = prefs.getString("preview_row_order", "recommendations_first")
@@ -2965,6 +3176,7 @@ class MainActivity : Activity() {
         actionMenuView?.visibility = View.GONE
         // Keep the dashboard's layout slot transparent so media content does not jump upward.
         dashboardPanelView?.visibility = View.INVISIBLE
+        applyPreviewRowVisibility()
         headerPrayerMetaLabel?.visibility = View.VISIBLE
         headerNextPrayerLabel?.visibility = View.VISIBLE
         homeHeaderView?.let { view ->
@@ -2982,6 +3194,7 @@ class MainActivity : Activity() {
         backgroundAudioRowView?.visibility = View.VISIBLE
         actionMenuView?.visibility = View.VISIBLE
         dashboardPanelView?.visibility = View.VISIBLE
+        applyPreviewRowVisibility()
         headerPrayerMetaLabel?.visibility = View.GONE
         headerNextPrayerLabel?.visibility = View.GONE
         homeHeaderView?.let { view ->
