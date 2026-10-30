@@ -3877,9 +3877,11 @@ class MainActivity : Activity() {
                 pendingFile.delete()
                 connection.inputStream.use { input -> pendingFile.outputStream().use { output -> input.copyTo(output) } }
                 if (pendingFile.length() < 12_000L) throw IllegalStateException("File wallpaper terlalu kecil.")
-                val decoded = BitmapFactory.decodeFile(pendingFile.absolutePath)
-                    ?: throw IllegalStateException("Respons sumber bukan gambar yang valid.")
-                decoded.recycle()
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(pendingFile.absolutePath, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                    throw IllegalStateException("Respons sumber bukan gambar yang valid.")
+                }
                 if (file.exists()) file.delete()
                 if (!pendingFile.renameTo(file)) pendingFile.copyTo(file, overwrite = true)
                 pendingFile.delete()
