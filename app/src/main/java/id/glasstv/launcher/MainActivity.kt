@@ -1461,10 +1461,18 @@ class MainActivity : Activity() {
 
     private fun refreshMusicDock() {
         val parent = musicDockParent ?: return
+        val oldIndex = musicDockView?.let { parent.indexOfChild(it) } ?: parent.childCount
         musicDockView?.let { parent.removeView(it) }
         musicDockView = null
         backgroundAudioRowView = null
         addBackgroundAudioRow(parent)
+        musicDockView?.let { dock ->
+            val newIndex = parent.indexOfChild(dock)
+            if (oldIndex >= 0 && oldIndex < newIndex) {
+                parent.removeView(dock)
+                parent.addView(dock, oldIndex)
+            }
+        }
         applyMinimalistSectionVisibility()
     }
 
@@ -4143,7 +4151,9 @@ class MainActivity : Activity() {
         headerPrayerMetaLabel?.visibility = View.VISIBLE
         headerNextPrayerLabel?.visibility = View.VISIBLE
         homeHeaderView?.let { view ->
-            view.layoutParams = view.layoutParams.apply { height = dp(104) }
+            val centered = getSharedPreferences("glass_tv", MODE_PRIVATE)
+                .getString("minimalist_panel_position", "top_right") == "bottom_center"
+            view.layoutParams = view.layoutParams.apply { height = dp(if (centered) 132 else 104) }
             view.requestLayout()
         }
         // The native tuner must own the video plane while idle mode is active.
