@@ -1431,7 +1431,19 @@ class MainActivity : Activity() {
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     setPadding(0, dp(3), 0, 0)
                 })
-                val lp = LinearLayout.LayoutParams(dp(126), dp(112))
+                val mediaButtons = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(4), 0, 0)
+                }
+                mediaButtons.addView(mediaControlButton("▶Ⅱ", "Putar atau jeda $title") {
+                    sendMediaCommand(pkg, "toggle")
+                }, LinearLayout.LayoutParams(dp(42), dp(25)).apply { rightMargin = dp(5) })
+                mediaButtons.addView(mediaControlButton("⏭", "Berikutnya $title") {
+                    sendMediaCommand(pkg, "next")
+                }, LinearLayout.LayoutParams(dp(42), dp(25)))
+                card.addView(mediaButtons)
+                val lp = LinearLayout.LayoutParams(dp(126), dp(140))
                 lp.setMargins(0, 0, if (index == count - 1 || index == watchItems.take(count).lastIndex) 0 else dp(7), 0)
                 cardRow.addView(card, lp)
             }
@@ -1442,8 +1454,8 @@ class MainActivity : Activity() {
             clipToPadding = false
             overScrollMode = View.OVER_SCROLL_NEVER
         }
-        cardScroll.addView(cardRow, android.widget.FrameLayout.LayoutParams(-2, dp(118)))
-        outer.addView(cardScroll, LinearLayout.LayoutParams(-1, dp(118)))
+        cardScroll.addView(cardRow, android.widget.FrameLayout.LayoutParams(-2, dp(146)))
+        outer.addView(cardScroll, LinearLayout.LayoutParams(-1, dp(146)))
         continueWatchingSectionView = outer
         mediaRow.addView(outer, LinearLayout.LayoutParams(0, -1, 1.75f))
     }
@@ -4017,14 +4029,11 @@ class MainActivity : Activity() {
     private fun enterIdleMode() {
         if (idleMode || isFinishing || !::root.isInitialized || !hasWindowFocus()) return
         idleMode = true
-        favoriteDockView?.visibility = View.GONE
         backgroundAudioRowView?.visibility = View.GONE
-        actionMenuView?.visibility = View.GONE
-        homeExploreHeaderView?.visibility = View.GONE
+        applyMinimalistSectionVisibility()
         // A true minimalist home: only manually retained recommendation rows and the compact
         // clock/weather/prayer stack remain visible. Hide the full dashboard and media/CCTV row.
         dashboardPanelView?.visibility = View.GONE
-        homeMediaRowView?.visibility = View.GONE
         applyPreviewRowVisibility()
         idlePreviewSpacer?.visibility = View.VISIBLE
         headerBrandView?.visibility = View.GONE
@@ -4056,12 +4065,9 @@ class MainActivity : Activity() {
     private fun exitIdleMode() {
         if (!idleMode) return
         idleMode = false
-        favoriteDockView?.visibility = View.VISIBLE
         backgroundAudioRowView?.visibility = View.VISIBLE
-        actionMenuView?.visibility = View.VISIBLE
-        homeExploreHeaderView?.visibility = View.VISIBLE
+        applyMinimalistSectionVisibility()
         dashboardPanelView?.visibility = View.VISIBLE
-        homeMediaRowView?.visibility = View.VISIBLE
         applyPreviewRowVisibility()
         idlePreviewSpacer?.visibility = View.GONE
         dashboardHandler.removeCallbacks(headerClockBlink)
