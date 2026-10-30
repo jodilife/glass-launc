@@ -112,7 +112,7 @@ class MainActivity : Activity() {
     private val wallpaperVideoRequestCode = 7142
     private fun idleTimeoutSeconds(): Int {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        return prefs.getInt("idle_timeout_seconds", if (prefs.getBoolean("idle_compact_mode", true)) 30 else 0)
+        return prefs.getInt("idle_timeout_seconds", 0)
     }
 
     private fun resetIdleTimer() {
@@ -2332,6 +2332,10 @@ class MainActivity : Activity() {
             toast(message)
             showSettings()
         }
+        settingRow("Pengaturan Android / Device Preferences", "Buka pengaturan sistem TV: jaringan, timer, daya, gambar, suara, dan lainnya") {
+            dialog.dismiss()
+            openAndroidSystemSettings()
+        }
         settingRow("Lokasi cuaca & waktu salat", "Cari kota di Indonesia atau pilih lokasi tersimpan", DashboardServices.selectedCity(this).name) {
             dialog.dismiss(); showLocationPicker()
         }
@@ -3258,6 +3262,20 @@ class MainActivity : Activity() {
         } catch (_: Exception) {
             try { startActivity(Intent(Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS)) }
             catch (_: Exception) { toast("Pengaturan aplikasi tidak tersedia pada TV ini.") }
+        }
+    }
+
+    private fun openAndroidSystemSettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_SETTINGS))
+        } catch (_: Exception) {
+            try {
+                val launch = packageManager.getLaunchIntentForPackage("com.android.tv.settings")
+                if (launch != null) startActivity(launch)
+                else toast("Pengaturan Android TV tidak dapat dibuka pada perangkat ini.")
+            } catch (_: Exception) {
+                toast("Pengaturan Android TV tidak dapat dibuka pada perangkat ini.")
+            }
         }
     }
 
