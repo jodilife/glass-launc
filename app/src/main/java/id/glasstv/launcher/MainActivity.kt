@@ -112,7 +112,7 @@ class MainActivity : Activity() {
     private val wallpaperVideoRequestCode = 7142
     private fun idleTimeoutSeconds(): Int {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        return prefs.getInt("idle_timeout_seconds", 0)
+        return prefs.getInt("idle_timeout_seconds", 30)
     }
 
     private fun resetIdleTimer() {
@@ -169,6 +169,9 @@ class MainActivity : Activity() {
     private var lastFocusedTitle: String = "Live TV"
     private var refreshOnResume = false
     private val homePreviewPlayers = mutableListOf<ExoPlayer>()
+    private val homePreviewPlayerViews = mutableListOf<PlayerView>()
+    private val homePreviewStartHandler = Handler(Looper.getMainLooper())
+    private val homePreviewStartTasks = mutableListOf<Runnable>()
     private val dashboardHandler = Handler(Looper.getMainLooper())
     private val wallpaperHandler = Handler(Looper.getMainLooper())
     private val wallpaperUrls = listOf(
@@ -220,6 +223,11 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val idlePrefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (!idlePrefs.getBoolean("idle_timeout_30_migration", false)) {
+            idlePrefs.edit().putInt("idle_timeout_seconds", 30)
+                .putBoolean("idle_timeout_30_migration", true).apply()
+        }
         UiSoundEffects.initialize(this)
         window.statusBarColor = bg
         window.navigationBarColor = bg
@@ -1005,11 +1013,15 @@ class MainActivity : Activity() {
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
             })
-            // TextureView keeps each small CCTV preview inside its own dashboard tile.
-            // This avoids SurfaceView overlay-plane conflicts with the full-screen Android TV tuner layer.
-            val playerView = layoutInflater.inflate(
-                R.layout.view_home_camera_preview, panel, false
-            ) as PlayerView
+            // Use SurfaceView on Android TV for the hardware video path; previews are
+            // hidden while the tuner is active so the surfaces do not compete.
+            val playerView = PlayerView(this).apply {
+                useController = false
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                setShutterBackgroundColor(Color.rgb(5, 8, 13))
+                setBackgroundColor(Color.rgb(5, 8, 13))
+            }
+            homePreviewPlayerViews.add(playerView)
             panel.addView(playerView, LinearLayout.LayoutParams(-1, dp(56)))
             if (url.isBlank()) {
                 playerView.visibility = View.GONE
@@ -1027,8 +1039,14 @@ class MainActivity : Activity() {
                         }
                     })
                     player.setMediaItem(MediaItem.fromUri(url))
-                    player.prepare()
-                    player.playWhenReady = true
+                    val startPreview = Runnable {
+                        if (homePreviewPlayers.contains(player) && !isFinishing && !idleMode) {
+                            player.prepare()
+                            player.playWhenReady = true
+                        }
+                    }
+                    homePreviewStartTasks.add(startPreview)
+                    homePreviewStartHandler.postDelayed(startPreview, (index - 1) * 1000L)
                 } catch (_: Exception) {
                     playerView.visibility = View.GONE
                     panel.addView(label("Pratinjau tidak tersedia", 10, Color.rgb(220, 160, 150), false))
@@ -1046,6 +1064,9 @@ class MainActivity : Activity() {
     }
 
     private fun releaseHomePreviewPlayers() {
+        homePreviewStartTasks.forEach { homePreviewStartHandler.removeCallbacks(it) }
+        homePreviewStartTasks.clear()
+        homePreviewPlayerViews.clear()
         homePreviewPlayers.forEach { player ->
             try { player.release() } catch (_: Exception) { }
         }
@@ -3566,6 +3587,9 @@ class MainActivity : Activity() {
             view.requestLayout()
         }
         homeMediaRowView?.animate()?.translationY(dp(10).toFloat())?.setDuration(260L)?.start()
+        // Stop and detach Home CCTV surfaces before the tuner creates its own video surface.
+        homePreviewPlayerViews.forEach { it.visibility = View.GONE }
+        homePreviewPlayers.forEach { it.pause() }
         root.requestFocus()
         startLiveTvBackground()
     }
@@ -3586,6 +3610,8 @@ class MainActivity : Activity() {
         }
         homeMediaRowView?.animate()?.translationY(0f)?.setDuration(220L)?.start()
         stopLiveTvBackground()
+        homePreviewPlayerViews.forEach { it.visibility = View.VISIBLE }
+        homePreviewPlayers.forEach { it.playWhenReady = true }
         dashboardSnapshot?.let { renderDashboardSnapshot(it, null) }
         val target = actions.firstOrNull { it.contentDescription?.toString()?.startsWith(lastFocusedTitle) == true }
             ?: continueWatchingCard ?: favoriteDockTiles.firstOrNull() ?: actions.firstOrNull()
