@@ -343,6 +343,7 @@ class PlaybackListenerService : NotificationListenerService() {
 
     private fun isAudioSession(pkg: String, metadata: MediaMetadata): Boolean {
         if (isAudioPackage(pkg)) return true
+        if (pkg.lowercase().contains("meld")) return true
         val mediaType = try { metadata.getString("android.media.metadata.MEDIA_TYPE").orEmpty().lowercase() }
             catch (_: Exception) { "" }
         if (mediaType.contains("music") || mediaType.contains("audio") ||
@@ -355,7 +356,7 @@ class PlaybackListenerService : NotificationListenerService() {
 
     private fun isAudioPackage(pkg: String): Boolean {
         val p = pkg.lowercase()
-        return p.contains("spotify") || p.contains("aimp") || p.contains("vlc") ||
+        return p.contains("meld") || p.contains("spotify") || p.contains("aimp") || p.contains("vlc") ||
             p.contains("poweramp") || p.contains("deezer") || p.contains("tidal") ||
             p.contains("foobar") || p.contains("music") || p.contains("plex") ||
             p.contains("tunein") || p.contains("podcast") || p.contains("amazon")
