@@ -2344,6 +2344,11 @@ class MainActivity : Activity() {
             dialog.dismiss()
             managePreviewRows()
         }
+        settingRow("Urutan rekomendasi & riwayat",
+            "Pilih apakah rekomendasi atau riwayat tampil lebih dahulu") {
+            dialog.dismiss()
+            showPreviewRowOrderPicker()
+        }
         settingRow("Dock aplikasi favorit", "Atur ikon aplikasi favorit dan urutannya") {
             dialog.dismiss(); manageFavoriteDock()
         }
@@ -3058,11 +3063,19 @@ class MainActivity : Activity() {
             .setTitle("Urutan baris Home")
             .setSingleChoiceItems(options, if (selected == "history_first") 1 else 0) { picker, which ->
                 val value = if (which == 1) "history_first" else "recommendations_first"
-                prefs.edit().putString("preview_row_order", value).apply()
+                // A global order choice must clear a previous per-row custom order,
+                // otherwise preview_channel_order would silently override this setting.
+                prefs.edit()
+                    .putString("preview_row_order", value)
+                    .remove("preview_channel_order")
+                    .apply()
                 picker.dismiss()
                 showHome()
                 showSettings()
-                toast(if (value == "history_first") "Riwayat ditampilkan lebih dahulu" else "Rekomendasi ditampilkan lebih dahulu")
+                toast(if (value == "history_first")
+                    "Riwayat ditampilkan lebih dahulu; urutan manual direset"
+                else
+                    "Rekomendasi ditampilkan lebih dahulu; urutan manual direset")
             }
             .setNegativeButton("Batal", null)
             .show()
