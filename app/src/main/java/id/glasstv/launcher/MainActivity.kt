@@ -3344,12 +3344,13 @@ class MainActivity : Activity() {
             val inputInfo = if (selectedInputId != "auto") {
                 inputs.firstOrNull { it.id == selectedInputId }
             } else {
-                inputs.firstOrNull { it.type == TvInputInfo.TYPE_TUNER }
-            } ?: run {
+                null
+            }
+            if (selectedInputId != "auto" && inputInfo == null) {
                 toast("Input TV yang dipilih tidak tersedia. Periksa kembali sumber input.")
                 return
             }
-            if (inputInfo.isPassthroughInput) {
+            if (inputInfo?.isPassthroughInput == true) {
                 val passthroughUri = TvContract.buildChannelUriForPassthroughInput(inputInfo.id)
                 liveTvBackgroundInputId = inputInfo.id
                 liveTvBackgroundChannelUri = passthroughUri
@@ -3372,14 +3373,19 @@ class MainActivity : Activity() {
                 }
                 found
             }.orEmpty()
-            val channel = channels.firstOrNull { it.second == inputInfo.id } ?: run {
-                toast("Belum ada kanal untuk input tuner ini. Pindai kanal melalui aplikasi Live TV terlebih dahulu.")
-                return
+            val tunerInfos = if (inputInfo != null) listOf(inputInfo) else {
+                inputs.filter { it.type == TvInputInfo.TYPE_TUNER }
             }
+            val selectedTuner = tunerInfos.firstOrNull { info -> channels.any { it.second == info.id } }
+                ?: run {
+                    toast("Kanal belum cocok dengan input tuner yang tersedia. Buka Live TV bawaan, pindai kanal, lalu coba lagi.")
+                    return
+                }
+            val channel = channels.firstOrNull { it.second == selectedTuner.id } ?: return
             val channelUri = TvContract.buildChannelUri(channel.first)
-            liveTvBackgroundInputId = inputInfo.id
+            liveTvBackgroundInputId = selectedTuner.id
             liveTvBackgroundChannelUri = channelUri
-            tv.tune(inputInfo.id, channelUri)
+            tv.tune(selectedTuner.id, channelUri)
             wallpaperTarget.setBackgroundColor(Color.rgb(4, 7, 12))
         } catch (_: SecurityException) {
             toast("Izin membaca kanal TV belum diberikan. Aktifkan akses TV listings untuk GlassTV.")
