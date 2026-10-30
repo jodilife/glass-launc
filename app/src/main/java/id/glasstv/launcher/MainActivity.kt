@@ -202,7 +202,6 @@ class MainActivity : Activity() {
         }
     }
     private val prayerTimeLabels = mutableListOf<TextView>()
-    private var headerTimeLabel: TextView? = null
     private var dashboardGreetingLabel: TextView? = null
     private var dashboardClockLabel: TextView? = null
     private var dashboardDateLabel: TextView? = null
