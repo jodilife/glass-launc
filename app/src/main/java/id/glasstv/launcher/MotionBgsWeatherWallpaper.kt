@@ -29,7 +29,7 @@ internal object MotionBgsWeatherWallpaper {
             try {
                 val categoryUrl = "https://motionbgs.com/tag:" + category + "/"
                 val categoryHtml = request(categoryUrl, null)
-                val anchorRegex = Regex("""(?is)<a\\b([^>]*)href=["']([^"'#?]+)["']([^>]*)>(.*?)</a>""")
+                val anchorRegex = Regex("""(?is)<a\b([^>]*)href=["']([^"'#?]+)["']([^>]*)>(.*?)</a>""")
                 val candidates = anchorRegex.findAll(categoryHtml).mapNotNull { match ->
                     val attrs = match.groupValues[1] + " " + match.groupValues[3]
                     val rawHref = match.groupValues[2]
