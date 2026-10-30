@@ -182,7 +182,11 @@ class MainActivity : Activity() {
             val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
             if (prefs.getString("wallpaper_video_uri", null) != null ||
                 !prefs.getBoolean("wallpaper_auto", true)) return
-            prefs.edit().putLong("wallpaper_last_refresh", System.currentTimeMillis()).apply()
+            val source = prefs.getString("wallpaper_source", "bing")
+            val edit = prefs.edit().putLong("wallpaper_last_refresh", System.currentTimeMillis())
+            if (source == "reddit") edit.putInt("wallpaper_reddit_index", prefs.getInt("wallpaper_reddit_index", 0) + 1)
+            if (source == "gradient") edit.putInt("wallpaper_index", prefs.getInt("wallpaper_index", 0) + 1)
+            edit.apply()
             applyWallpaper(wallpaperTarget, forceRefresh = true)
             val hours = prefs.getInt("wallpaper_interval_hours", 3).coerceIn(1, 24)
             wallpaperHandler.postDelayed(this, hours * 60L * 60L * 1000L)
@@ -3324,6 +3328,10 @@ class MainActivity : Activity() {
         val manager = getSystemService(TV_INPUT_SERVICE) as? TvInputManager
         val tunerIds = manager?.tvInputList?.filter { it.type == TvInputInfo.TYPE_TUNER }?.map { it.id }?.toSet().orEmpty()
         val selectedInput = getSharedPreferences("glass_tv", MODE_PRIVATE).getString("live_tv_input_id", "auto") ?: "auto"
+        if (selectedInput != "auto" && manager?.tvInputList?.firstOrNull { it.id == selectedInput }?.isPassthroughInput == true) {
+            toast("Input HDMI tidak memiliki daftar kanal. Pilih kanal hanya untuk tuner TV digital.")
+            return
+        }
         val channels = try {
             contentResolver.query(
                 TvContract.Channels.CONTENT_URI,
@@ -3485,12 +3493,14 @@ class MainActivity : Activity() {
             val tunerInfos = if (inputInfo != null) listOf(inputInfo) else {
                 inputs.filter { it.type == TvInputInfo.TYPE_TUNER }
             }
-            val selectedTuner = tunerInfos.firstOrNull { info -> channels.any { it.second == info.id } }
+            val savedChannelId = prefs.getLong("live_tv_channel_id", -1L)
+            val selectedTuner = tunerInfos.firstOrNull { info ->
+                channels.any { it.second == info.id && it.first == savedChannelId }
+            } ?: tunerInfos.firstOrNull { info -> channels.any { it.second == info.id } }
                 ?: run {
                     toast("Kanal belum cocok dengan input tuner yang tersedia. Buka Live TV bawaan, pindai kanal, lalu coba lagi.")
                     return
                 }
-            val savedChannelId = prefs.getLong("live_tv_channel_id", -1L)
             val channel = channels.firstOrNull { it.second == selectedTuner.id && it.first == savedChannelId }
                 ?: channels.firstOrNull { it.second == selectedTuner.id } ?: return
             val channelUri = TvContract.buildChannelUri(channel.first)
