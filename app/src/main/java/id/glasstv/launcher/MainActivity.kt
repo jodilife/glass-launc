@@ -104,6 +104,12 @@ class MainActivity : Activity() {
     private var headerWeatherLabel: TextView? = null
     private var headerPrayerMetaLabel: TextView? = null
     private var headerNextPrayerLabel: TextView? = null
+    private var headerSpacerView: View? = null
+    private var headerRightView: LinearLayout? = null
+    private var musicDockParent: LinearLayout? = null
+    private val musicPrefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key?.startsWith("audio_") == true || key?.startsWith("watch_artwork_") == true) runOnUiThread { refreshMusicDock() }
+    }
     private var homeExploreHeaderView: View? = null
     private var homeMediaRowView: View? = null
     private var continueWatchingSectionView: View? = null
@@ -273,11 +279,13 @@ class MainActivity : Activity() {
         stopLiveTvBackground()
         wallpaperHandler.removeCallbacks(wallpaperCycle)
         idleHandler.removeCallbacks(idleTimeout)
+        getSharedPreferences("glass_tv", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(musicPrefsListener)
         super.onPause()
     }
 
     override fun onResume() {
         super.onResume()
+        getSharedPreferences("glass_tv", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(musicPrefsListener)
         if (refreshOnResume) {
             refreshOnResume = false
             showHome()
@@ -319,6 +327,9 @@ class MainActivity : Activity() {
         headerWeatherLabel = null
         headerPrayerMetaLabel = null
         headerNextPrayerLabel = null
+        headerSpacerView = null
+        headerRightView = null
+        musicDockParent = null
         homeExploreHeaderView = null
         homeMediaRowView = null
         dashboardPanelView = null
@@ -381,7 +392,8 @@ class MainActivity : Activity() {
         headerBrandView = brand
 
         header.addView(brand)
-        header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+        headerSpacerView = View(this)
+        header.addView(headerSpacerView, LinearLayout.LayoutParams(0, 1, 1f))
         val headerRight = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
@@ -426,6 +438,7 @@ class MainActivity : Activity() {
         headerRight.addView(headerWeatherLabel)
         headerRight.addView(headerPrayerMetaLabel)
         headerRight.addView(headerNextPrayerLabel)
+        headerRightView = headerRight
         header.addView(headerRight, LinearLayout.LayoutParams(dp(440), -2))
         homeHeaderView = header
         root.addView(header, LinearLayout.LayoutParams(-1, dp(42)))
@@ -1446,7 +1459,17 @@ class MainActivity : Activity() {
         mediaRow.addView(outer, LinearLayout.LayoutParams(0, -1, 1.75f))
     }
 
+    private fun refreshMusicDock() {
+        val parent = musicDockParent ?: return
+        musicDockView?.let { parent.removeView(it) }
+        musicDockView = null
+        backgroundAudioRowView = null
+        addBackgroundAudioRow(parent)
+        applyMinimalistSectionVisibility()
+    }
+
     private fun addBackgroundAudioRow(container: LinearLayout) {
+        musicDockParent = container
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val candidates = prefs.all.keys.filter { it.startsWith("audio_title_") }.mapNotNull { key ->
             val pkg = key.removePrefix("audio_title_")
@@ -1454,82 +1477,147 @@ class MainActivity : Activity() {
             val updated = prefs.getLong("audio_updated_$pkg", 0L)
             val state = prefs.getInt("audio_state_$pkg", 0)
             if (updated <= 0L || System.currentTimeMillis() - updated > 6 * 60 * 60 * 1000L ||
-                (state != 3 && state != 2)) null else Triple(pkg, title, updated)
+                state !in listOf(PlaybackState.STATE_PLAYING, PlaybackState.STATE_PAUSED,
+                    PlaybackState.STATE_BUFFERING, PlaybackState.STATE_CONNECTING)) null
+            else Triple(pkg, title, updated)
         }.sortedByDescending { it.third }
-        val item = candidates.firstOrNull() ?: return
-        val (pkg, title, _) = item
-        val artist = prefs.getString("audio_artist_$pkg", "").orEmpty().ifBlank { "Audio dari aplikasi lain" }
-        val album = prefs.getString("audio_album_$pkg", "").orEmpty()
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), dp(8), dp(14), dp(8))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(Color.argb(155, 18, 28, 43))
-                setStroke(dp(1), accentAlpha(100))
-            }
-            isFocusable = true
-            isClickable = true
-            contentDescription = "Sedang diputar: $title, $artist"
-            setOnFocusChangeListener { view, focused ->
-                view.background = GradientDrawable().apply {
-                    cornerRadius = dp(14).toFloat()
-                    setColor(if (focused) focusSurface(230) else Color.argb(155, 18, 28, 43))
-                    setStroke(dp(if (focused) 2 else 1), if (focused) accent else accentAlpha(100))
+        val section = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(5), 0, dp(3)) }
+        section.addView(label("DOCK MUSIK", 10, Color.rgb(150, 171, 199), true), LinearLayout.LayoutParams(-1, dp(18)))
+        val item = candidates.firstOrNull()
+        if (item == null) {
+            val waiting = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(8), dp(14), dp(8))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(13).toFloat()
+                    setColor(Color.argb(115, 18, 28, 43))
+                    setStroke(dp(1), accentAlpha(65))
                 }
-                if (focused) playNavigationSound()
             }
-            setOnClickListener { playSelectSound(); openContinueWatchingApp(pkg) }
-            setOnKeyListener { view, keyCode, event ->
-                if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                    keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                    view.performClick(); true
-                } else false
+            waiting.addView(label("♫", 22, accent, true), LinearLayout.LayoutParams(dp(38), dp(44)))
+            val textCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            textCol.addView(label("Belum ada musik diputar", 12, Color.WHITE, true))
+            textCol.addView(label("Putar musik di Meld atau aplikasi lain untuk menampilkan kontrol di sini", 10,
+                Color.rgb(176, 193, 215), false).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+            waiting.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
+            section.addView(waiting, LinearLayout.LayoutParams(-1, dp(60)))
+        } else {
+            val (pkg, title, _) = item
+            val artist = prefs.getString("audio_artist_$pkg", "").orEmpty().ifBlank { "Audio dari aplikasi lain" }
+            val album = prefs.getString("audio_album_$pkg", "").orEmpty()
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(8), dp(14), dp(8))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(14).toFloat()
+                    setColor(Color.argb(155, 18, 28, 43))
+                    setStroke(dp(1), accentAlpha(100))
+                }
+                isFocusable = true
+                isClickable = true
+                contentDescription = "Sedang diputar: $title, $artist"
+                setOnFocusChangeListener { view, focused ->
+                    view.background = GradientDrawable().apply {
+                        cornerRadius = dp(14).toFloat()
+                        setColor(if (focused) focusSurface(230) else Color.argb(155, 18, 28, 43))
+                        setStroke(dp(if (focused) 2 else 1), if (focused) accent else accentAlpha(100))
+                    }
+                    if (focused) playNavigationSound()
+                }
+                setOnClickListener { playSelectSound(); openContinueWatchingApp(pkg) }
+                setOnKeyListener { view, keyCode, event ->
+                    if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                        keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                        view.performClick(); true
+                    } else false
+                }
             }
-        }
-        val artworkName = prefs.getString("watch_artwork_$pkg", null)
-        val artwork = artworkName?.let { File(filesDir, it) }?.takeIf { it.isFile && it.length() > 0L }
-        val image = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            background = GradientDrawable().apply { cornerRadius = dp(8).toFloat(); setColor(Color.rgb(24, 34, 49)) }
-            clipToOutline = true
-            if (artwork != null) {
-                try { setImageBitmap(BitmapFactory.decodeFile(artwork.absolutePath)) } catch (_: Exception) { }
+            val artworkName = prefs.getString("watch_artwork_$pkg", null)
+            val artwork = artworkName?.let { File(filesDir, it) }?.takeIf { it.isFile && it.length() > 0L }
+            val image = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = GradientDrawable().apply { cornerRadius = dp(8).toFloat(); setColor(Color.rgb(24, 34, 49)) }
+                clipToOutline = true
+                if (artwork != null) try { setImageBitmap(BitmapFactory.decodeFile(artwork.absolutePath)) } catch (_: Exception) { }
+                if (drawable == null) try {
+                    setImageDrawable(packageManager.getApplicationIcon(pkg))
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                } catch (_: Exception) { }
             }
-            if (drawable == null) {
-                try { setImageDrawable(packageManager.getApplicationIcon(pkg)); scaleType = ImageView.ScaleType.FIT_CENTER } catch (_: Exception) { }
-            }
+            row.addView(image, LinearLayout.LayoutParams(dp(52), dp(52)))
+            val textCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, dp(8), 0) }
+            textCol.addView(label("SEDANG DIPUTAR", 9, accent, true))
+            textCol.addView(label(title, 13, Color.WHITE, true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+            textCol.addView(label(if (album.isBlank()) artist else "$artist  •  $album", 10, Color.rgb(176, 193, 215), false)
+                .apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+            row.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
+            val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            controls.addView(mediaControlButton("▶Ⅱ", "Putar atau jeda $title") { sendMediaCommand(pkg, "toggle") },
+                LinearLayout.LayoutParams(dp(38), dp(30)).apply { rightMargin = dp(6) })
+            controls.addView(mediaControlButton("⏮", "Sebelumnya $title") { sendMediaCommand(pkg, "previous") },
+                LinearLayout.LayoutParams(dp(38), dp(30)).apply { rightMargin = dp(6) })
+            controls.addView(mediaControlButton("⏭", "Berikutnya $title") { sendMediaCommand(pkg, "next") },
+                LinearLayout.LayoutParams(dp(38), dp(30)))
+            row.addView(controls)
+            backgroundAudioRowView = row
+            section.addView(row, LinearLayout.LayoutParams(-1, dp(72)))
         }
-        row.addView(image, LinearLayout.LayoutParams(dp(52), dp(52)))
-        val textCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), 0, dp(8), 0)
-        }
-        textCol.addView(label("SEDANG DIPUTAR", 9, accent, true))
-        textCol.addView(label(title, 13, Color.WHITE, true).apply {
-            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        textCol.addView(label(if (album.isBlank()) artist else "$artist  •  $album", 10, Color.rgb(176, 193, 215), false).apply {
-            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        row.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
-        row.addView(label("BUKA PEMUTAR  ›", 10, accent, true))
-        val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        controls.addView(mediaControlButton("▶Ⅱ", "Putar atau jeda " + title) { sendMediaCommand(pkg, "toggle") }, LinearLayout.LayoutParams(dp(38), dp(30)).apply { rightMargin = dp(6) })
-        controls.addView(mediaControlButton("⏮", "Sebelumnya " + title) { sendMediaCommand(pkg, "previous") }, LinearLayout.LayoutParams(dp(38), dp(30)).apply { rightMargin = dp(6) })
-        controls.addView(mediaControlButton("⏭", "Berikutnya " + title) { sendMediaCommand(pkg, "next") }, LinearLayout.LayoutParams(dp(38), dp(30)))
-        row.addView(controls)
-        backgroundAudioRowView = row
-        val section = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(5), 0, dp(3))
-        }
-        section.addView(label("DOCK MUSIK", 10, Color.rgb(150, 171, 199), true),
-            LinearLayout.LayoutParams(-1, dp(18)))
-        section.addView(row, LinearLayout.LayoutParams(-1, dp(72)))
         musicDockView = section
-        container.addView(section, LinearLayout.LayoutParams(-1, dp(96)))
+        container.addView(section, LinearLayout.LayoutParams(-1, dp(if (item == null) 86 else 96)))
+    }
+
+    private fun minimalistPanelPositionLabel(): String =
+        when (getSharedPreferences("glass_tv", MODE_PRIVATE).getString("minimalist_panel_position", "top_right")) {
+            "bottom_right" -> "Bawah · pojok kanan"
+            "bottom_center" -> "Bawah · memanjang di tengah"
+            else -> "Atas · pojok kanan"
+        }
+
+    private fun showMinimalistPanelPositionPicker() {
+        val values = arrayOf("top_right", "bottom_right", "bottom_center")
+        val labels = arrayOf("Atas · pojok kanan", "Bawah · pojok kanan", "Bawah · memanjang di tengah")
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val current = values.indexOf(prefs.getString("minimalist_panel_position", "top_right")).coerceAtLeast(0)
+        AlertDialog.Builder(this).setTitle("POSISI PANEL MINIMALIS")
+            .setSingleChoiceItems(labels, current) { picker, which ->
+                prefs.edit().putString("minimalist_panel_position", values[which]).apply()
+                picker.dismiss()
+                if (idleMode) applyMinimalistHeaderPosition()
+                showSettings("Tampilan")
+            }.setNegativeButton("Batal", null).show()
+    }
+
+    private fun applyMinimalistHeaderPosition() {
+        if (!idleMode || !::root.isInitialized) return
+        val header = homeHeaderView ?: return
+        val position = getSharedPreferences("glass_tv", MODE_PRIVATE)
+            .getString("minimalist_panel_position", "top_right") ?: "top_right"
+        val centered = position == "bottom_center"
+        val atTop = position == "top_right"
+        root.removeView(header)
+        root.gravity = if (atTop) Gravity.TOP else Gravity.BOTTOM
+        header.orientation = if (centered) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        header.gravity = if (centered) Gravity.CENTER else Gravity.CENTER_VERTICAL
+        header.background = if (centered) GradientDrawable().apply {
+            cornerRadius = dp(18).toFloat()
+            setColor(Color.argb(168, 10, 17, 29))
+            setStroke(dp(1), accentAlpha(100))
+        } else null
+        header.setPadding(if (centered) dp(20) else 0, if (centered) dp(12) else 0,
+            if (centered) dp(20) else 0, if (centered) dp(12) else 0)
+        headerSpacerView?.visibility = if (centered) View.GONE else View.VISIBLE
+        headerRightView?.let { right ->
+            right.gravity = if (centered) Gravity.CENTER else Gravity.END or Gravity.CENTER_VERTICAL
+            right.layoutParams = LinearLayout.LayoutParams(if (centered) dp(760) else dp(440), -2)
+            listOf(headerTimeLabel, headerClockLabel, headerWeatherLabel, headerPrayerMetaLabel, headerNextPrayerLabel)
+                .forEach { it?.gravity = if (centered) Gravity.CENTER else Gravity.END }
+        }
+        val height = if (centered) dp(132) else dp(104)
+        header.layoutParams = LinearLayout.LayoutParams(if (centered) dp(800) else -1, height)
+        root.addView(header, if (atTop) 0 else root.childCount, header.layoutParams)
+        header.requestLayout()
     }
 
     /**
@@ -2460,7 +2548,7 @@ class MainActivity : Activity() {
             "Warna aksen", "Sumber wallpaper", "Ganti gambar setiap",
             "Redupkan wallpaper", "Pilih gambar sendiri", "Rotasi wallpaper", "Wallpaper berikutnya",
             "Wallpaper video", "Gunakan wallpaper foto", "Google Ambient / Art Gallery",
-            "Tampilan saat tidak digunakan", "Edit nama sapaan" -> "Tampilan"
+            "Tampilan saat tidak digunakan", "Posisi panel Minimalis", "Edit nama sapaan" -> "Tampilan"
             "Lokasi cuaca & waktu salat", "Info GlassTV" -> "Cuaca & Waktu Salat"
             "Azan otomatis", "Uji suara azan" -> "Waktu Salat"
             "Live TV sebagai background", "Sumber input Live TV", "Pilih kanal Live TV" -> "Live TV"
@@ -2711,6 +2799,10 @@ class MainActivity : Activity() {
         settingRow("Tampilan saat tidak digunakan", "Atur waktu otomatis menjadi ringkas", idleTimeoutLabel(idleTimeoutSeconds())) {
             dialog.dismiss()
             showIdleTimeoutPicker()
+        }
+        settingRow("Posisi panel Minimalis", "Atur letak tanggal, jam, cuaca, dan waktu salat", minimalistPanelPositionLabel()) {
+            dialog.dismiss()
+            showMinimalistPanelPositionPicker()
         }
         settingRow("Sumber wallpaper", "Bing, lukisan klasik, Gradient, cuaca, atau gambar sendiri", wallpaperSourceLabel()) {
             dialog.dismiss()
@@ -4034,7 +4126,7 @@ class MainActivity : Activity() {
             root.removeView(header)
             root.addView(header, LinearLayout.LayoutParams(-1, dp(104)))
         }
-        root.gravity = Gravity.BOTTOM
+        applyMinimalistHeaderPosition()
         // A true minimalist home: only manually retained recommendation rows and the compact
         // clock/weather/prayer stack remain visible. Hide the full dashboard and media/CCTV row.
         dashboardPanelView?.visibility = View.GONE
@@ -4072,6 +4164,13 @@ class MainActivity : Activity() {
         root.gravity = Gravity.TOP
         homeHeaderView?.let { header ->
             root.removeView(header)
+            header.orientation = LinearLayout.HORIZONTAL
+            header.gravity = Gravity.CENTER_VERTICAL
+            header.background = null
+            header.setPadding(0, 0, 0, 0)
+            headerSpacerView?.visibility = View.VISIBLE
+            headerRightView?.let { right -> right.gravity = Gravity.END or Gravity.CENTER_VERTICAL; right.layoutParams = LinearLayout.LayoutParams(dp(440), -2) }
+            listOf(headerTimeLabel, headerClockLabel, headerWeatherLabel, headerPrayerMetaLabel, headerNextPrayerLabel).forEach { it?.gravity = Gravity.END }
             root.addView(header, 0, LinearLayout.LayoutParams(-1, dp(42)))
         }
         applyMinimalistSectionVisibility()
@@ -4193,7 +4292,7 @@ class MainActivity : Activity() {
             weatherWallpaperLoading = false
             if (result == null) {
                 android.util.Log.w("GlassTVWallpaper", "MotionBGS download failed: " + error)
-                if (!file.exists()) toast("Wallpaper cuaca belum tersedia; wallpaper foto tetap digunakan.")
+                toast("MotionBGS gagal dimuat: ${error ?: "sumber tidak merespons"}")
                 return@download
             }
             prefs.edit().putString("wallpaper_weather_video_path", result.file.absolutePath)
@@ -4394,11 +4493,15 @@ class MainActivity : Activity() {
             try {
                 val imageUrl = if (source == "art") {
                     val artIndex = prefs.getInt("wallpaper_art_index", 0)
-                    val searchUrl = "https://api.artic.edu/api/v1/artworks/search?query%5Bterm%5D%5Bis_public_domain%5D=true&fields=id,title,image_id,artist_title,is_public_domain&limit=100"
+                    val searchUrl = "https://api.artic.edu/api/v1/artworks/search?q=painting&query%5Bterm%5D%5Bis_public_domain%5D=true&fields=id,title,image_id,artist_title,is_public_domain&limit=100
                     connection = URL(searchUrl).openConnection() as HttpURLConnection
                     connection.connectTimeout = 12000
                     connection.readTimeout = 15000
-                    connection.setRequestProperty("User-Agent", "GlassTVLauncher/0.6 (Android TV artwork wallpaper)")
+                    connection.instanceFollowRedirects = true
+                    connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11; GlassTV) AppleWebKit/537.36 Chrome/120 Safari/537.36")
+                    connection.setRequestProperty("Accept", "application/json")
+                    val apiCode = connection.responseCode
+                    if (apiCode !in 200..299) throw IllegalStateException("Art Institute API HTTP $apiCode")
                     val json = connection.inputStream.bufferedReader().use { it.readText() }
                     connection.disconnect()
                     connection = null
@@ -4428,6 +4531,8 @@ class MainActivity : Activity() {
                 connection.instanceFollowRedirects = true
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11; GlassTV) AppleWebKit/537.36 Chrome/120 Safari/537.36")
                 connection.setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+                val imageCode = connection.responseCode
+                if (imageCode !in 200..299) throw IllegalStateException("Unduhan gambar HTTP $imageCode")
                 pendingFile.delete()
                 connection.inputStream.use { input -> pendingFile.outputStream().use { output -> input.copyTo(output) } }
                 if (pendingFile.length() < 12_000L) throw IllegalStateException("File wallpaper terlalu kecil.")
@@ -4443,9 +4548,7 @@ class MainActivity : Activity() {
             } catch (error: Exception) {
                 pendingFile.delete()
                 android.util.Log.e("GlassTVWallpaper", "Wallpaper source \"$source\" failed: ${error.message}", error)
-                if (!file.exists() || file.length() < 12_000L) {
-                    runOnUiThread { toast("Wallpaper $source gagal: ${error.message ?: "sumber tidak merespons"}") }
-                }
+                runOnUiThread { toast("Wallpaper $source gagal: ${error.message ?: "sumber tidak merespons"}") }
             } finally {
                 connection?.disconnect()
             }
