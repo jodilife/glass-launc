@@ -2567,7 +2567,13 @@ class MainActivity : Activity() {
 
     private fun previewRowShouldShow(key: String, packageName: String): Boolean {
         if (key in previewHiddenKeys()) return false
-        return !idleMode || key in previewCompactKeepKeys() || isSmartTubePreview(packageName)
+        if (!idleMode) return true
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        return if (prefs.getBoolean("preview_compact_configured", false)) {
+            key in previewCompactKeepKeys()
+        } else {
+            isSmartTubePreview(packageName)
+        }
     }
 
     private fun applyPreviewRowVisibility() {
