@@ -5,6 +5,8 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.media.tv.TvContract
+import android.media.tv.TvInputManager
+import android.media.tv.TvView
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -157,6 +159,10 @@ class MainActivity : Activity() {
     private var continueWatchingCard: View? = null
     private var continueBackdropArtwork: File? = null
     private var previewBackdropCard: View? = null
+    private var liveTvBackgroundView: TvView? = null
+    private var liveTvBackgroundScrim: View? = null
+    private var liveTvBackgroundInputId: String? = null
+    private var liveTvBackgroundChannelUri: Uri? = null
     private val tvListingsPermissionRequestCode = 8301
     private var lastFocusedTitle: String = "Live TV"
     private var refreshOnResume = false
@@ -218,6 +224,7 @@ class MainActivity : Activity() {
         refreshOnResume = true
         releaseHomePreviewPlayers()
         releaseVideoWallpaperPlayer()
+        stopLiveTvBackground()
         wallpaperHandler.removeCallbacks(wallpaperCycle)
         idleHandler.removeCallbacks(idleTimeout)
         super.onPause()
@@ -303,6 +310,7 @@ class MainActivity : Activity() {
         }
         homeScroll.addView(root, FrameLayout.LayoutParams(-1, -2))
         wallpaperTarget.addView(homeScroll, FrameLayout.LayoutParams(-1, -1))
+        createLiveTvBackgroundLayer(wallpaperTarget)
         applyWallpaper(wallpaperTarget)
         scheduleWallpaperRotation()
 
@@ -2394,6 +2402,12 @@ class MainActivity : Activity() {
             dialog.dismiss()
             toast("Wallpaper foto diaktifkan")
         }
+        val liveTvBackgroundEnabled = prefs.getBoolean("live_tv_idle_background", false)
+        settingRow("Live TV sebagai background", "Tampilkan siaran tuner saat Home masuk mode ringkas", if (liveTvBackgroundEnabled) "AKTIF" else "MATI") {
+            prefs.edit().putBoolean("live_tv_idle_background", !liveTvBackgroundEnabled).apply()
+            if (!liveTvBackgroundEnabled && idleMode) startLiveTvBackground() else stopLiveTvBackground()
+            reopen("Live TV background ${if (!liveTvBackgroundEnabled) "diaktifkan" else "dimatikan"}")
+        }
         settingRow("Tampilan saat tidak digunakan", "Atur waktu otomatis menjadi ringkas", idleTimeoutLabel(idleTimeoutSeconds())) {
             dialog.dismiss()
             showIdleTimeoutPicker()
@@ -3174,6 +3188,85 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
+    private fun createLiveTvBackgroundLayer(target: FrameLayout) {
+        if (!getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("live_tv_idle_background", false)) return
+        val tv = TvView(this).apply {
+            isFocusable = false
+            isFocusableInTouchMode = false
+            setZOrderOnTop(false)
+            alpha = 0.76f
+            setCallback(object : TvView.TvInputCallback() {
+                override fun onConnectionFailed(inputId: String?) {
+                    runOnUiThread {
+                        stopLiveTvBackground()
+                        toast("Tuner Live TV tidak dapat dihubungkan. Wallpaper biasa tetap digunakan.")
+                    }
+                }
+            })
+        }
+        val scrim = View(this).apply {
+            setBackgroundColor(Color.argb(112, 3, 7, 13))
+            isFocusable = false
+        }
+        target.addView(tv, 0, FrameLayout.LayoutParams(-1, -1))
+        target.addView(scrim, 1, FrameLayout.LayoutParams(-1, -1))
+        liveTvBackgroundView = tv
+        liveTvBackgroundScrim = scrim
+    }
+
+    private fun startLiveTvBackground() {
+        if (!getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("live_tv_idle_background", false) ||
+            !idleMode || isFinishing || !::wallpaperTarget.isInitialized) return
+        val tv = liveTvBackgroundView ?: run {
+            createLiveTvBackgroundLayer(wallpaperTarget)
+            liveTvBackgroundView
+        } ?: return
+        if (liveTvBackgroundInputId != null && liveTvBackgroundChannelUri != null) {
+            try { tv.tune(liveTvBackgroundInputId, liveTvBackgroundChannelUri); return } catch (_: Exception) { }
+        }
+        try {
+            val manager = getSystemService(TV_INPUT_SERVICE) as? TvInputManager ?: run {
+                toast("Layanan tuner Android TV tidak tersedia.")
+                return
+            }
+            val channel = contentResolver.query(
+                TvContract.Channels.CONTENT_URI,
+                arrayOf(TvContract.Channels._ID, TvContract.Channels.COLUMN_INPUT_ID),
+                null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getLong(0) to cursor.getString(1) else null
+            } ?: run {
+                toast("Belum ada kanal tuner digital. Pindai kanal melalui aplikasi Live TV terlebih dahulu.")
+                return
+            }
+            val inputInfo = manager.tvInputList.firstOrNull { it.id == channel.second }
+            if (inputInfo == null) {
+                toast("Input tuner untuk kanal ini tidak ditemukan.")
+                return
+            }
+            liveTvBackgroundInputId = inputInfo.id
+            liveTvBackgroundChannelUri = TvContract.buildChannelUri(channel.first)
+            tv.tune(inputInfo.id, liveTvBackgroundChannelUri)
+            wallpaperTarget.setBackgroundColor(Color.rgb(4, 7, 12))
+        } catch (_: SecurityException) {
+            toast("Izin membaca kanal TV belum diberikan. Aktifkan akses TV listings untuk GlassTV.")
+        } catch (_: Exception) {
+            stopLiveTvBackground()
+            toast("Live TV background gagal dimulai. Tombol Live TV tetap bisa digunakan.")
+        }
+    }
+
+    private fun stopLiveTvBackground() {
+        try { liveTvBackgroundView?.reset() } catch (_: Exception) { }
+        (liveTvBackgroundView?.parent as? ViewGroup)?.removeView(liveTvBackgroundView)
+        (liveTvBackgroundScrim?.parent as? ViewGroup)?.removeView(liveTvBackgroundScrim)
+        liveTvBackgroundView = null
+        liveTvBackgroundScrim = null
+        liveTvBackgroundInputId = null
+        liveTvBackgroundChannelUri = null
+        if (::wallpaperTarget.isInitialized && !isFinishing) applyWallpaper(wallpaperTarget)
+    }
+
     private fun enterIdleMode() {
         if (idleMode || isFinishing || !::root.isInitialized || !hasWindowFocus()) return
         idleMode = true
@@ -3191,6 +3284,7 @@ class MainActivity : Activity() {
         }
         homeMediaRowView?.animate()?.translationY(dp(10).toFloat())?.setDuration(260L)?.start()
         root.requestFocus()
+        startLiveTvBackground()
     }
 
     private fun exitIdleMode() {
@@ -3208,6 +3302,7 @@ class MainActivity : Activity() {
             view.requestLayout()
         }
         homeMediaRowView?.animate()?.translationY(0f)?.setDuration(220L)?.start()
+        stopLiveTvBackground()
         dashboardSnapshot?.let { renderDashboardSnapshot(it, null) }
         val target = actions.firstOrNull { it.contentDescription?.toString()?.startsWith(lastFocusedTitle) == true }
             ?: continueWatchingCard ?: favoriteDockTiles.firstOrNull() ?: actions.firstOrNull()
