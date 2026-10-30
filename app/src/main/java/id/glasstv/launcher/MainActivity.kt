@@ -22,6 +22,9 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.LayerDrawable
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.media.session.MediaController
+import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
 import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Bundle
@@ -103,6 +106,9 @@ class MainActivity : Activity() {
     private var headerNextPrayerLabel: TextView? = null
     private var homeExploreHeaderView: View? = null
     private var homeMediaRowView: View? = null
+    private var continueWatchingSectionView: View? = null
+    private var cctvPreviewSectionView: View? = null
+    private var musicDockView: View? = null
     private var dashboardPanelView: View? = null
     private var weatherPanelView: View? = null
     private var prayerPanelView: View? = null
@@ -305,6 +311,9 @@ class MainActivity : Activity() {
         prayerItemViews.clear()
         prayerNameLabels.clear()
         homeHeaderView = null
+        continueWatchingSectionView = null
+        cctvPreviewSectionView = null
+        musicDockView = null
         headerBrandView = null
         headerTimeLabel = null
         headerClockLabel = null
@@ -435,6 +444,7 @@ class MainActivity : Activity() {
         addContinueWatching(mediaRow)
         addHomeCctvPreview(mediaRow)
         addFavoriteDock(root)
+        addMusicDock(root)
         addBackgroundAudioRow(root)
         idlePreviewSpacer = View(this).apply { visibility = View.GONE }
         root.addView(idlePreviewSpacer, LinearLayout.LayoutParams(-1, dp(150)))
@@ -465,6 +475,7 @@ class MainActivity : Activity() {
         addAction(row, "Pengaturan", "Preferensi GlassTV") { showSettings() }
         actionMenuView = row
         root.addView(row, LinearLayout.LayoutParams(-1, dp(76)))
+        applyMinimalistSectionVisibility()
         setContentView(wallpaperTarget)
         root.post {
             if (lastFocusedTitle == "LANJUTKAN MENONTON") {
@@ -1130,6 +1141,7 @@ class MainActivity : Activity() {
             row.addView(panel, lp)
         }
         section.addView(row, LinearLayout.LayoutParams(-1, dp(98)))
+        cctvPreviewSectionView = section
         mediaRow.addView(section, LinearLayout.LayoutParams(0, -1, 1.05f))
     }
 
@@ -1432,6 +1444,7 @@ class MainActivity : Activity() {
         }
         cardScroll.addView(cardRow, android.widget.FrameLayout.LayoutParams(-2, dp(118)))
         outer.addView(cardScroll, LinearLayout.LayoutParams(-1, dp(118)))
+        continueWatchingSectionView = outer
         mediaRow.addView(outer, LinearLayout.LayoutParams(0, -1, 1.75f))
     }
 
@@ -1504,6 +1517,11 @@ class MainActivity : Activity() {
         })
         row.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
         row.addView(label("BUKA PEMUTAR  ›", 10, accent, true))
+        val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        controls.addView(mediaControlButton("▶Ⅱ", "Putar atau jeda " + title) { sendMediaCommand(pkg, "toggle") }, LinearLayout.LayoutParams(dp(38), dp(30)).apply { rightMargin = dp(6) })
+        controls.addView(mediaControlButton("⏮", "Sebelumnya " + title) { sendMediaCommand(pkg, "previous") }, LinearLayout.LayoutParams(dp(38), dp(30)).apply { rightMargin = dp(6) })
+        controls.addView(mediaControlButton("⏭", "Berikutnya " + title) { sendMediaCommand(pkg, "next") }, LinearLayout.LayoutParams(dp(38), dp(30)))
+        row.addView(controls)
         backgroundAudioRowView = row
         container.addView(row, LinearLayout.LayoutParams(-1, dp(72)).apply { topMargin = dp(5) })
     }
@@ -2442,7 +2460,9 @@ class MainActivity : Activity() {
             "Live TV sebagai background", "Sumber input Live TV", "Pilih kanal Live TV" -> "Live TV"
             "Tata letak CCTV" -> "Kamera CCTV"
             "Aplikasi Entertainment", "Rekomendasi & riwayat Android TV", "Atur rekomendasi & riwayat",
-            "Urutan rekomendasi & riwayat", "Dock aplikasi favorit" -> "Aplikasi & Hiburan"
+            "Urutan rekomendasi & riwayat", "Dock aplikasi favorit", "Dock pemutar musik",
+            "Minimalis: Lanjutkan Menonton", "Minimalis: CCTV", "Minimalis: Jelajahi TV",
+            "Minimalis: Dock aplikasi favorit", "Minimalis: Dock musik" -> "Aplikasi & Hiburan"
             "Gaya suara konsol", "Suara navigasi" -> "Suara"
             "Pengaturan Android / Device Preferences", "Bersihkan cache aplikasi",
             "Kelola aplikasi & hentikan" -> "Sistem & Cadangan"
@@ -2592,6 +2612,22 @@ class MainActivity : Activity() {
         settingRow("Dock aplikasi favorit", "Atur ikon aplikasi favorit dan urutannya") {
             dialog.dismiss(); manageFavoriteDock()
         }
+        settingRow("Dock pemutar musik", "Pilih aplikasi musik yang tampil pada dock terpisah") {
+            dialog.dismiss(); manageMusicDock()
+        }
+        fun minimalistToggle(key: String, title: String, detail: String) {
+            val enabled = prefs.getBoolean(key, true)
+            settingRow(title, detail, if (enabled) "TAMPIL" else "SEMBUNYI") {
+                prefs.edit().putBoolean(key, !enabled).apply()
+                applyMinimalistSectionVisibility()
+                reopen(title + if (!enabled) " ditampilkan pada mode minimalis" else " disembunyikan pada mode minimalis")
+            }
+        }
+        minimalistToggle("minimalist_show_continue", "Minimalis: Lanjutkan Menonton", "Tampilkan atau sembunyikan baris tontonan saat mode minimalis")
+        minimalistToggle("minimalist_show_cctv", "Minimalis: CCTV", "Tampilkan atau sembunyikan pratinjau kamera saat mode minimalis")
+        minimalistToggle("minimalist_show_explore", "Minimalis: Jelajahi TV", "Tampilkan atau sembunyikan bagian Jelajahi TV dan pintasan aplikasi")
+        minimalistToggle("minimalist_show_favorites", "Minimalis: Dock aplikasi favorit", "Tampilkan atau sembunyikan dock aplikasi favorit")
+        minimalistToggle("minimalist_show_music", "Minimalis: Dock musik", "Tampilkan atau sembunyikan dock aplikasi pemutar musik")
         settingRow("Warna aksen", "Ubah sorotan rekomendasi dan pemutar musik", accentName()) {
             dialog.dismiss(); showAccentPicker()
         }
@@ -2834,6 +2870,158 @@ class MainActivity : Activity() {
         section.addView(dockScroll, LinearLayout.LayoutParams(-1, dp(48)))
         favoriteDockView = section
         container.addView(section, LinearLayout.LayoutParams(-1, dp(68)))
+    }
+
+
+    private fun applyMinimalistSectionVisibility() {
+        if (!::root.isInitialized) return
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        fun show(key: String) = !idleMode || prefs.getBoolean(key, true)
+        continueWatchingSectionView?.visibility = if (show("minimalist_show_continue")) View.VISIBLE else View.GONE
+        cctvPreviewSectionView?.visibility = if (show("minimalist_show_cctv")) View.VISIBLE else View.GONE
+        favoriteDockView?.visibility = if (show("minimalist_show_favorites")) View.VISIBLE else View.GONE
+        musicDockView?.visibility = if (show("minimalist_show_music")) View.VISIBLE else View.GONE
+        homeExploreHeaderView?.visibility = if (show("minimalist_show_explore")) View.VISIBLE else View.GONE
+        actionMenuView?.visibility = if (show("minimalist_show_explore")) View.VISIBLE else View.GONE
+        val anyMedia = continueWatchingSectionView?.visibility == View.VISIBLE ||
+            cctvPreviewSectionView?.visibility == View.VISIBLE
+        homeMediaRowView?.visibility = if (anyMedia) View.VISIBLE else View.GONE
+    }
+
+    private fun activeMediaController(packageName: String): MediaController? = try {
+        getSystemService(MediaSessionManager::class.java)
+            .getActiveSessions(android.content.ComponentName(this, PlaybackListenerService::class.java))
+            .firstOrNull { it.packageName == packageName }
+    } catch (_: Exception) { null }
+
+    private fun sendMediaCommand(packageName: String, command: String) {
+        val controller = activeMediaController(packageName)
+        if (controller == null) {
+            toast("Kontrol media belum tersedia. Pastikan aplikasinya sedang memutar media.")
+            return
+        }
+        val controls = controller.transportControls
+        val actions = controller.playbackState?.actions ?: 0L
+        when (command) {
+            "toggle" -> if (controller.playbackState?.state == PlaybackState.STATE_PLAYING) controls.pause() else controls.play()
+            "next" -> if ((actions and PlaybackState.ACTION_SKIP_TO_NEXT) != 0L) controls.skipToNext()
+                else toast("Aplikasi ini tidak menyediakan tombol Berikutnya.")
+            "previous" -> if ((actions and PlaybackState.ACTION_SKIP_TO_PREVIOUS) != 0L) controls.skipToPrevious()
+                else toast("Aplikasi ini tidak menyediakan tombol Sebelumnya.")
+        }
+    }
+
+    private fun mediaControlButton(glyph: String, description: String, onClick: () -> Unit): TextView =
+        TextView(this).apply {
+            text = glyph
+            contentDescription = description
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setPadding(dp(7), 0, dp(7), 0)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.argb(150, 48, 67, 91))
+                setStroke(dp(1), accentAlpha(110))
+            }
+            isFocusable = true
+            isClickable = true
+            setOnFocusChangeListener { view, focused ->
+                view.background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(if (focused) focusSurface(235) else Color.argb(150, 48, 67, 91))
+                    setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else accentAlpha(110))
+                }
+                if (focused) playNavigationSound()
+            }
+            setOnClickListener { playSelectSound(); onClick() }
+            setOnKeyListener { view, keyCode, event ->
+                if (event.action == KeyEvent.ACTION_DOWN &&
+                    (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER ||
+                     keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                    view.performClick(); true
+                } else false
+            }
+        }
+
+    private fun addMusicDock(container: LinearLayout) {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val selected = prefs.getStringSet("music_dock_packages", emptySet())?.toSet() ?: emptySet()
+        if (selected.isEmpty()) return
+        val apps = queryTvApps().filter { it.activityInfo.packageName in selected }
+        if (apps.isEmpty()) return
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(4), 0, dp(3))
+        }
+        section.addView(label("MUSIK", 10, Color.rgb(150, 171, 199), true))
+        val dock = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        apps.forEach { resolve ->
+            val info = resolve.activityInfo
+            val tile = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(10), dp(5), dp(12), dp(5))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(12).toFloat()
+                    setColor(Color.argb(120, 27, 39, 57))
+                    setStroke(dp(1), accentAlpha(90))
+                }
+                isFocusable = true
+                isClickable = true
+                contentDescription = "Pemutar musik " + resolve.loadLabel(packageManager)
+                setOnClickListener { playSelectSound(); launchTvApp(info.packageName, info.name) }
+                setOnFocusChangeListener { view, focused ->
+                    view.background = GradientDrawable().apply {
+                        cornerRadius = dp(12).toFloat()
+                        setColor(if (focused) focusSurface() else Color.argb(120, 27, 39, 57))
+                        setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else accentAlpha(90))
+                    }
+                    if (focused) playNavigationSound()
+                }
+            }
+            val icon = ImageView(this).apply {
+                try { setImageDrawable(resolve.loadIcon(packageManager)) } catch (_: Exception) { }
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+            tile.addView(icon, LinearLayout.LayoutParams(dp(28), dp(28)))
+            tile.addView(label(resolve.loadLabel(packageManager).toString(), 11, Color.WHITE, true).apply {
+                maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(dp(7), 0, 0, 0)
+            })
+            dock.addView(tile, LinearLayout.LayoutParams(-2, dp(44)).apply { rightMargin = dp(8) })
+        }
+        val scroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            clipChildren = false
+            clipToPadding = false
+            addView(dock, ViewGroup.LayoutParams(-2, dp(48)))
+        }
+        section.addView(scroll, LinearLayout.LayoutParams(-1, dp(48)))
+        musicDockView = section
+        container.addView(section, LinearLayout.LayoutParams(-1, dp(66)))
+    }
+
+    private fun manageMusicDock() {
+        val apps = queryTvApps()
+        if (apps.isEmpty()) { toast("Tidak ditemukan aplikasi TV lain."); return }
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val selected = prefs.getStringSet("music_dock_packages", emptySet())?.toMutableSet() ?: mutableSetOf()
+        val labels = apps.map { it.loadLabel(packageManager).toString() }.toTypedArray()
+        val packages = apps.map { it.activityInfo.packageName }
+        val checked = BooleanArray(apps.size) { packages[it] in selected }
+        AlertDialog.Builder(this)
+            .setTitle("PILIH APLIKASI DOCK MUSIK")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked ->
+                if (isChecked) selected.add(packages[which]) else selected.remove(packages[which])
+            }
+            .setPositiveButton("Simpan") { _, _ ->
+                prefs.edit().putStringSet("music_dock_packages", selected.toSet()).apply()
+                showHome()
+                showSettings("Aplikasi & Hiburan")
+                toast("Dock musik disimpan")
+            }
+            .setNegativeButton("Batal", null)
+            .show()
     }
 
     private fun previewRowKey(channel: TvPreviewChannels.Channel): String =
