@@ -52,7 +52,7 @@ internal object MotionBgsWeatherWallpaper {
                 // MotionBGS currently exposes numeric download URLs such as /dl/hd/9963,
                 // not necessarily .mp4 filenames. Collect both HD and 4K links, then try each.
                 val downloadCandidates = Regex("""(?i)(/dl/(?:hd|4k)/[A-Za-z0-9_-]+)""")
-                    .findAll(detailHtml).map { it.groupValues[1] }.distinct().toList()
+                    .findAll(detailHtml).map { it.groupValues[1] }.distinct().sortedBy { if (it.contains("/hd/")) 0 else 1 }.toList()
                 if (downloadCandidates.isEmpty()) {
                     throw IllegalStateException("Tautan unduhan HD/4K tidak ditemukan di halaman MotionBGS.")
                 }
