@@ -4503,7 +4503,7 @@ class MainActivity : Activity() {
             try {
                 val imageUrl = if (source == "art") {
                     val artIndex = prefs.getInt("wallpaper_art_index", 0)
-                    val searchUrl = "https://api.artic.edu/api/v1/artworks/search?q=painting&query%5Bterm%5D%5Bis_public_domain%5D=true&fields=id,title,image_id,artist_title,is_public_domain&limit=100
+                    val searchUrl = "https://api.artic.edu/api/v1/artworks/search?q=painting&fields=id,title,image_id,artist_title,is_public_domain&limit=100
                     connection = URL(searchUrl).openConnection() as HttpURLConnection
                     connection.connectTimeout = 12000
                     connection.readTimeout = 15000
