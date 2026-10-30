@@ -3466,7 +3466,6 @@ class MainActivity : Activity() {
             alpha = 1f
             // Keep the tuner surface in the media plane, behind the launcher's glass UI.
             if (android.os.Build.VERSION.SDK_INT >= 24) {
-                setZOrderOnTop(false)
                 setZOrderMediaOverlay(false)
             }
             setCallback(object : TvView.TvInputCallback() {
