@@ -3829,7 +3829,8 @@ class MainActivity : Activity() {
             showCached()
             return
         }
-        if (forceRefresh) file.delete()
+        // Keep the last known-good wallpaper visible until a replacement is fully downloaded and decoded.
+        val pendingFile = File(cacheDir, "glasstv_wallpaper_pending.tmp")
         Thread({
             var connection: HttpURLConnection? = null
             try {
@@ -3873,12 +3874,20 @@ class MainActivity : Activity() {
                 connection.connectTimeout = 10000
                 connection.readTimeout = 15000
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 GlassTVLauncher/0.5")
-                connection.inputStream.use { input -> file.outputStream().use { output -> input.copyTo(output) } }
-                if (file.length() < 12_000L) throw IllegalStateException("File wallpaper terlalu kecil.")
+                pendingFile.delete()
+                connection.inputStream.use { input -> pendingFile.outputStream().use { output -> input.copyTo(output) } }
+                if (pendingFile.length() < 12_000L) throw IllegalStateException("File wallpaper terlalu kecil.")
+                val decoded = BitmapFactory.decodeFile(pendingFile.absolutePath)
+                    ?: throw IllegalStateException("Respons sumber bukan gambar yang valid.")
+                decoded.recycle()
+                if (file.exists()) file.delete()
+                if (!pendingFile.renameTo(file)) pendingFile.copyTo(file, overwrite = true)
+                pendingFile.delete()
                 showCached()
             } catch (error: Exception) {
+                pendingFile.delete()
                 if (!file.exists() || file.length() < 12_000L) {
-                    runOnUiThread { toast("Wallpaper online gagal dimuat. Periksa internet atau subreddit.") }
+                    runOnUiThread { toast("Wallpaper online gagal dimuat. Wallpaper terakhir tetap dipakai bila tersedia.") }
                 }
             } finally {
                 connection?.disconnect()
