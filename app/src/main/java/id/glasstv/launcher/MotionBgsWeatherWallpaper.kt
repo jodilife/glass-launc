@@ -49,9 +49,20 @@ internal object MotionBgsWeatherWallpaper {
                 val selected = candidates.firstOrNull { it.second.contains("wallpaper", true) || it.second.contains("4K", true) } ?: candidates.first()
                 val detailUrl = "https://motionbgs.com" + selected.first
                 val detailHtml = request(detailUrl, categoryUrl)
-                val hdPath = Regex("""(?i)href=["'](/dl/hd/[^"'?#]+)["']""").find(detailHtml)?.groupValues?.get(1)
-                val downloadPath = hdPath ?: Regex("""(?i)href=["'](/dl/4k/[^"'?#]+)["']""").find(detailHtml)?.groupValues?.get(1)
-                    ?: throw IllegalStateException("Tautan MP4 tidak ditemukan pada halaman wallpaper.")
+                // MotionBGS markup can vary between href, data attributes and video/source tags.
+                // Accept only the site's own download paths and MP4 links.
+                val downloadPatterns = listOf(
+                    Regex("""(?i)(?:href|src|data-src|data-url)=["'](/dl/(?:hd|4k)/[^"'?#]+)["']"""),
+                    Regex("""(?i)(?:href|src|data-src)=["'](https?://motionbgs\\.com/dl/(?:hd|4k)/[^"'?#]+)["']""")
+                )
+                val rawDownload = downloadPatterns.asSequence()
+                    .mapNotNull { it.find(detailHtml)?.groupValues?.get(1) }
+                    .firstOrNull()
+                    ?: Regex("""(?i)(https?://motionbgs\\.com/dl/(?:hd|4k)/[^"'\\s<>]+\\.mp4)""")
+                        .find(detailHtml)?.groupValues?.get(1)
+                    ?: throw IllegalStateException("MotionBGS membuka halaman wallpaper, tetapi tautan MP4 tidak ditemukan (struktur halaman mungkin berubah).")
+                val downloadPath = if (rawDownload.startsWith("https://motionbgs.com/"))
+                    rawDownload.removePrefix("https://motionbgs.com") else rawDownload
                 val destination = File(app.cacheDir, "glasstv_motionbgs_weather.mp4")
                 val pending = File(app.cacheDir, "glasstv_motionbgs_weather.pending")
                 connection = URL("https://motionbgs.com" + downloadPath).openConnection() as HttpURLConnection
@@ -61,6 +72,8 @@ internal object MotionBgsWeatherWallpaper {
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11; GlassTV) AppleWebKit/537.36 Chrome/120 Safari/537.36")
                 connection.setRequestProperty("Referer", detailUrl)
                 connection.setRequestProperty("Accept", "video/mp4,application/octet-stream,*/*")
+                val responseCode = connection.responseCode
+                if (responseCode !in 200..299) throw IllegalStateException("Unduhan MotionBGS HTTP $responseCode")
                 pending.delete()
                 connection.inputStream.use { input -> pending.outputStream().use { output -> input.copyTo(output) } }
                 if (pending.length() < 100_000L) throw IllegalStateException("File MP4 terlalu kecil atau akses ditolak.")
