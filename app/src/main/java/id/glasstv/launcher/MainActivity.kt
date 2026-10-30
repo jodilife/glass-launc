@@ -2433,7 +2433,7 @@ class MainActivity : Activity() {
             }
             .create()
         fun settingCategory(title: String): String = when (title) {
-            "Warna aksen", "Sumber wallpaper", "Subreddit wallpaper", "Ganti gambar setiap",
+            "Warna aksen", "Sumber wallpaper", "Ganti gambar setiap",
             "Redupkan wallpaper", "Pilih gambar sendiri", "Rotasi wallpaper", "Wallpaper berikutnya",
             "Wallpaper video", "Gunakan wallpaper foto", "Google Ambient / Art Gallery",
             "Tampilan saat tidak digunakan", "Edit nama sapaan" -> "Tampilan"
@@ -4041,25 +4041,6 @@ class MainActivity : Activity() {
                 } else {
                     applyWallpaper(wallpaperTarget, forceRefresh = true)
                     scheduleWallpaperRotation()
-                    showSettings()
-                }
-            }.setNegativeButton("Batal", null).show()
-    }
-
-    private fun showWallpaperSubredditEditor() {
-        val input = EditText(this).apply {
-            setSingleLine(true)
-            setText(getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_subreddit", "WidescreenWallpaper"))
-            hint = "contoh: WidescreenWallpaper"
-        }
-        AlertDialog.Builder(this).setTitle("SUBREDDIT WALLPAPER").setView(input)
-            .setPositiveButton("Simpan") { _, _ ->
-                val name = input.text.toString().trim().removePrefix("r/").replace(Regex("[^A-Za-z0-9_]"), "")
-                if (name.isBlank()) {
-                    toast("Nama subreddit tidak valid.")
-                } else {
-                    getSharedPreferences("glass_tv", MODE_PRIVATE).edit().putString("wallpaper_subreddit", name).apply()
-                    applyWallpaper(wallpaperTarget, forceRefresh = true)
                     showSettings()
                 }
             }.setNegativeButton("Batal", null).show()
