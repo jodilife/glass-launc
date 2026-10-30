@@ -2290,7 +2290,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun showSettings() {
+    private fun showSettings(category: String? = null) {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -2301,11 +2301,87 @@ class MainActivity : Activity() {
             addView(panel, FrameLayout.LayoutParams(-1, -2))
         }
         val dialog = AlertDialog.Builder(this)
-            .setTitle("GLASSTV  /  PENGATURAN")
+            .setTitle(if (category == null) "GLASSTV  /  PENGATURAN" else "PENGATURAN  /  ${category.uppercase(Locale.ROOT)}")
             .setView(scroll)
-            .setNegativeButton("Tutup", null)
+            .setNegativeButton(if (category == null) "Tutup" else "Kembali") { _, _ ->
+                if (category != null) showSettings()
+            }
             .create()
+        fun settingCategory(title: String): String = when (title) {
+            "Warna aksen", "Sumber wallpaper", "Subreddit wallpaper", "Ganti gambar setiap",
+            "Redupkan wallpaper", "Pilih gambar sendiri", "Rotasi wallpaper", "Wallpaper berikutnya",
+            "Wallpaper video", "Gunakan wallpaper foto", "Google Ambient / Art Gallery",
+            "Tampilan saat tidak digunakan", "Edit nama sapaan" -> "Tampilan"
+            "Lokasi cuaca & waktu salat", "Info GlassTV" -> "Cuaca & Waktu Salat"
+            "Azan otomatis", "Uji suara azan" -> "Waktu Salat"
+            "Live TV sebagai background", "Sumber input Live TV", "Pilih kanal Live TV" -> "Live TV"
+            "Tata letak CCTV" -> "Kamera CCTV"
+            "Aplikasi Entertainment", "Rekomendasi & riwayat Android TV", "Atur rekomendasi & riwayat",
+            "Urutan rekomendasi & riwayat", "Dock aplikasi favorit" -> "Aplikasi & Hiburan"
+            "Gaya suara konsol", "Suara navigasi" -> "Suara"
+            "Pengaturan Android / Device Preferences", "Bersihkan cache aplikasi",
+            "Kelola aplikasi & hentikan" -> "Sistem & Cadangan"
+            else -> "Sistem & Cadangan"
+        }
+        if (category == null) {
+            val categories = listOf(
+                Triple("Tampilan", "Wallpaper, warna aksen, mode minimalis, dan layar istirahat", "palette"),
+                Triple("Cuaca & Waktu Salat", "Lokasi, kondisi cuaca, jam, dan sumber informasi", "cloud-sun"),
+                Triple("Waktu Salat", "Jadwal salat dan pengaturan suara azan", "moon-star"),
+                Triple("Live TV", "Background siaran, antena, HDMI, AV, dan kanal", "tv"),
+                Triple("Kamera CCTV", "Jumlah kamera dan tata letak preview", "cctv"),
+                Triple("Aplikasi & Hiburan", "Aplikasi favorit, rekomendasi, dan Lanjutkan Menonton", "play-square"),
+                Triple("Suara", "Efek navigasi dan gaya suara remote", "volume-2"),
+                Triple("Sistem & Cadangan", "Pengaturan Android, pemeliharaan, dan informasi", "settings")
+            )
+            categories.forEach { (name, detail, _) ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(16), dp(12), dp(16), dp(12))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(14).toFloat()
+                        setColor(Color.argb(145, 25, 36, 53))
+                        setStroke(dp(1), accentAlpha(75))
+                    }
+                    isFocusable = true
+                    isClickable = true
+                    setOnFocusChangeListener { view, focused ->
+                        view.background = GradientDrawable().apply {
+                            cornerRadius = dp(14).toFloat()
+                            setColor(if (focused) Color.argb(230, 46, 70, 101) else Color.argb(145, 25, 36, 53))
+                            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else accentAlpha(75))
+                        }
+                        view.elevation = if (focused) dp(7).toFloat() else 0f
+                        if (focused) playNavigationSound()
+                    }
+                    setOnClickListener { playSelectSound(); dialog.dismiss(); showSettings(name) }
+                    setOnKeyListener { view, keyCode, event ->
+                        if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                            keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                            view.performClick(); true
+                        } else false
+                    }
+                }
+                val textColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+                textColumn.addView(label(name, 14, Color.WHITE, true))
+                textColumn.addView(label(detail, 10, Color.rgb(170, 189, 213), false).apply {
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(0, dp(3), 0, 0)
+                })
+                row.addView(textColumn, LinearLayout.LayoutParams(0, -2, 1f))
+                row.addView(label("›", 24, accent, false))
+                panel.addView(row, LinearLayout.LayoutParams(-1, dp(68)).apply { bottomMargin = dp(8) })
+            }
+            dialog.show()
+            dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+            dialog.window?.setLayout(safeDialogWidth(700), (resources.displayMetrics.heightPixels * 0.82f).toInt())
+            panel.getChildAt(0)?.requestFocus()
+            return
+        }
         fun settingRow(title: String, detail: String, state: String? = null, action: () -> Unit) {
+            if (settingCategory(title) != category) return
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -2359,7 +2435,7 @@ class MainActivity : Activity() {
         fun reopen(message: String) {
             dialog.dismiss()
             toast(message)
-            showSettings()
+            showSettings(category)
         }
         settingRow("Pengaturan Android / Device Preferences", "Buka pengaturan sistem TV: jaringan, timer, daya, gambar, suara, dan lainnya") {
             dialog.dismiss()
