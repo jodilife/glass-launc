@@ -3193,7 +3193,6 @@ class MainActivity : Activity() {
         val tv = TvView(this).apply {
             isFocusable = false
             isFocusableInTouchMode = false
-            setZOrderOnTop(false)
             alpha = 0.76f
             setCallback(object : TvView.TvInputCallback() {
                 override fun onConnectionFailed(inputId: String?) {
