@@ -2927,18 +2927,92 @@ class MainActivity : Activity() {
             clipToPadding = false
             addView(list, FrameLayout.LayoutParams(-1, -2))
         }
+        val editor = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(Color.rgb(13, 20, 31))
+                setStroke(dp(1), accentAlpha(85))
+            }
+        }
+        editor.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        val footer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(8), 0, 0)
+        }
+        fun footerButton(title: String, prominent: Boolean, action: () -> Unit): TextView {
+            return TextView(this).apply {
+                text = title
+                textSize = 12f
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                isFocusable = true
+                isClickable = true
+                setPadding(dp(8), dp(11), dp(8), dp(11))
+                setTextColor(Color.WHITE)
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(9).toFloat()
+                    setColor(if (prominent) accentAlpha(185) else Color.argb(170, 35, 47, 64))
+                    setStroke(dp(1), if (prominent) accentAlpha(235) else accentAlpha(90))
+                }
+                setOnFocusChangeListener { v, focused ->
+                    v.elevation = if (focused) dp(5).toFloat() else 0f
+                    v.background = GradientDrawable().apply {
+                        cornerRadius = dp(9).toFloat()
+                        setColor(if (focused) focusSurface(245) else if (prominent) accentAlpha(185) else Color.argb(170, 35, 47, 64))
+                        setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else if (prominent) accentAlpha(235) else accentAlpha(90))
+                    }
+                    if (focused) playNavigationSound()
+                }
+                setOnClickListener { playSelectSound(); action() }
+                setOnKeyListener { v, keyCode, event ->
+                    if (event.action == KeyEvent.ACTION_DOWN &&
+                        (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER ||
+                            keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                        v.performClick()
+                        true
+                    } else false
+                }
+            }
+        }
         val dialog = AlertDialog.Builder(this)
             .setTitle("ATUR REKOMENDASI & RIWAYAT")
-            .setMessage("Atur urutan baris, tampil/sembunyi di Home, dan baris yang tetap terlihat pada mode minimalis. Rekomendasi SmartTube otomatis dipertahankan pada mode minimalis hingga Anda mengubahnya.")
-            .setView(scroll)
-            .setPositiveButton("Simpan", null)
-            .setNeutralButton("Reset", null)
-            .setNegativeButton("Batal", null)
+            .setMessage("Atur urutan baris, tampil/sembunyi di Home, dan tampilan mode minimalis. Perubahan hanya berlaku setelah menekan SIMPAN.")
+            .setView(editor)
             .create()
+        val saveButton = footerButton("SIMPAN", true) {
+            prefs.edit()
+                .putString("preview_channel_order", ordered.joinToString(",") { previewRowKey(it) })
+                .putStringSet("preview_hidden_keys", hidden.toSet())
+                .putStringSet("preview_compact_keep_keys", keepInCompact.toSet())
+                .putBoolean("preview_compact_configured", true)
+                .apply()
+            dialog.dismiss()
+            showHome()
+            showSettings()
+            toast("Susunan rekomendasi dan riwayat disimpan")
+        }
+        val cancelButton = footerButton("BATAL", false) { dialog.dismiss() }
+        val resetButton = footerButton("RESET", false) {
+            hidden.clear()
+            keepInCompact.clear()
+            channels.filter { isSmartTubePreview(it.packageName) }
+                .forEach { keepInCompact.add(previewRowKey(it)) }
+            ordered.clear()
+            ordered.addAll(channels)
+            renderRows()
+            toast("Pengaturan sementara dikembalikan ke awal")
+        }
+        footer.addView(saveButton, LinearLayout.LayoutParams(0, dp(44), 1f).apply { rightMargin = dp(6) })
+        footer.addView(cancelButton, LinearLayout.LayoutParams(0, dp(44), 1f).apply { rightMargin = dp(6) })
+        footer.addView(resetButton, LinearLayout.LayoutParams(0, dp(44), 1f))
+        editor.addView(footer, LinearLayout.LayoutParams(-1, dp(52)))
 
         fun renderRows() {
             list.removeAllViews()
-            list.addView(label("Gunakan tombol kiri/kanan untuk memilih fungsi, lalu OK. Tombol panah mengubah urutan.", 11,
+            list.addView(label("Pilih fungsi dengan kiri/kanan, OK untuk mengubah. Gunakan ▲ ▼ untuk mengurutkan.", 11,
                 Color.rgb(170, 189, 213), false).apply { setPadding(dp(3), 0, dp(3), dp(9)) })
             ordered.forEachIndexed { index, channel ->
                 val key = previewRowKey(channel)
@@ -2951,7 +3025,7 @@ class MainActivity : Activity() {
                         setStroke(dp(1), accentAlpha(68))
                     }
                 }
-                card.addView(label("${index + 1}. ${channel.title}", 13, Color.WHITE, true).apply {
+                card.addView(label("\${index + 1}. \${channel.title}", 13, Color.WHITE, true).apply {
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 })
@@ -3027,32 +3101,10 @@ class MainActivity : Activity() {
             }
         }
         renderRows()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                prefs.edit()
-                    .putString("preview_channel_order", ordered.joinToString(",") { previewRowKey(it) })
-                    .putStringSet("preview_hidden_keys", hidden.toSet())
-                    .putStringSet("preview_compact_keep_keys", keepInCompact.toSet())
-                    .putBoolean("preview_compact_configured", true)
-                    .apply()
-                dialog.dismiss()
-                showHome()
-                showSettings()
-                toast("Susunan rekomendasi dan riwayat disimpan")
-            }
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
-                hidden.clear()
-                keepInCompact.clear()
-                channels.filter { isSmartTubePreview(it.packageName) }
-                    .forEach { keepInCompact.add(previewRowKey(it)) }
-                ordered.clear()
-                ordered.addAll(channels)
-                renderRows()
-            }
-        }
         dialog.show()
         dialog.window?.setLayout(safeDialogWidth(780),
             (resources.displayMetrics.heightPixels * 0.84f).toInt())
+        saveButton.post { saveButton.requestFocus() }
     }
 
     private fun showPreviewRowOrderPicker() {
