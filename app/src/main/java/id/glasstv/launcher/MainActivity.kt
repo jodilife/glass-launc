@@ -3775,9 +3775,15 @@ class MainActivity : Activity() {
                 intArrayOf(Color.rgb(30, 42, 60), Color.rgb(15, 24, 39), Color.rgb(5, 9, 16))
             )
             val index = prefs.getInt("wallpaper_index", 0).mod(palettes.size)
-            target.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, palettes[index]).apply {
+            val gradient = GradientDrawable(GradientDrawable.Orientation.TL_BR, palettes[index]).apply {
                 setDither(true)
             }
+            val gradientDim = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.argb((dimAlpha * 0.65f).toInt(), 4, 8, 16),
+                    Color.argb(dimAlpha, 5, 9, 17), Color.argb((dimAlpha * 1.35f).toInt().coerceAtMost(210), 4, 7, 13))
+            )
+            target.background = LayerDrawable(arrayOf(gradient, gradientDim))
             return
         }
         if (source == "custom") {
