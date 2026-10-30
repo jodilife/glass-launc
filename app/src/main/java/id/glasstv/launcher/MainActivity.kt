@@ -1005,12 +1005,11 @@ class MainActivity : Activity() {
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
             })
-            val playerView = PlayerView(this).apply {
-                useController = false
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                setShutterBackgroundColor(Color.rgb(5, 8, 13))
-                setBackgroundColor(Color.rgb(5, 8, 13))
-            }
+            // TextureView keeps each small CCTV preview inside its own dashboard tile.
+            // This avoids SurfaceView overlay-plane conflicts with the full-screen Android TV tuner layer.
+            val playerView = layoutInflater.inflate(
+                R.layout.view_home_camera_preview, panel, false
+            ) as PlayerView
             panel.addView(playerView, LinearLayout.LayoutParams(-1, dp(56)))
             if (url.isBlank()) {
                 playerView.visibility = View.GONE
