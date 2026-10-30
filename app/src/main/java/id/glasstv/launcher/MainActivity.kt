@@ -55,6 +55,7 @@ import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import org.json.JSONObject
 
 @OptIn(UnstableApi::class)
 class MainActivity : Activity() {
@@ -181,10 +182,10 @@ class MainActivity : Activity() {
             val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
             if (prefs.getString("wallpaper_video_uri", null) != null ||
                 !prefs.getBoolean("wallpaper_auto", true)) return
-            val next = (prefs.getInt("wallpaper_index", 0) + 1) % wallpaperUrls.size
-            prefs.edit().putInt("wallpaper_index", next).apply()
-            applyWallpaper(wallpaperTarget)
-            wallpaperHandler.postDelayed(this, 8 * 60 * 1000L)
+            prefs.edit().putLong("wallpaper_last_refresh", System.currentTimeMillis()).apply()
+            applyWallpaper(wallpaperTarget, forceRefresh = true)
+            val hours = prefs.getInt("wallpaper_interval_hours", 3).coerceIn(1, 24)
+            wallpaperHandler.postDelayed(this, hours * 60L * 60L * 1000L)
         }
     }
     private val prayerTimeLabels = mutableListOf<TextView>()
@@ -2418,21 +2419,47 @@ class MainActivity : Activity() {
             dialog.dismiss()
             showLiveTvInputPicker()
         }
+        settingRow("Pilih kanal Live TV", "Pilih siaran yang akan ditampilkan sebagai background", selectedLiveTvChannelLabel()) {
+            dialog.dismiss()
+            showLiveTvChannelPicker()
+        }
         settingRow("Tampilan saat tidak digunakan", "Atur waktu otomatis menjadi ringkas", idleTimeoutLabel(idleTimeoutSeconds())) {
             dialog.dismiss()
             showIdleTimeoutPicker()
         }
+        settingRow("Sumber wallpaper", "Bing, Reddit, Gradient, atau gambar sendiri", wallpaperSourceLabel()) {
+            dialog.dismiss()
+            showWallpaperSourcePicker()
+        }
+        if (prefs.getString("wallpaper_source", "bing") == "reddit") {
+            settingRow("Subreddit wallpaper", "Pilih subreddit; hanya gambar rasio 16:9 sampai 21:9", prefs.getString("wallpaper_subreddit", "WidescreenWallpaper") ?: "WidescreenWallpaper") {
+                dialog.dismiss()
+                showWallpaperSubredditEditor()
+            }
+        }
+        settingRow("Ganti gambar setiap", "Interval rotasi wallpaper", "${prefs.getInt("wallpaper_interval_hours", 3)} jam") {
+            dialog.dismiss()
+            showWallpaperIntervalPicker()
+        }
+        settingRow("Redupkan wallpaper", "Atur kontras agar teks tetap terbaca", wallpaperDimLabel()) {
+            dialog.dismiss()
+            showWallpaperDimPicker()
+        }
+        settingRow("Pilih gambar sendiri", "Gunakan foto dari penyimpanan TV") {
+            dialog.dismiss()
+            pickCustomWallpaper()
+        }
         val wallpaperAuto = prefs.getBoolean("wallpaper_auto", true)
-        settingRow("Wallpaper otomatis", "Ganti wallpaper foto secara berkala", if (wallpaperAuto) "AKTIF" else "MATI") {
+        settingRow("Rotasi wallpaper", "Ganti gambar otomatis sesuai interval", if (wallpaperAuto) "AKTIF" else "MATI") {
             prefs.edit().putBoolean("wallpaper_auto", !wallpaperAuto).apply()
             scheduleWallpaperRotation()
-            reopen("Wallpaper otomatis ${if (!wallpaperAuto) "diaktifkan" else "dimatikan"}")
+            reopen("Rotasi wallpaper ${if (!wallpaperAuto) "diaktifkan" else "dimatikan"}")
         }
-        settingRow("Wallpaper berikutnya", "Ganti ke foto latar berikutnya") {
-            val next = (prefs.getInt("wallpaper_index", 0) + 1) % wallpaperUrls.size
-            prefs.edit().putInt("wallpaper_index", next).apply()
-            applyWallpaper(wallpaperTarget)
-            dialog.dismiss(); toast("Wallpaper diganti")
+        settingRow("Wallpaper berikutnya", "Ambil gambar baru dari sumber terpilih") {
+            applyWallpaper(wallpaperTarget, forceRefresh = true)
+            scheduleWallpaperRotation()
+            dialog.dismiss()
+            toast("Memuat wallpaper berikutnya")
         }
         settingRow("Google Ambient / Art Gallery", "Buka pengaturan screensaver Android TV") {
             dialog.dismiss(); openGoogleAmbientSettings()
@@ -3031,7 +3058,7 @@ class MainActivity : Activity() {
                         setStroke(dp(1), accentAlpha(68))
                     }
                 }
-                card.addView(label("\${index + 1}. \${channel.title}", 13, Color.WHITE, true).apply {
+                card.addView(label("${index + 1}. ${channel.title}", 13, Color.WHITE, true).apply {
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
                 })
@@ -3268,6 +3295,82 @@ class MainActivity : Activity() {
         return try { info.loadLabel(this).toString() } catch (_: Exception) { info.id }
     }
 
+    private fun selectedLiveTvChannelLabel(): String {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val id = prefs.getLong("live_tv_channel_id", -1L)
+        if (id < 0L) return "Otomatis / kanal pertama"
+        return try {
+            contentResolver.query(
+                TvContract.buildChannelUri(id),
+                arrayOf(TvContract.Channels.COLUMN_DISPLAY_NAME, TvContract.Channels.COLUMN_DISPLAY_NUMBER),
+                null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NAME)
+                    val numberIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NUMBER)
+                    val name = if (nameIndex >= 0) cursor.getString(nameIndex).orEmpty() else ""
+                    val number = if (numberIndex >= 0) cursor.getString(numberIndex).orEmpty() else ""
+                    listOf(number, name).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Kanal tersimpan" }
+                } else "Otomatis / kanal pertama"
+            } ?: "Otomatis / kanal pertama"
+        } catch (_: Exception) { "Kanal tersimpan" }
+    }
+
+    private fun showLiveTvChannelPicker() {
+        if (!hasTvListingsPermission()) {
+            showTvListingsPermissionDialog()
+            return
+        }
+        val manager = getSystemService(TV_INPUT_SERVICE) as? TvInputManager
+        val tunerIds = manager?.tvInputList?.filter { it.type == TvInputInfo.TYPE_TUNER }?.map { it.id }?.toSet().orEmpty()
+        val selectedInput = getSharedPreferences("glass_tv", MODE_PRIVATE).getString("live_tv_input_id", "auto") ?: "auto"
+        val channels = try {
+            contentResolver.query(
+                TvContract.Channels.CONTENT_URI,
+                arrayOf(TvContract.Channels._ID, TvContract.Channels.COLUMN_INPUT_ID,
+                    TvContract.Channels.COLUMN_DISPLAY_NAME, TvContract.Channels.COLUMN_DISPLAY_NUMBER),
+                null, null, TvContract.Channels.COLUMN_DISPLAY_NUMBER + " ASC"
+            )?.use { cursor ->
+                val result = mutableListOf<Triple<Long, String, String>>()
+                while (cursor.moveToNext()) {
+                    val idIndex = cursor.getColumnIndex(TvContract.Channels._ID)
+                    val inputIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_INPUT_ID)
+                    if (idIndex < 0 || inputIndex < 0 || cursor.isNull(inputIndex)) continue
+                    val inputId = cursor.getString(inputIndex)
+                    if (selectedInput != "auto" && inputId != selectedInput) continue
+                    if (selectedInput == "auto" && inputId !in tunerIds) continue
+                    val numberIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NUMBER)
+                    val nameIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NAME)
+                    val number = if (numberIndex >= 0) cursor.getString(numberIndex).orEmpty() else ""
+                    val name = if (nameIndex >= 0) cursor.getString(nameIndex).orEmpty() else ""
+                    result.add(Triple(cursor.getLong(idIndex), inputId, listOf(number, name).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Kanal TV" }))
+                }
+                result
+            }.orEmpty()
+        } catch (_: Exception) { emptyList() }
+        if (channels.isEmpty()) {
+            toast("Belum ada kanal dari input ini. Buka Live TV bawaan, pindai kanal, lalu coba lagi.")
+            return
+        }
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val currentId = prefs.getLong("live_tv_channel_id", -1L)
+        val labels = listOf("Otomatis (kanal pertama)") + channels.map { it.third }
+        AlertDialog.Builder(this)
+            .setTitle("PILIH KANAL LIVE TV")
+            .setSingleChoiceItems(labels.toTypedArray(), channels.indexOfFirst { it.first == currentId }.let { if (it < 0) 0 else it + 1 }) { picker, which ->
+                prefs.edit().putLong("live_tv_channel_id", if (which == 0) -1L else channels[which - 1].first).apply()
+                picker.dismiss()
+                if (idleMode) {
+                    stopLiveTvBackground()
+                    startLiveTvBackground()
+                }
+                showSettings()
+                toast(if (which == 0) "Kanal otomatis dipilih" else "Kanal: ${channels[which - 1].third}")
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
     private fun showLiveTvInputPicker() {
         val manager = getSystemService(TV_INPUT_SERVICE) as? TvInputManager
         if (manager == null) {
@@ -3295,7 +3398,7 @@ class MainActivity : Activity() {
                 stopLiveTvBackground()
                 if (idleMode) startLiveTvBackground()
                 showSettings()
-                toast("Sumber Live TV: \${labels[which]}")
+                toast("Sumber Live TV: ${labels[which]}")
             }
             .setNegativeButton("Batal", null)
             .show()
@@ -3306,7 +3409,7 @@ class MainActivity : Activity() {
         val tv = TvView(this).apply {
             isFocusable = false
             isFocusableInTouchMode = false
-            alpha = 0.76f
+            alpha = 0.96f
             setCallback(object : TvView.TvInputCallback() {
                 override fun onConnectionFailed(inputId: String?) {
                     runOnUiThread {
@@ -3314,10 +3417,16 @@ class MainActivity : Activity() {
                         toast("Tuner Live TV tidak dapat dihubungkan. Wallpaper biasa tetap digunakan.")
                     }
                 }
+                override fun onVideoAvailable(inputId: String?) {
+                    runOnUiThread { liveTvBackgroundScrim?.setBackgroundColor(Color.argb(28, 3, 7, 13)) }
+                }
+                override fun onVideoUnavailable(inputId: String?, reason: Int) {
+                    runOnUiThread { liveTvBackgroundScrim?.setBackgroundColor(Color.argb(72, 3, 7, 13)) }
+                }
             })
         }
         val scrim = View(this).apply {
-            setBackgroundColor(Color.argb(112, 3, 7, 13))
+            setBackgroundColor(Color.argb(72, 3, 7, 13))
             isFocusable = false
         }
         target.addView(tv, 0, FrameLayout.LayoutParams(-1, -1))
@@ -3381,7 +3490,9 @@ class MainActivity : Activity() {
                     toast("Kanal belum cocok dengan input tuner yang tersedia. Buka Live TV bawaan, pindai kanal, lalu coba lagi.")
                     return
                 }
-            val channel = channels.firstOrNull { it.second == selectedTuner.id } ?: return
+            val savedChannelId = prefs.getLong("live_tv_channel_id", -1L)
+            val channel = channels.firstOrNull { it.second == selectedTuner.id && it.first == savedChannelId }
+                ?: channels.firstOrNull { it.second == selectedTuner.id } ?: return
             val channelUri = TvContract.buildChannelUri(channel.first)
             liveTvBackgroundInputId = selectedTuner.id
             liveTvBackgroundChannelUri = channelUri
@@ -3450,6 +3561,20 @@ class MainActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 7143 && resultCode == RESULT_OK) {
+            val imageUri = data?.data ?: return
+            try {
+                contentResolver.takePersistableUriPermission(imageUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) { }
+            getSharedPreferences("glass_tv", MODE_PRIVATE).edit()
+                .putString("wallpaper_custom_uri", imageUri.toString())
+                .putString("wallpaper_source", "custom")
+                .putBoolean("wallpaper_auto", false)
+                .apply()
+            showHome()
+            toast("Gambar sendiri dijadikan wallpaper")
+            return
+        }
         if (requestCode != wallpaperVideoRequestCode || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         try {
@@ -3503,55 +3628,224 @@ class MainActivity : Activity() {
         videoWallpaperView = null
     }
 
+    private fun wallpaperSourceLabel(): String = when (
+        getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_source", "bing")
+    ) {
+        "reddit" -> "Reddit"
+        "gradient" -> "Gradient"
+        "custom" -> "Gambar sendiri"
+        else -> "Bing Photo of the Day"
+    }
+
+    private fun wallpaperDimLabel(): String = when (
+        getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_dim", "medium")
+    ) {
+        "light" -> "Light"
+        "strong" -> "Strong"
+        else -> "Medium"
+    }
+
+    private fun showWallpaperSourcePicker() {
+        val values = arrayOf("bing", "reddit", "gradient", "custom")
+        val labels = arrayOf("Photo of the day (Bing)", "Reddit", "Gradient", "My image")
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val current = values.indexOf(prefs.getString("wallpaper_source", "bing")).coerceAtLeast(0)
+        AlertDialog.Builder(this).setTitle("SUMBER WALLPAPER")
+            .setSingleChoiceItems(labels, current) { picker, which ->
+                prefs.edit().putString("wallpaper_source", values[which]).apply()
+                picker.dismiss()
+                if (values[which] == "custom" && prefs.getString("wallpaper_custom_uri", null) == null) {
+                    pickCustomWallpaper()
+                } else {
+                    applyWallpaper(wallpaperTarget, forceRefresh = true)
+                    scheduleWallpaperRotation()
+                    showSettings()
+                }
+            }.setNegativeButton("Batal", null).show()
+    }
+
+    private fun showWallpaperSubredditEditor() {
+        val input = EditText(this).apply {
+            setSingleLine(true)
+            setText(getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_subreddit", "WidescreenWallpaper"))
+            hint = "contoh: WidescreenWallpaper"
+        }
+        AlertDialog.Builder(this).setTitle("SUBREDDIT WALLPAPER").setView(input)
+            .setPositiveButton("Simpan") { _, _ ->
+                val name = input.text.toString().trim().removePrefix("r/").replace(Regex("[^A-Za-z0-9_]"), "")
+                if (name.isBlank()) {
+                    toast("Nama subreddit tidak valid.")
+                } else {
+                    getSharedPreferences("glass_tv", MODE_PRIVATE).edit().putString("wallpaper_subreddit", name).apply()
+                    applyWallpaper(wallpaperTarget, forceRefresh = true)
+                    showSettings()
+                }
+            }.setNegativeButton("Batal", null).show()
+    }
+
+    private fun showWallpaperIntervalPicker() {
+        val values = intArrayOf(1, 3, 6, 24)
+        val labels = arrayOf("Setiap 1 jam", "Setiap 3 jam", "Setiap 6 jam", "Setiap 24 jam")
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        AlertDialog.Builder(this).setTitle("INTERVAL WALLPAPER")
+            .setSingleChoiceItems(labels, values.indexOf(prefs.getInt("wallpaper_interval_hours", 3)).coerceAtLeast(0)) { picker, which ->
+                prefs.edit().putInt("wallpaper_interval_hours", values[which]).apply()
+                picker.dismiss()
+                scheduleWallpaperRotation()
+                showSettings()
+            }.setNegativeButton("Batal", null).show()
+    }
+
+    private fun showWallpaperDimPicker() {
+        val values = arrayOf("light", "medium", "strong")
+        val labels = arrayOf("Light", "Medium", "Strong")
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        AlertDialog.Builder(this).setTitle("REDUPKAN WALLPAPER")
+            .setSingleChoiceItems(labels, values.indexOf(prefs.getString("wallpaper_dim", "medium")).coerceAtLeast(0)) { picker, which ->
+                prefs.edit().putString("wallpaper_dim", values[which]).apply()
+                picker.dismiss()
+                applyWallpaper(wallpaperTarget)
+                showSettings()
+            }.setNegativeButton("Batal", null).show()
+    }
+
+    private fun pickCustomWallpaper() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try { startActivityForResult(intent, 7143) }
+        catch (_: Exception) { toast("Pemilih gambar tidak tersedia pada TV ini.") }
+    }
+
     private fun scheduleWallpaperRotation() {
         wallpaperHandler.removeCallbacks(wallpaperCycle)
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         if (prefs.getString("wallpaper_video_uri", null) == null &&
-            prefs.getBoolean("wallpaper_auto", true)) {
-            wallpaperHandler.postDelayed(wallpaperCycle, 8 * 60 * 1000L)
+            prefs.getBoolean("wallpaper_auto", true) &&
+            prefs.getString("wallpaper_source", "bing") != "custom") {
+            val hours = prefs.getInt("wallpaper_interval_hours", 3).coerceIn(1, 24)
+            wallpaperHandler.postDelayed(wallpaperCycle, hours * 60L * 60L * 1000L)
         }
     }
 
-    private fun applyWallpaper(target: FrameLayout) {
-        if (getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_video_uri", null) != null) {
+    private fun applyWallpaper(target: FrameLayout, forceRefresh: Boolean = false) {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (prefs.getString("wallpaper_video_uri", null) != null) {
             target.setBackgroundColor(Color.rgb(5, 8, 14))
             return
         }
-        if (target === wallpaperTarget && continueWatchingCard?.hasFocus() != true) {
+        if (target === wallpaperTarget && ::root.isInitialized && continueWatchingCard?.hasFocus() != true) {
             root.setBackgroundColor(Color.TRANSPARENT)
         }
-        val index = getSharedPreferences("glass_tv", MODE_PRIVATE)
-            .getInt("wallpaper_index", 0).mod(wallpaperUrls.size)
-        val file = File(cacheDir, "glasstv_wallpaper_$index.jpg")
-        fun display(bytesFile: File) {
-            try {
-                val options = BitmapFactory.Options().apply { inSampleSize = 1 }
-                val bitmap = BitmapFactory.decodeFile(bytesFile.absolutePath, options) ?: return
+        val source = prefs.getString("wallpaper_source", "bing") ?: "bing"
+        val dimAlpha = when (prefs.getString("wallpaper_dim", "medium")) {
+            "light" -> 42
+            "strong" -> 132
+            else -> 82
+        }
+        fun display(bitmap: Bitmap) {
+            runOnUiThread {
+                if (isFinishing || target !== wallpaperTarget) return@runOnUiThread
                 val image = BitmapDrawable(resources, bitmap).apply { gravity = Gravity.FILL }
                 val scrim = GradientDrawable(
                     GradientDrawable.Orientation.TOP_BOTTOM,
-                    intArrayOf(Color.argb(66, 4, 8, 16), Color.argb(92, 5, 9, 17), Color.argb(125, 4, 7, 13))
+                    intArrayOf(Color.argb((dimAlpha * 0.65f).toInt(), 4, 8, 16),
+                        Color.argb(dimAlpha, 5, 9, 17), Color.argb((dimAlpha * 1.35f).toInt().coerceAtMost(210), 4, 7, 13))
                 )
-                runOnUiThread {
-                    if (!isFinishing && target === wallpaperTarget) target.background = LayerDrawable(arrayOf(image, scrim))
-                }
-            } catch (_: Exception) { }
+                target.background = LayerDrawable(arrayOf(image, scrim))
+            }
         }
-        if (file.exists() && file.length() > 12_000L) {
-            display(file)
+        if (source == "gradient") {
+            val palettes = arrayOf(
+                intArrayOf(Color.rgb(14, 36, 58), Color.rgb(38, 25, 66), Color.rgb(7, 12, 23)),
+                intArrayOf(Color.rgb(12, 54, 58), Color.rgb(21, 34, 54), Color.rgb(6, 11, 20)),
+                intArrayOf(Color.rgb(64, 35, 35), Color.rgb(34, 31, 58), Color.rgb(7, 12, 23)),
+                intArrayOf(Color.rgb(30, 42, 60), Color.rgb(15, 24, 39), Color.rgb(5, 9, 16))
+            )
+            val index = prefs.getInt("wallpaper_index", 0).mod(palettes.size)
+            target.background = GradientDrawable(GradientDrawable.Orientation.TL_BR, palettes[index]).apply {
+                setDither(true)
+            }
             return
         }
+        if (source == "custom") {
+            val raw = prefs.getString("wallpaper_custom_uri", null) ?: run {
+                target.setBackgroundColor(Color.rgb(7, 12, 20))
+                return
+            }
+            Thread({
+                try {
+                    val bitmap = contentResolver.openInputStream(Uri.parse(raw))?.use { BitmapFactory.decodeStream(it) }
+                    if (bitmap != null) display(bitmap)
+                } catch (_: Exception) { }
+            }, "glasstv-custom-wallpaper").start()
+            return
+        }
+        val file = File(cacheDir, "glasstv_wallpaper_active.jpg")
+        fun showCached() {
+            if (!file.exists() || file.length() < 12_000L) return
+            try {
+                val options = BitmapFactory.Options().apply { inSampleSize = 2 }
+                BitmapFactory.decodeFile(file.absolutePath, options)?.let { display(it) }
+            } catch (_: Exception) { }
+        }
+        if (!forceRefresh && file.exists() && file.length() > 12_000L) {
+            showCached()
+            return
+        }
+        if (forceRefresh) file.delete()
         Thread({
             var connection: HttpURLConnection? = null
             try {
-                connection = URL(wallpaperUrls[index]).openConnection() as HttpURLConnection
-                connection.connectTimeout = 8000
-                connection.readTimeout = 10000
-                connection.setRequestProperty("User-Agent", "GlassTVLauncher/0.5")
+                val imageUrl = if (source == "reddit") {
+                    val subreddit = prefs.getString("wallpaper_subreddit", "WidescreenWallpaper") ?: "WidescreenWallpaper"
+                    val jsonUrl = "https://www.reddit.com/r/$subreddit/top.json?t=month&limit=100&raw_json=1"
+                    connection = URL(jsonUrl).openConnection() as HttpURLConnection
+                    connection.connectTimeout = 9000
+                    connection.readTimeout = 12000
+                    connection.setRequestProperty("User-Agent", "GlassTVLauncher/0.5 (Android TV wallpaper)")
+                    val json = connection.inputStream.bufferedReader().use { it.readText() }
+                    connection.disconnect()
+                    connection = null
+                    val children = JSONObject(json).optJSONObject("data")?.optJSONArray("children")
+                    val candidates = mutableListOf<String>()
+                    if (children != null) for (i in 0 until children.length()) {
+                        val post = children.optJSONObject(i)?.optJSONObject("data") ?: continue
+                        if (post.optBoolean("over_18", false)) continue
+                        val preview = post.optJSONObject("preview")?.optJSONArray("images")?.optJSONObject(0)
+                        val sourceImage = preview?.optJSONObject("source")
+                        val width = sourceImage?.optInt("width", 0) ?: 0
+                        val height = sourceImage?.optInt("height", 0) ?: 0
+                        val ratio = if (height > 0) width.toFloat() / height else 0f
+                        if (ratio !in 1.777f..2.334f) continue
+                        val url = sourceImage?.optString("url").orEmpty().replace("&amp;", "&")
+                        if (url.startsWith("http")) candidates.add(url)
+                    }
+                    if (candidates.isEmpty()) throw IllegalStateException("Tidak ada gambar 16:9–21:9 pada subreddit tersebut.")
+                    candidates[prefs.getInt("wallpaper_reddit_index", 0).mod(candidates.size)]
+                } else {
+                    connection = URL("https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=en-US").openConnection() as HttpURLConnection
+                    connection.connectTimeout = 9000
+                    connection.readTimeout = 12000
+                    connection.setRequestProperty("User-Agent", "Mozilla/5.0 GlassTVLauncher/0.5")
+                    val json = connection.inputStream.bufferedReader().use { it.readText() }
+                    val imagePath = JSONObject(json).optJSONArray("images")?.optJSONObject(0)?.optString("url").orEmpty()
+                    if (imagePath.isBlank()) throw IllegalStateException("Bing tidak mengirim gambar hari ini.")
+                    "https://www.bing.com" + imagePath
+                }
+                connection = URL(imageUrl).openConnection() as HttpURLConnection
+                connection.connectTimeout = 10000
+                connection.readTimeout = 15000
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 GlassTVLauncher/0.5")
                 connection.inputStream.use { input -> file.outputStream().use { output -> input.copyTo(output) } }
-                if (file.length() > 12_000L) display(file) else file.delete()
-            } catch (_: Exception) {
-                try { file.delete() } catch (_: Exception) { }
+                if (file.length() < 12_000L) throw IllegalStateException("File wallpaper terlalu kecil.")
+                showCached()
+            } catch (error: Exception) {
+                if (!file.exists() || file.length() < 12_000L) {
+                    runOnUiThread { toast("Wallpaper online gagal dimuat. Periksa internet atau subreddit.") }
+                }
             } finally {
                 connection?.disconnect()
             }
