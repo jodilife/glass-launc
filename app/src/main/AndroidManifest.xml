@@ -11,6 +11,7 @@
         </intent>
     </queries>
     <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.software.live_wallpaper" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
@@ -20,6 +21,18 @@
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true">
+        <service
+            android:name=".LiveTvWallpaperService"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_WALLPAPER"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/live_tv_wallpaper" />
+        </service>
         <service
             android:name=".PlaybackListenerService"
             android:label="GlassTV Continue Watching"
