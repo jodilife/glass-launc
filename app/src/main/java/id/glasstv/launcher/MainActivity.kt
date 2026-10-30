@@ -236,6 +236,10 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         refreshOnResume = true
+        getSharedPreferences("glass_tv", MODE_PRIVATE).edit()
+            .putBoolean("live_tv_idle_mode_active", false).apply()
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(bg))
         releaseHomePreviewPlayers()
         releaseVideoWallpaperPlayer()
         stopLiveTvBackground()
@@ -2437,6 +2441,31 @@ class MainActivity : Activity() {
             dialog.dismiss()
             toast("Wallpaper foto diaktifkan")
         }
+        val wallpaperServiceEnabled = prefs.getBoolean("live_tv_wallpaper_service", false)
+        settingRow("Eksperimen Live TV Wallpaper", "Uji tuner langsung pada Surface Live Wallpaper, hanya saat idle", if (wallpaperServiceEnabled) "DIPILIH" else "MATI") {
+            if (!wallpaperServiceEnabled) {
+                prefs.edit().putBoolean("live_tv_wallpaper_service", true).apply()
+                val intent = Intent(android.app.WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER).apply {
+                    putExtra(
+                        android.app.WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
+                        android.content.ComponentName(this@MainActivity, LiveTvWallpaperService::class.java)
+                    )
+                }
+                dialog.dismiss()
+                try {
+                    startActivity(intent)
+                } catch (_: Exception) {
+                    prefs.edit().putBoolean("live_tv_wallpaper_service", false).apply()
+                    toast("Pemilih Live Wallpaper tidak tersedia pada Android TV ini.")
+                }
+            } else {
+                prefs.edit().putBoolean("live_tv_wallpaper_service", false)
+                    .putBoolean("live_tv_idle_mode_active", false).apply()
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+                if (idleMode) exitIdleMode()
+                reopen("Eksperimen Live TV Wallpaper dimatikan")
+            }
+        }
         val liveTvBackgroundEnabled = prefs.getBoolean("live_tv_idle_background", false)
         settingRow("Live TV sebagai background", "Tampilkan siaran tuner saat Home masuk mode ringkas", if (liveTvBackgroundEnabled) "AKTIF" else "MATI") {
             prefs.edit().putBoolean("live_tv_idle_background", !liveTvBackgroundEnabled).apply()
@@ -3591,11 +3620,26 @@ class MainActivity : Activity() {
         homePreviewPlayerViews.forEach { it.visibility = View.GONE }
         homePreviewPlayers.forEach { it.pause() }
         root.requestFocus()
-        startLiveTvBackground()
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (prefs.getBoolean("live_tv_wallpaper_service", false)) {
+            // Let WallpaperService own the tuner Surface during idle; never attach TvView here.
+            stopLiveTvBackground()
+            prefs.edit().putBoolean("live_tv_idle_mode_active", true).apply()
+            window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+            wallpaperTarget.setBackgroundColor(Color.TRANSPARENT)
+        } else {
+            prefs.edit().putBoolean("live_tv_idle_mode_active", false).apply()
+            startLiveTvBackground()
+        }
     }
 
     private fun exitIdleMode() {
         if (!idleMode) return
+        getSharedPreferences("glass_tv", MODE_PRIVATE).edit()
+            .putBoolean("live_tv_idle_mode_active", false).apply()
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(bg))
         idleMode = false
         favoriteDockView?.visibility = View.VISIBLE
         backgroundAudioRowView?.visibility = View.VISIBLE
