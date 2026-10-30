@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.media.tv.TvContract
 import android.media.tv.TvInputManager
+import android.media.tv.TvInputInfo
 import android.media.tv.TvView
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -2413,6 +2414,10 @@ class MainActivity : Activity() {
             if (!liveTvBackgroundEnabled && idleMode) startLiveTvBackground() else stopLiveTvBackground()
             reopen("Live TV background ${if (!liveTvBackgroundEnabled) "diaktifkan" else "dimatikan"}")
         }
+        settingRow("Sumber input Live TV", "Pilih tuner antena atau input HDMI untuk background", selectedLiveTvInputLabel()) {
+            dialog.dismiss()
+            showLiveTvInputPicker()
+        }
         settingRow("Tampilan saat tidak digunakan", "Atur waktu otomatis menjadi ringkas", idleTimeoutLabel(idleTimeoutSeconds())) {
             dialog.dismiss()
             showIdleTimeoutPicker()
@@ -3253,6 +3258,47 @@ class MainActivity : Activity() {
         super.onDestroy()
     }
 
+    private fun selectedLiveTvInputLabel(): String {
+        val selected = getSharedPreferences("glass_tv", MODE_PRIVATE).getString("live_tv_input_id", "auto")
+        if (selected.isNullOrBlank() || selected == "auto") return "Otomatis"
+        val manager = getSystemService(TV_INPUT_SERVICE) as? TvInputManager ?: return "Input tersimpan"
+        val info = manager.tvInputList.firstOrNull { it.id == selected } ?: return "Input tidak tersedia"
+        return try { info.loadLabel(packageManager).toString() } catch (_: Exception) { info.id }
+    }
+
+    private fun showLiveTvInputPicker() {
+        val manager = getSystemService(TV_INPUT_SERVICE) as? TvInputManager
+        if (manager == null) {
+            toast("Layanan input TV tidak tersedia pada perangkat ini.")
+            return
+        }
+        val candidates = manager.tvInputList.filter { it.isPassthroughInput || it.type == TvInputInfo.TYPE_TUNER }
+        if (candidates.isEmpty()) {
+            toast("Android TV tidak melaporkan input tuner atau HDMI.")
+            return
+        }
+        val ids = listOf("auto") + candidates.map { it.id }
+        val labels = listOf("Otomatis (pilih kanal tuner)") + candidates.map { info ->
+            val type = if (info.isPassthroughInput) "HDMI / Passthrough" else "TV Digital / Tuner"
+            val name = try { info.loadLabel(packageManager).toString() } catch (_: Exception) { info.id }
+            "$name · $type"
+        }
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val selected = prefs.getString("live_tv_input_id", "auto") ?: "auto"
+        AlertDialog.Builder(this)
+            .setTitle("SUMBER INPUT LIVE TV")
+            .setSingleChoiceItems(labels.toTypedArray(), ids.indexOf(selected).coerceAtLeast(0)) { picker, which ->
+                prefs.edit().putString("live_tv_input_id", ids[which]).apply()
+                picker.dismiss()
+                stopLiveTvBackground()
+                if (idleMode) startLiveTvBackground()
+                showSettings()
+                toast("Sumber Live TV: \${labels[which]}")
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
     private fun createLiveTvBackgroundLayer(target: FrameLayout) {
         if (!getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("live_tv_idle_background", false)) return
         val tv = TvView(this).apply {
@@ -3285,34 +3331,53 @@ class MainActivity : Activity() {
             createLiveTvBackgroundLayer(wallpaperTarget)
             liveTvBackgroundView
         } ?: return
-        val existingInputId = liveTvBackgroundInputId
-        val existingChannelUri = liveTvBackgroundChannelUri
-        if (existingInputId != null && existingChannelUri != null) {
-            try { tv.tune(existingInputId, existingChannelUri); return } catch (_: Exception) { }
-        }
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val selectedInputId = prefs.getString("live_tv_input_id", "auto") ?: "auto"
         try {
             val manager = getSystemService(TV_INPUT_SERVICE) as? TvInputManager ?: run {
                 toast("Layanan tuner Android TV tidak tersedia.")
                 return
             }
-            val channel = contentResolver.query(
+            val inputs = manager.tvInputList
+            val inputInfo = if (selectedInputId != "auto") {
+                inputs.firstOrNull { it.id == selectedInputId }
+            } else {
+                inputs.firstOrNull { it.type == TvInputInfo.TYPE_TUNER }
+            } ?: run {
+                toast("Input TV yang dipilih tidak tersedia. Periksa kembali sumber input.")
+                return
+            }
+            if (inputInfo.isPassthroughInput) {
+                val passthroughUri = TvContract.buildChannelUriForPassthroughInput(inputInfo.id)
+                liveTvBackgroundInputId = inputInfo.id
+                liveTvBackgroundChannelUri = passthroughUri
+                tv.tune(inputInfo.id, passthroughUri)
+                wallpaperTarget.setBackgroundColor(Color.rgb(4, 7, 12))
+                return
+            }
+            val channels = contentResolver.query(
                 TvContract.Channels.CONTENT_URI,
                 arrayOf(TvContract.Channels._ID, TvContract.Channels.COLUMN_INPUT_ID),
                 null, null, null
             )?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getLong(0) to cursor.getString(1) else null
-            } ?: run {
-                toast("Belum ada kanal tuner digital. Pindai kanal melalui aplikasi Live TV terlebih dahulu.")
+                val found = mutableListOf<Pair<Long, String>>()
+                while (cursor.moveToNext()) {
+                    val idIndex = cursor.getColumnIndex(TvContract.Channels._ID)
+                    val inputIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_INPUT_ID)
+                    if (idIndex >= 0 && inputIndex >= 0 && !cursor.isNull(inputIndex)) {
+                        found.add(cursor.getLong(idIndex) to cursor.getString(inputIndex))
+                    }
+                }
+                found
+            }.orEmpty()
+            val channel = channels.firstOrNull { it.second == inputInfo.id } ?: run {
+                toast("Belum ada kanal untuk input tuner ini. Pindai kanal melalui aplikasi Live TV terlebih dahulu.")
                 return
             }
-            val inputInfo = manager.tvInputList.firstOrNull { it.id == channel.second }
-            if (inputInfo == null) {
-                toast("Input tuner untuk kanal ini tidak ditemukan.")
-                return
-            }
+            val channelUri = TvContract.buildChannelUri(channel.first)
             liveTvBackgroundInputId = inputInfo.id
-            liveTvBackgroundChannelUri = TvContract.buildChannelUri(channel.first)
-            tv.tune(inputInfo.id, liveTvBackgroundChannelUri)
+            liveTvBackgroundChannelUri = channelUri
+            tv.tune(inputInfo.id, channelUri)
             wallpaperTarget.setBackgroundColor(Color.rgb(4, 7, 12))
         } catch (_: SecurityException) {
             toast("Izin membaca kanal TV belum diberikan. Aktifkan akses TV listings untuk GlassTV.")
