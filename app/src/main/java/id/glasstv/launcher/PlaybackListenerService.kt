@@ -92,7 +92,7 @@ class PlaybackListenerService : NotificationListenerService() {
         val state = controller.playbackState
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         saveArtwork(pkg, title, metadata)
-        if (isAudioPackage(pkg)) {
+        if (isAudioSession(pkg, metadata)) {
             prefs.edit()
                 .putString("audio_title_$pkg", title)
                 .putString("audio_artist_$pkg", metadata.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty())
@@ -335,8 +335,22 @@ class PlaybackListenerService : NotificationListenerService() {
 
     private fun isSupportedPackage(pkg: String): Boolean {
         val p = pkg.lowercase()
-        return p.contains("youtube") || p.contains("smarttube") || p.contains("smartyoutubetv2") ||
-            p.contains("teamsmart") || isAudioPackage(p)
+        // MediaSessionManager already returns active media sessions. Accept third-party media
+        // apps generally instead of maintaining a short package allow-list.
+        return p != "id.glasstv.launcher" && p != "id.glasstv.launcher.dashboardtest" &&
+            !p.startsWith("android.") && !p.startsWith("com.android.systemui")
+    }
+
+    private fun isAudioSession(pkg: String, metadata: MediaMetadata): Boolean {
+        if (isAudioPackage(pkg)) return true
+        val mediaType = try { metadata.getString("android.media.metadata.MEDIA_TYPE").orEmpty().lowercase() }
+            catch (_: Exception) { "" }
+        if (mediaType.contains("music") || mediaType.contains("audio") ||
+            mediaType.contains("podcast") || mediaType.contains("audiobook")) return true
+        val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty().trim()
+        val album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM).orEmpty().trim()
+        // Many generic music players publish artist/album but no MEDIA_TYPE.
+        return artist.isNotEmpty() && album.isNotEmpty()
     }
 
     private fun isAudioPackage(pkg: String): Boolean {
