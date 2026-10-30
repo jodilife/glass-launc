@@ -74,7 +74,7 @@ internal object MotionBgsWeatherWallpaper {
                         if (responseCode !in 200..299) throw IllegalStateException("HTTP $responseCode")
                         pending.delete()
                         connection.inputStream.use { input -> pending.outputStream().use { output -> input.copyTo(output) } }
-                        if (pending.length() < 100_000L) throw IllegalStateException("Berkas terlalu kecil (\${pending.length()} byte)")
+                        if (pending.length() < 100_000L) throw IllegalStateException("Berkas terlalu kecil (${pending.length()} byte)")
                         val header = ByteArray(12)
                         pending.inputStream().use { it.read(header) }
                         if (String(header, 4, 4, Charsets.US_ASCII) != "ftyp") throw IllegalStateException("Respons bukan berkas MP4")
@@ -84,7 +84,7 @@ internal object MotionBgsWeatherWallpaper {
                         downloaded = true
                         break
                     } catch (downloadError: Exception) {
-                        lastDownloadError = "$downloadUrl: \${downloadError.message}"
+                        lastDownloadError = "$downloadUrl: ${downloadError.message}"
                         pending.delete()
                     } finally {
                         connection?.disconnect()
