@@ -94,6 +94,7 @@ class MainActivity : Activity() {
     private val idleHandler = Handler(Looper.getMainLooper())
     private var idleMode = false
     private var homeHeaderView: View? = null
+    private var idlePreviewSpacer: View? = null
     private var headerBrandView: View? = null
     private var headerTimeLabel: TextView? = null
     private var headerClockLabel: TextView? = null
@@ -193,7 +194,7 @@ class MainActivity : Activity() {
                 !prefs.getBoolean("wallpaper_auto", true)) return
             val source = prefs.getString("wallpaper_source", "bing")
             val edit = prefs.edit().putLong("wallpaper_last_refresh", System.currentTimeMillis())
-            if (source == "reddit") edit.putInt("wallpaper_reddit_index", prefs.getInt("wallpaper_reddit_index", 0) + 1)
+            if (source == "art") edit.putInt("wallpaper_art_index", prefs.getInt("wallpaper_art_index", 0) + 1)
             if (source == "gradient") edit.putInt("wallpaper_index", prefs.getInt("wallpaper_index", 0) + 1)
             edit.apply()
             applyWallpaper(wallpaperTarget, forceRefresh = true)
@@ -223,6 +224,27 @@ class MainActivity : Activity() {
             val snapshot = dashboardSnapshot
             if (snapshot == null || System.currentTimeMillis() - snapshot.fetchedAt > 15 * 60_000L) fetchDashboardData()
             dashboardHandler.postDelayed(this, 30_000L)
+        }
+    }
+    private val headerClockBlink = object : Runnable {
+        override fun run() {
+            if (!idleMode) return
+            val now = Date()
+            val zoneId = dashboardSnapshot?.timeZone ?: DashboardServices.selectedCity(this@MainActivity).timeZone
+            val zone = java.util.TimeZone.getTimeZone(zoneId)
+            val raw = SimpleDateFormat("HH:mm", Locale.getDefault()).apply { timeZone = zone }.format(now)
+            val pieces = raw.split(":")
+            val zoneLabel = when (zoneId) {
+                "Asia/Jakarta" -> "WIB"
+                "Asia/Makassar" -> "WITA"
+                "Asia/Jayapura" -> "WIT"
+                else -> SimpleDateFormat("z", Locale("id", "ID")).apply { timeZone = zone }.format(now)
+            }
+            if (pieces.size == 2) {
+                val separator = if (System.currentTimeMillis() / 500L % 2L == 0L) ":" else " "
+                headerClockLabel?.text = "${pieces[0]}$separator${pieces[1]} $zoneLabel"
+            }
+            dashboardHandler.postDelayed(this, 500L)
         }
     }
 
@@ -414,6 +436,8 @@ class MainActivity : Activity() {
         addHomeCctvPreview(mediaRow)
         addFavoriteDock(root)
         addBackgroundAudioRow(root)
+        idlePreviewSpacer = View(this).apply { visibility = View.GONE }
+        root.addView(idlePreviewSpacer, LinearLayout.LayoutParams(-1, dp(150)))
         addPreviewChannelRows(root)
 
         val section = LinearLayout(this).apply {
@@ -2641,15 +2665,9 @@ class MainActivity : Activity() {
             dialog.dismiss()
             showIdleTimeoutPicker()
         }
-        settingRow("Sumber wallpaper", "Bing, Reddit, Gradient, cuaca MotionBGS, atau gambar sendiri", wallpaperSourceLabel()) {
+        settingRow("Sumber wallpaper", "Bing, lukisan klasik, Gradient, cuaca, atau gambar sendiri", wallpaperSourceLabel()) {
             dialog.dismiss()
             showWallpaperSourcePicker()
-        }
-        if (prefs.getString("wallpaper_source", "bing") == "reddit") {
-            settingRow("Subreddit wallpaper", "Pilih subreddit; hanya gambar rasio 16:9 sampai 21:9", prefs.getString("wallpaper_subreddit", "WidescreenWallpaper") ?: "WidescreenWallpaper") {
-                dialog.dismiss()
-                showWallpaperSubredditEditor()
-            }
         }
         settingRow("Ganti gambar setiap", "Interval rotasi wallpaper", "${prefs.getInt("wallpaper_interval_hours", 3)} jam") {
             dialog.dismiss()
@@ -2672,7 +2690,7 @@ class MainActivity : Activity() {
         settingRow("Wallpaper berikutnya", "Pindah ke gambar lain dari sumber terpilih") {
             val source = prefs.getString("wallpaper_source", "bing")
             when (source) {
-                "reddit" -> prefs.edit().putInt("wallpaper_reddit_index", prefs.getInt("wallpaper_reddit_index", 0) + 1).apply()
+                "art" -> prefs.edit().putInt("wallpaper_art_index", prefs.getInt("wallpaper_art_index", 0) + 1).apply()
                 "bing" -> prefs.edit().putInt("wallpaper_bing_index", prefs.getInt("wallpaper_bing_index", 0) + 1).apply()
                 "gradient" -> prefs.edit().putInt("wallpaper_index", prefs.getInt("wallpaper_index", 0) + 1).apply()
             }
@@ -3820,11 +3838,14 @@ class MainActivity : Activity() {
         dashboardPanelView?.visibility = View.GONE
         homeMediaRowView?.visibility = View.GONE
         applyPreviewRowVisibility()
+        idlePreviewSpacer?.visibility = View.VISIBLE
         headerBrandView?.visibility = View.GONE
         headerTimeLabel?.text = SimpleDateFormat("EEEE, dd MMM yyyy", Locale("id", "ID")).apply {
             timeZone = java.util.TimeZone.getTimeZone(dashboardSnapshot?.timeZone ?: DashboardServices.selectedCity(this@MainActivity).timeZone)
         }.format(Date())
         headerClockLabel?.visibility = View.VISIBLE
+        dashboardHandler.removeCallbacks(headerClockBlink)
+        dashboardHandler.post(headerClockBlink)
         headerWeatherLabel?.visibility = View.VISIBLE
         headerPrayerMetaLabel?.visibility = View.VISIBLE
         headerNextPrayerLabel?.visibility = View.VISIBLE
@@ -3854,6 +3875,8 @@ class MainActivity : Activity() {
         dashboardPanelView?.visibility = View.VISIBLE
         homeMediaRowView?.visibility = View.VISIBLE
         applyPreviewRowVisibility()
+        idlePreviewSpacer?.visibility = View.GONE
+        dashboardHandler.removeCallbacks(headerClockBlink)
         headerBrandView?.visibility = View.VISIBLE
         headerClockLabel?.visibility = View.GONE
         headerWeatherLabel?.visibility = View.GONE
@@ -3987,7 +4010,7 @@ class MainActivity : Activity() {
     private fun wallpaperSourceLabel(): String = when (
         getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_source", "bing")
     ) {
-        "reddit" -> "Reddit"
+        "art" -> "Lukisan klasik · Art Institute of Chicago"
         "gradient" -> "Gradient"
         "weather_motionbgs" -> "Cuaca otomatis · MotionBGS"
         "custom" -> "Gambar sendiri"
@@ -4003,8 +4026,8 @@ class MainActivity : Activity() {
     }
 
     private fun showWallpaperSourcePicker() {
-        val values = arrayOf("bing", "reddit", "gradient", "weather_motionbgs", "custom")
-        val labels = arrayOf("Photo of the day (Bing)", "Reddit", "Gradient", "Cuaca otomatis · MotionBGS", "My image")
+        val values = arrayOf("bing", "art", "gradient", "weather_motionbgs", "custom")
+        val labels = arrayOf("Photo of the day (Bing)", "Lukisan klasik · Art Institute of Chicago", "Gradient", "Cuaca otomatis · MotionBGS", "Gambar sendiri")
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val current = values.indexOf(prefs.getString("wallpaper_source", "bing")).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("SUMBER WALLPAPER")
@@ -4186,37 +4209,31 @@ class MainActivity : Activity() {
         Thread({
             var connection: HttpURLConnection? = null
             try {
-                val imageUrl = if (source == "reddit") {
-                    val subreddit = prefs.getString("wallpaper_subreddit", "WidescreenWallpaper") ?: "WidescreenWallpaper"
-                    val jsonUrl = "https://www.reddit.com/r/$subreddit/top.json?t=month&limit=100&raw_json=1"
-                    connection = URL(jsonUrl).openConnection() as HttpURLConnection
-                    connection.connectTimeout = 9000
-                    connection.readTimeout = 12000
-                    connection.setRequestProperty("User-Agent", "GlassTVLauncher/0.5 (Android TV wallpaper)")
+                val imageUrl = if (source == "art") {
+                    val artIndex = prefs.getInt("wallpaper_art_index", 0)
+                    val searchUrl = "https://api.artic.edu/api/v1/artworks/search?q=painting&query%5Bterm%5D%5Bis_public_domain%5D=true&fields=id,title,image_id,artist_title,is_public_domain&limit=100"
+                    connection = URL(searchUrl).openConnection() as HttpURLConnection
+                    connection.connectTimeout = 12000
+                    connection.readTimeout = 15000
+                    connection.setRequestProperty("User-Agent", "GlassTVLauncher/0.6 (Android TV artwork wallpaper)")
                     val json = connection.inputStream.bufferedReader().use { it.readText() }
                     connection.disconnect()
                     connection = null
-                    val children = JSONObject(json).optJSONObject("data")?.optJSONArray("children")
+                    val data = JSONObject(json).optJSONArray("data")
                     val candidates = mutableListOf<String>()
-                    if (children != null) for (i in 0 until children.length()) {
-                        val post = children.optJSONObject(i)?.optJSONObject("data") ?: continue
-                        if (post.optBoolean("over_18", false)) continue
-                        val preview = post.optJSONObject("preview")?.optJSONArray("images")?.optJSONObject(0)
-                        val sourceImage = preview?.optJSONObject("source")
-                        val width = sourceImage?.optInt("width", 0) ?: 0
-                        val height = sourceImage?.optInt("height", 0) ?: 0
-                        val ratio = if (height > 0) width.toFloat() / height else 0f
-                        if (ratio !in 1.777f..2.334f) continue
-                        val url = sourceImage?.optString("url").orEmpty().replace("&amp;", "&")
-                        if (url.startsWith("http")) candidates.add(url)
+                    if (data != null) for (i in 0 until data.length()) {
+                        val artwork = data.optJSONObject(i) ?: continue
+                        if (!artwork.optBoolean("is_public_domain", false)) continue
+                        val imageId = artwork.optString("image_id").takeIf { it.isNotBlank() && it != "null" } ?: continue
+                        candidates.add("https://www.artic.edu/iiif/2/$imageId/full/1600,/0/default.jpg")
                     }
-                    if (candidates.isEmpty()) throw IllegalStateException("Tidak ada gambar 16:9–21:9 pada subreddit tersebut.")
-                    candidates[prefs.getInt("wallpaper_reddit_index", 0).mod(candidates.size)]
+                    if (candidates.isEmpty()) throw IllegalStateException("Belum ada lukisan public-domain dengan gambar yang tersedia.")
+                    candidates[artIndex.mod(candidates.size)]
                 } else {
                     connection = URL("https://www.bing.com/HPImageArchive.aspx?format=js&idx=${prefs.getInt("wallpaper_bing_index", 0).mod(8)}&n=1&mkt=en-US").openConnection() as HttpURLConnection
                     connection.connectTimeout = 9000
                     connection.readTimeout = 12000
-                    connection.setRequestProperty("User-Agent", "Mozilla/5.0 GlassTVLauncher/0.5")
+                    connection.setRequestProperty("User-Agent", "Mozilla/5.0 GlassTVLauncher/0.6")
                     val json = connection.inputStream.bufferedReader().use { it.readText() }
                     val imagePath = JSONObject(json).optJSONArray("images")?.optJSONObject(0)?.optString("url").orEmpty()
                     if (imagePath.isBlank()) throw IllegalStateException("Bing tidak mengirim gambar hari ini.")
