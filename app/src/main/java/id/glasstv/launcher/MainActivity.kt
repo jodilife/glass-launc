@@ -3282,7 +3282,7 @@ class MainActivity : Activity() {
         val ids = listOf("auto") + candidates.map { it.id }
         val labels = listOf("Otomatis (pilih kanal tuner)") + candidates.map { info ->
             val type = if (info.isPassthroughInput) "HDMI / Passthrough" else "TV Digital / Tuner"
-            val name = try { info.loadLabel(packageManager).toString() } catch (_: Exception) { info.id }
+            val name = try { info.loadLabel(this).toString() } catch (_: Exception) { info.id }
             "$name · $type"
         }
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
