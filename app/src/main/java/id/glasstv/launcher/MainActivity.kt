@@ -247,8 +247,7 @@ class MainActivity : Activity() {
                 else -> SimpleDateFormat("z", Locale("id", "ID")).apply { timeZone = zone }.format(now)
             }
             if (pieces.size == 2) {
-                val separator = if (System.currentTimeMillis() / 500L % 2L == 0L) ":" else " "
-                headerClockLabel?.text = "${pieces[0]}$separator${pieces[1]} $zoneLabel"
+                headerClockLabel?.text = "${pieces[0]}:${pieces[1]} $zoneLabel"
             }
             dashboardHandler.postDelayed(this, 500L)
         }
@@ -363,7 +362,7 @@ class MainActivity : Activity() {
             wallpaperTarget.setBackgroundColor(Color.rgb(5, 8, 14))
             setupVideoWallpaper(wallpaperTarget)
         }
-        homeScroll.addView(root, FrameLayout.LayoutParams(-1, -2))
+        homeScroll.addView(root, FrameLayout.LayoutParams(-1, -1))
         wallpaperTarget.addView(homeScroll, FrameLayout.LayoutParams(-1, -1))
         createLiveTvBackgroundLayer(wallpaperTarget)
         applyWallpaper(wallpaperTarget)
@@ -444,7 +443,6 @@ class MainActivity : Activity() {
         addContinueWatching(mediaRow)
         addHomeCctvPreview(mediaRow)
         addFavoriteDock(root)
-        addMusicDock(root)
         addBackgroundAudioRow(root)
         idlePreviewSpacer = View(this).apply { visibility = View.GONE }
         root.addView(idlePreviewSpacer, LinearLayout.LayoutParams(-1, dp(150)))
@@ -1431,19 +1429,7 @@ class MainActivity : Activity() {
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     setPadding(0, dp(3), 0, 0)
                 })
-                val mediaButtons = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER
-                    setPadding(0, dp(4), 0, 0)
-                }
-                mediaButtons.addView(mediaControlButton("▶Ⅱ", "Putar atau jeda $title") {
-                    sendMediaCommand(pkg, "toggle")
-                }, LinearLayout.LayoutParams(dp(42), dp(25)).apply { rightMargin = dp(5) })
-                mediaButtons.addView(mediaControlButton("⏭", "Berikutnya $title") {
-                    sendMediaCommand(pkg, "next")
-                }, LinearLayout.LayoutParams(dp(42), dp(25)))
-                card.addView(mediaButtons)
-                val lp = LinearLayout.LayoutParams(dp(126), dp(140))
+                val lp = LinearLayout.LayoutParams(dp(126), dp(108))
                 lp.setMargins(0, 0, if (index == count - 1 || index == watchItems.take(count).lastIndex) 0 else dp(7), 0)
                 cardRow.addView(card, lp)
             }
@@ -1454,8 +1440,8 @@ class MainActivity : Activity() {
             clipToPadding = false
             overScrollMode = View.OVER_SCROLL_NEVER
         }
-        cardScroll.addView(cardRow, android.widget.FrameLayout.LayoutParams(-2, dp(146)))
-        outer.addView(cardScroll, LinearLayout.LayoutParams(-1, dp(146)))
+        cardScroll.addView(cardRow, android.widget.FrameLayout.LayoutParams(-2, dp(112)))
+        outer.addView(cardScroll, LinearLayout.LayoutParams(-1, dp(112)))
         continueWatchingSectionView = outer
         mediaRow.addView(outer, LinearLayout.LayoutParams(0, -1, 1.75f))
     }
@@ -1535,7 +1521,15 @@ class MainActivity : Activity() {
         controls.addView(mediaControlButton("⏭", "Berikutnya " + title) { sendMediaCommand(pkg, "next") }, LinearLayout.LayoutParams(dp(38), dp(30)))
         row.addView(controls)
         backgroundAudioRowView = row
-        container.addView(row, LinearLayout.LayoutParams(-1, dp(72)).apply { topMargin = dp(5) })
+        val section = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(5), 0, dp(3))
+        }
+        section.addView(label("DOCK MUSIK", 10, Color.rgb(150, 171, 199), true),
+            LinearLayout.LayoutParams(-1, dp(18)))
+        section.addView(row, LinearLayout.LayoutParams(-1, dp(72)))
+        musicDockView = section
+        container.addView(section, LinearLayout.LayoutParams(-1, dp(96)))
     }
 
     /**
@@ -2624,8 +2618,13 @@ class MainActivity : Activity() {
         settingRow("Dock aplikasi favorit", "Atur ikon aplikasi favorit dan urutannya") {
             dialog.dismiss(); manageFavoriteDock()
         }
-        settingRow("Dock pemutar musik", "Pilih aplikasi musik yang tampil pada dock terpisah") {
-            dialog.dismiss(); manageMusicDock()
+        settingRow("Dock pemutar musik", "Kontrol otomatis dari aplikasi musik yang sedang aktif", "OTOMATIS") {
+            dialog.dismiss()
+            AlertDialog.Builder(this)
+                .setTitle("DOCK PEMUTAR MUSIK")
+                .setMessage("Dock ini bukan daftar pintasan aplikasi. GlassTV mengambil sesi media yang sedang aktif (judul, artis, artwork, putar/jeda, sebelumnya, berikutnya), termasuk Meld jika aplikasinya menyediakan kontrol MediaSession. Pastikan akses notifikasi GlassTV aktif.")
+                .setPositiveButton("Mengerti", null)
+                .show()
         }
         fun minimalistToggle(key: String, title: String, detail: String) {
             val enabled = prefs.getBoolean(key, true)
@@ -2639,7 +2638,7 @@ class MainActivity : Activity() {
         minimalistToggle("minimalist_show_cctv", "Minimalis: CCTV", "Tampilkan atau sembunyikan pratinjau kamera saat mode minimalis")
         minimalistToggle("minimalist_show_explore", "Minimalis: Jelajahi TV", "Tampilkan atau sembunyikan bagian Jelajahi TV dan pintasan aplikasi")
         minimalistToggle("minimalist_show_favorites", "Minimalis: Dock aplikasi favorit", "Tampilkan atau sembunyikan dock aplikasi favorit")
-        minimalistToggle("minimalist_show_music", "Minimalis: Dock musik", "Tampilkan atau sembunyikan dock aplikasi pemutar musik")
+        minimalistToggle("minimalist_show_music", "Minimalis: Dock musik", "Tampilkan atau sembunyikan panel kontrol media yang sedang aktif")
         settingRow("Warna aksen", "Ubah sorotan rekomendasi dan pemutar musik", accentName()) {
             dialog.dismiss(); showAccentPicker()
         }
@@ -2893,6 +2892,7 @@ class MainActivity : Activity() {
         cctvPreviewSectionView?.visibility = if (show("minimalist_show_cctv")) View.VISIBLE else View.GONE
         favoriteDockView?.visibility = if (show("minimalist_show_favorites")) View.VISIBLE else View.GONE
         musicDockView?.visibility = if (show("minimalist_show_music")) View.VISIBLE else View.GONE
+        backgroundAudioRowView?.visibility = if (show("minimalist_show_music")) View.VISIBLE else View.GONE
         homeExploreHeaderView?.visibility = if (show("minimalist_show_explore")) View.VISIBLE else View.GONE
         actionMenuView?.visibility = if (show("minimalist_show_explore")) View.VISIBLE else View.GONE
         val anyMedia = continueWatchingSectionView?.visibility == View.VISIBLE ||
@@ -4029,8 +4029,12 @@ class MainActivity : Activity() {
     private fun enterIdleMode() {
         if (idleMode || isFinishing || !::root.isInitialized || !hasWindowFocus()) return
         idleMode = true
-        backgroundAudioRowView?.visibility = View.GONE
         applyMinimalistSectionVisibility()
+        homeHeaderView?.let { header ->
+            root.removeView(header)
+            root.addView(header, LinearLayout.LayoutParams(-1, dp(104)))
+        }
+        root.gravity = Gravity.BOTTOM
         // A true minimalist home: only manually retained recommendation rows and the compact
         // clock/weather/prayer stack remain visible. Hide the full dashboard and media/CCTV row.
         dashboardPanelView?.visibility = View.GONE
@@ -4065,7 +4069,11 @@ class MainActivity : Activity() {
     private fun exitIdleMode() {
         if (!idleMode) return
         idleMode = false
-        backgroundAudioRowView?.visibility = View.VISIBLE
+        root.gravity = Gravity.TOP
+        homeHeaderView?.let { header ->
+            root.removeView(header)
+            root.addView(header, 0, LinearLayout.LayoutParams(-1, dp(42)))
+        }
         applyMinimalistSectionVisibility()
         dashboardPanelView?.visibility = View.VISIBLE
         applyPreviewRowVisibility()
@@ -4386,7 +4394,7 @@ class MainActivity : Activity() {
             try {
                 val imageUrl = if (source == "art") {
                     val artIndex = prefs.getInt("wallpaper_art_index", 0)
-                    val searchUrl = "https://api.artic.edu/api/v1/artworks/search?q=painting&query%5Bterm%5D%5Bis_public_domain%5D=true&fields=id,title,image_id,artist_title,is_public_domain&limit=100"
+                    val searchUrl = "https://api.artic.edu/api/v1/artworks/search?query%5Bterm%5D%5Bis_public_domain%5D=true&fields=id,title,image_id,artist_title,is_public_domain&limit=100"
                     connection = URL(searchUrl).openConnection() as HttpURLConnection
                     connection.connectTimeout = 12000
                     connection.readTimeout = 15000
@@ -4415,9 +4423,11 @@ class MainActivity : Activity() {
                     "https://www.bing.com" + imagePath
                 }
                 connection = URL(imageUrl).openConnection() as HttpURLConnection
-                connection.connectTimeout = 10000
-                connection.readTimeout = 15000
-                connection.setRequestProperty("User-Agent", "Mozilla/5.0 GlassTVLauncher/0.5")
+                connection.connectTimeout = 15000
+                connection.readTimeout = 25000
+                connection.instanceFollowRedirects = true
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11; GlassTV) AppleWebKit/537.36 Chrome/120 Safari/537.36")
+                connection.setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
                 pendingFile.delete()
                 connection.inputStream.use { input -> pendingFile.outputStream().use { output -> input.copyTo(output) } }
                 if (pendingFile.length() < 12_000L) throw IllegalStateException("File wallpaper terlalu kecil.")
@@ -4432,8 +4442,9 @@ class MainActivity : Activity() {
                 showCached()
             } catch (error: Exception) {
                 pendingFile.delete()
+                android.util.Log.e("GlassTVWallpaper", "Wallpaper source \"$source\" failed: ${error.message}", error)
                 if (!file.exists() || file.length() < 12_000L) {
-                    runOnUiThread { toast("Wallpaper online gagal dimuat. Wallpaper terakhir tetap dipakai bila tersedia.") }
+                    runOnUiThread { toast("Wallpaper $source gagal: ${error.message ?: "sumber tidak merespons"}") }
                 }
             } finally {
                 connection?.disconnect()
