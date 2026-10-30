@@ -3220,8 +3220,10 @@ class MainActivity : Activity() {
             createLiveTvBackgroundLayer(wallpaperTarget)
             liveTvBackgroundView
         } ?: return
-        if (liveTvBackgroundInputId != null && liveTvBackgroundChannelUri != null) {
-            try { tv.tune(liveTvBackgroundInputId, liveTvBackgroundChannelUri); return } catch (_: Exception) { }
+        val existingInputId = liveTvBackgroundInputId
+        val existingChannelUri = liveTvBackgroundChannelUri
+        if (existingInputId != null && existingChannelUri != null) {
+            try { tv.tune(existingInputId, existingChannelUri); return } catch (_: Exception) { }
         }
         try {
             val manager = getSystemService(TV_INPUT_SERVICE) as? TvInputManager ?: run {
