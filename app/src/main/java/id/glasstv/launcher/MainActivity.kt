@@ -2009,9 +2009,12 @@ class MainActivity : Activity() {
         content.addView(scroll, LinearLayout.LayoutParams(-1,
             minOf(dp(440), (resources.displayMetrics.heightPixels * 0.54f).toInt())))
         val allCards = mutableListOf<Triple<String, android.graphics.drawable.Drawable?, (() -> Unit)>>()
+        val appPackagesByName = mutableMapOf<String, String>()
         apps.forEach { app ->
             val info = app.activityInfo
-            allCards.add(Triple(app.loadLabel(packageManager).toString(), try { app.loadIcon(packageManager) } catch (_: Exception) { null }, {
+            val appName = app.loadLabel(packageManager).toString()
+            appPackagesByName[appName] = info.packageName
+            allCards.add(Triple(appName, try { app.loadIcon(packageManager) } catch (_: Exception) { null }, {
                 launchTvApp(info.packageName, info.name)
             }))
         }
@@ -2052,14 +2055,19 @@ class MainActivity : Activity() {
                     }
                     setOnClickListener { playSelectSound(); click() }
                     var appLongPressHandled = false
+                    val appPackage = appPackagesByName[name]
                     val appLongPressAction = Runnable {
-                        appLongPressHandled = true
-                        showAppActions(info.packageName, name)
+                        if (appPackage != null) {
+                            appLongPressHandled = true
+                            showAppActions(appPackage, name)
+                        }
                     }
-                    setOnLongClickListener {
-                        appLongPressHandled = true
-                        showAppActions(info.packageName, name)
-                        true
+                    if (appPackage != null) {
+                        setOnLongClickListener {
+                            appLongPressHandled = true
+                            showAppActions(appPackage, name)
+                            true
+                        }
                     }
                     setOnKeyListener { view, keyCode, event ->
                         val okKey = keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
