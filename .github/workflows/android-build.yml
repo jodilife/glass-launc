@@ -2,7 +2,7 @@ name: Android APK
 
 on:
   push:
-    branches: [main, feature/entertainment-dashboard]
+    branches: [main, feature/entertainment-dashboard, experiment/live-tv-wallpaper-service]
   pull_request:
     branches: [main]
   workflow_dispatch:
