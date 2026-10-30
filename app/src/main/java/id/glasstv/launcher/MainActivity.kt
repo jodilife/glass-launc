@@ -357,9 +357,9 @@ class MainActivity : Activity() {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setPadding(0, dp(2), 0, dp(2))
         }
-        val timeZone = DashboardServices.selectedCity(this@MainActivity).timeZone
+        val selectedTimeZoneId = DashboardServices.selectedCity(this@MainActivity).timeZone
         val dateText = SimpleDateFormat("EEEE, dd MMM yyyy", Locale("id", "ID")).apply {
-            timeZone = java.util.TimeZone.getTimeZone(timeZone)
+            this.timeZone = java.util.TimeZone.getTimeZone(selectedTimeZoneId)
         }.format(Date())
         headerTimeLabel = label(dateText, 10, Color.rgb(185, 199, 219), false).apply {
             gravity = Gravity.END
