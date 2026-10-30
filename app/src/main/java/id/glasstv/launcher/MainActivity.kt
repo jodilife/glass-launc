@@ -2051,10 +2051,31 @@ class MainActivity : Activity() {
                         }
                     }
                     setOnClickListener { playSelectSound(); click() }
+                    var appLongPressHandled = false
+                    val appLongPressAction = Runnable {
+                        appLongPressHandled = true
+                        showAppActions(info.packageName, name)
+                    }
+                    setOnLongClickListener {
+                        appLongPressHandled = true
+                        showAppActions(info.packageName, name)
+                        true
+                    }
                     setOnKeyListener { view, keyCode, event ->
-                        if (event.action == KeyEvent.ACTION_DOWN && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                            keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                            view.performClick(); true
+                        val okKey = keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                            keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+                        if (!okKey) return@setOnKeyListener false
+                        if (event.action == KeyEvent.ACTION_DOWN) {
+                            if (event.repeatCount == 0) {
+                                appLongPressHandled = false
+                                view.removeCallbacks(appLongPressAction)
+                                view.postDelayed(appLongPressAction, 600L)
+                            }
+                            true
+                        } else if (event.action == KeyEvent.ACTION_UP) {
+                            view.removeCallbacks(appLongPressAction)
+                            if (!appLongPressHandled) view.performClick()
+                            true
                         } else false
                     }
                 }
@@ -2091,6 +2112,41 @@ class MainActivity : Activity() {
             safeDialogWidth(780),
             (resources.displayMetrics.heightPixels * 0.86f).toInt()
         )
+    }
+
+    private fun showAppActions(packageName: String, appName: String) {
+        val options = arrayOf("Buka aplikasi", "Info aplikasi", "Uninstall")
+        AlertDialog.Builder(this)
+            .setTitle(appName)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> {
+                        val launchIntent = packageManager.getLeanbackLaunchIntentForPackage(packageName)
+                            ?: packageManager.getLaunchIntentForPackage(packageName)
+                        if (launchIntent != null) {
+                            try { startActivity(launchIntent) }
+                            catch (_: Exception) { toast("Aplikasi tidak dapat dibuka.") }
+                        } else toast("Aplikasi ini tidak menyediakan menu untuk dibuka.")
+                    }
+                    1 -> {
+                        try {
+                            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.parse("package:$packageName")))
+                        } catch (_: Exception) {
+                            toast("Halaman Info Aplikasi tidak tersedia pada TV ini.")
+                        }
+                    }
+                    2 -> {
+                        try {
+                            startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName")))
+                        } catch (_: Exception) {
+                            toast("Uninstall tidak diizinkan untuk aplikasi ini. Coba melalui Info Aplikasi.")
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("Batal", null)
+            .show()
     }
 
     private fun manageEntertainmentApps() {
