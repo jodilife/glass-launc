@@ -100,7 +100,6 @@ class LiveTvWallpaperService : WallpaperService() {
             val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
             return visibleNow &&
                 prefs.getBoolean("live_tv_wallpaper_service", false) &&
-                prefs.getBoolean("live_tv_idle_background", false) &&
                 prefs.getBoolean("live_tv_idle_mode_active", false)
         }
 
