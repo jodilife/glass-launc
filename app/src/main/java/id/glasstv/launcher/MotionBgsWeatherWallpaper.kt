@@ -49,40 +49,49 @@ internal object MotionBgsWeatherWallpaper {
                 val selected = candidates.firstOrNull { it.second.contains("wallpaper", true) || it.second.contains("4K", true) } ?: candidates.first()
                 val detailUrl = "https://motionbgs.com" + selected.first
                 val detailHtml = request(detailUrl, categoryUrl)
-                // MotionBGS markup can vary between href, data attributes and video/source tags.
-                // Accept only the site's own download paths and MP4 links.
-                val downloadPatterns = listOf(
-                    Regex("""(?i)(?:href|src|data-src|data-url)=["'](/dl/(?:hd|4k)/[^"'?#]+)["']"""),
-                    Regex("""(?i)(?:href|src|data-src)=["'](https?://motionbgs\\.com/dl/(?:hd|4k)/[^"'?#]+)["']""")
-                )
-                val rawDownload = downloadPatterns.asSequence()
-                    .mapNotNull { it.find(detailHtml)?.groupValues?.get(1) }
-                    .firstOrNull()
-                    ?: Regex("""(?i)(https?://motionbgs\\.com/dl/(?:hd|4k)/[^"'\\s<>]+\\.mp4)""")
-                        .find(detailHtml)?.groupValues?.get(1)
-                    ?: throw IllegalStateException("MotionBGS membuka halaman wallpaper, tetapi tautan MP4 tidak ditemukan (struktur halaman mungkin berubah).")
-                val downloadPath = if (rawDownload.startsWith("https://motionbgs.com/"))
-                    rawDownload.removePrefix("https://motionbgs.com") else rawDownload
+                // MotionBGS currently exposes numeric download URLs such as /dl/hd/9963,
+                // not necessarily .mp4 filenames. Collect both HD and 4K links, then try each.
+                val downloadCandidates = Regex("""(?i)(/dl/(?:hd|4k)/[A-Za-z0-9_-]+)""")
+                    .findAll(detailHtml).map { it.groupValues[1] }.distinct().toList()
+                if (downloadCandidates.isEmpty()) {
+                    throw IllegalStateException("Tautan unduhan HD/4K tidak ditemukan di halaman MotionBGS.")
+                }
                 val destination = File(app.cacheDir, "glasstv_motionbgs_weather.mp4")
                 val pending = File(app.cacheDir, "glasstv_motionbgs_weather.pending")
-                connection = URL("https://motionbgs.com" + downloadPath).openConnection() as HttpURLConnection
-                connection.connectTimeout = 15000
-                connection.readTimeout = 45000
-                connection.instanceFollowRedirects = true
-                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11; GlassTV) AppleWebKit/537.36 Chrome/120 Safari/537.36")
-                connection.setRequestProperty("Referer", detailUrl)
-                connection.setRequestProperty("Accept", "video/mp4,application/octet-stream,*/*")
-                val responseCode = connection.responseCode
-                if (responseCode !in 200..299) throw IllegalStateException("Unduhan MotionBGS HTTP $responseCode")
-                pending.delete()
-                connection.inputStream.use { input -> pending.outputStream().use { output -> input.copyTo(output) } }
-                if (pending.length() < 100_000L) throw IllegalStateException("File MP4 terlalu kecil atau akses ditolak.")
-                val header = ByteArray(12)
-                pending.inputStream().use { it.read(header) }
-                if (String(header, 4, 4, Charsets.US_ASCII) != "ftyp") throw IllegalStateException("Respons MotionBGS bukan berkas MP4.")
-                if (destination.exists()) destination.delete()
-                if (!pending.renameTo(destination)) pending.copyTo(destination, overwrite = true)
-                pending.delete()
+                var downloaded = false
+                var lastDownloadError = "Tidak ada tautan MP4 yang dapat diunduh."
+                for (candidate in downloadCandidates) {
+                    val downloadUrl = "https://motionbgs.com$candidate"
+                    try {
+                        connection = URL(downloadUrl).openConnection() as HttpURLConnection
+                        connection.connectTimeout = 15000
+                        connection.readTimeout = 60000
+                        connection.instanceFollowRedirects = true
+                        connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11; GlassTV) AppleWebKit/537.36 Chrome/120 Safari/537.36")
+                        connection.setRequestProperty("Referer", detailUrl)
+                        connection.setRequestProperty("Accept", "video/mp4,application/octet-stream,*/*")
+                        val responseCode = connection.responseCode
+                        if (responseCode !in 200..299) throw IllegalStateException("HTTP $responseCode")
+                        pending.delete()
+                        connection.inputStream.use { input -> pending.outputStream().use { output -> input.copyTo(output) } }
+                        if (pending.length() < 100_000L) throw IllegalStateException("Berkas terlalu kecil (\${pending.length()} byte)")
+                        val header = ByteArray(12)
+                        pending.inputStream().use { it.read(header) }
+                        if (String(header, 4, 4, Charsets.US_ASCII) != "ftyp") throw IllegalStateException("Respons bukan berkas MP4")
+                        if (destination.exists()) destination.delete()
+                        if (!pending.renameTo(destination)) pending.copyTo(destination, overwrite = true)
+                        pending.delete()
+                        downloaded = true
+                        break
+                    } catch (downloadError: Exception) {
+                        lastDownloadError = "$downloadUrl: \${downloadError.message}"
+                        pending.delete()
+                    } finally {
+                        connection?.disconnect()
+                        connection = null
+                    }
+                }
+                if (!downloaded) throw IllegalStateException("MotionBGS tidak berhasil mengirim video. $lastDownloadError")
                 val result = Result(destination, selected.second, category)
                 Handler(Looper.getMainLooper()).post { callback(result, null) }
             } catch (error: Exception) {
