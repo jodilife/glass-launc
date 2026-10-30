@@ -3265,7 +3265,7 @@ class MainActivity : Activity() {
         if (selected.isNullOrBlank() || selected == "auto") return "Otomatis"
         val manager = getSystemService(TV_INPUT_SERVICE) as? TvInputManager ?: return "Input tersimpan"
         val info = manager.tvInputList.firstOrNull { it.id == selected } ?: return "Input tidak tersedia"
-        return try { info.loadLabel(packageManager).toString() } catch (_: Exception) { info.id }
+        return try { info.loadLabel(this).toString() } catch (_: Exception) { info.id }
     }
 
     private fun showLiveTvInputPicker() {
