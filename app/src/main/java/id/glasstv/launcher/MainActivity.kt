@@ -3611,7 +3611,10 @@ class MainActivity : Activity() {
         homeMediaRowView?.animate()?.translationY(0f)?.setDuration(220L)?.start()
         stopLiveTvBackground()
         homePreviewPlayerViews.forEach { it.visibility = View.VISIBLE }
-        homePreviewPlayers.forEach { it.playWhenReady = true }
+        homePreviewPlayers.forEach { player ->
+            if (player.playbackState == Player.STATE_IDLE) player.prepare()
+            player.playWhenReady = true
+        }
         dashboardSnapshot?.let { renderDashboardSnapshot(it, null) }
         val target = actions.firstOrNull { it.contentDescription?.toString()?.startsWith(lastFocusedTitle) == true }
             ?: continueWatchingCard ?: favoriteDockTiles.firstOrNull() ?: actions.firstOrNull()
