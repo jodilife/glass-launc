@@ -7,5 +7,5 @@
     android:background="#05080D"
     app:resize_mode="fit"
     app:shutter_background_color="#05080D"
-    app:surface_type="texture_view"
+    app:surface_type="surface_view"
     app:use_controller="false" />
