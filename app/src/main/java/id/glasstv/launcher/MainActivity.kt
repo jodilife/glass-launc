@@ -94,8 +94,13 @@ class MainActivity : Activity() {
     private val idleHandler = Handler(Looper.getMainLooper())
     private var idleMode = false
     private var homeHeaderView: View? = null
+    private var headerBrandView: View? = null
+    private var headerTimeLabel: TextView? = null
+    private var headerClockLabel: TextView? = null
+    private var headerWeatherLabel: TextView? = null
     private var headerPrayerMetaLabel: TextView? = null
     private var headerNextPrayerLabel: TextView? = null
+    private var homeExploreHeaderView: View? = null
     private var homeMediaRowView: View? = null
     private var dashboardPanelView: View? = null
     private var weatherPanelView: View? = null
@@ -279,8 +284,13 @@ class MainActivity : Activity() {
         prayerItemViews.clear()
         prayerNameLabels.clear()
         homeHeaderView = null
+        headerBrandView = null
+        headerTimeLabel = null
+        headerClockLabel = null
+        headerWeatherLabel = null
         headerPrayerMetaLabel = null
         headerNextPrayerLabel = null
+        homeExploreHeaderView = null
         homeMediaRowView = null
         dashboardPanelView = null
         weatherPanelView = null
@@ -339,6 +349,7 @@ class MainActivity : Activity() {
         }
         brand.addView(label("GLASS", 25, Color.WHITE, true))
         brand.addView(label("TV", 25, accent, true))
+        headerBrandView = brand
 
         header.addView(brand)
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
@@ -347,12 +358,25 @@ class MainActivity : Activity() {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setPadding(0, dp(2), 0, dp(2))
         }
-        val time = SimpleDateFormat("EEEE, dd MMM  •  HH:mm", Locale("id", "ID")).apply {
-            timeZone = java.util.TimeZone.getTimeZone(DashboardServices.selectedCity(this@MainActivity).timeZone)
+        val timeZone = DashboardServices.selectedCity(this@MainActivity).timeZone
+        val dateText = SimpleDateFormat("EEEE, dd MMM yyyy", Locale("id", "ID")).apply {
+            timeZone = java.util.TimeZone.getTimeZone(timeZone)
         }.format(Date())
-        headerTimeLabel = label(time, 12, Color.rgb(185, 199, 219), false).apply {
+        headerTimeLabel = label(dateText, 10, Color.rgb(185, 199, 219), false).apply {
             gravity = Gravity.END
             maxLines = 1
+        }
+        headerClockLabel = label("--:-- WIB", 30, Color.WHITE, false).apply {
+            gravity = Gravity.END
+            maxLines = 1
+            includeFontPadding = false
+            letterSpacing = -0.035f
+            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+        }
+        headerWeatherLabel = label("Cuaca sedang dimuat…", 10, Color.rgb(220, 229, 241), false).apply {
+            gravity = Gravity.END
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }
         headerPrayerMetaLabel = label("Waktu Sholat · Kalender Hijriyah", 10, Color.rgb(185, 199, 219), false).apply {
             gravity = Gravity.END
@@ -364,12 +388,16 @@ class MainActivity : Activity() {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
+        headerClockLabel?.visibility = View.GONE
+        headerWeatherLabel?.visibility = View.GONE
         headerPrayerMetaLabel?.visibility = View.GONE
         headerNextPrayerLabel?.visibility = View.GONE
         headerRight.addView(headerTimeLabel)
+        headerRight.addView(headerClockLabel)
+        headerRight.addView(headerWeatherLabel)
         headerRight.addView(headerPrayerMetaLabel)
         headerRight.addView(headerNextPrayerLabel)
-        header.addView(headerRight, LinearLayout.LayoutParams(dp(390), -2))
+        header.addView(headerRight, LinearLayout.LayoutParams(dp(440), -2))
         homeHeaderView = header
         root.addView(header, LinearLayout.LayoutParams(-1, dp(42)))
 
@@ -397,6 +425,7 @@ class MainActivity : Activity() {
         section.addView(label("JELAJAHI TV", 11, Color.rgb(168, 188, 214), true))
         section.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         section.addView(label("Gunakan tombol arah dan OK", 10, Color.rgb(112, 131, 155), false))
+        homeExploreHeaderView = section
         root.addView(section, LinearLayout.LayoutParams(-1, dp(21)))
 
         val row = LinearLayout(this).apply {
@@ -656,9 +685,15 @@ class MainActivity : Activity() {
         clockText.setSpan(ForegroundColorSpan(accent), zoneStart, clockText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         clockText.setSpan(StyleSpan(Typeface.BOLD), zoneStart, clockText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         dashboardClockLabel?.text = clockText
-        headerTimeLabel?.text = SimpleDateFormat("EEEE, dd MMM  •  HH:mm", Locale("id", "ID")).apply {
+        headerTimeLabel?.text = SimpleDateFormat("EEEE, dd MMM yyyy", Locale("id", "ID")).apply {
             timeZone = zone
         }.format(now)
+        headerClockLabel?.text = "$clockValue $zoneLabel"
+        if (!idleMode) {
+            headerTimeLabel?.text = SimpleDateFormat("EEEE, dd MMM  •  HH:mm", Locale("id", "ID")).apply {
+                timeZone = zone
+            }.format(now)
+        }
         updateHeaderPrayerInfo()
     }
 
@@ -672,6 +707,7 @@ class MainActivity : Activity() {
                 renderDashboardSnapshot(snapshot, error)
             } else {
                 dashboardWeatherLabel?.text = "Cuaca BMKG belum tersedia\nPeriksa koneksi internet"
+                headerWeatherLabel?.text = "Cuaca belum tersedia"
                 dashboardNextPrayerLabel?.text = "Waktu Sholat ${DashboardServices.selectedCity(this).name} - Kalender Hijriyah"
                 updateHeaderPrayerInfo()
             }
@@ -719,7 +755,9 @@ class MainActivity : Activity() {
             listOf("mendung", "berawan", "awan", "cloud", "overcast").any { snapshot.condition.contains(it, true) } -> "☁"
             else -> "☀"
         }
-        dashboardWeatherLabel?.text = "$weatherIcon  ${snapshot.temperature}  •  ${shortCondition}" + if (error != null) " · tersimpan" else ""
+        val weatherText = "$weatherIcon  ${snapshot.temperature}  •  ${shortCondition}" + if (error != null) " · tersimpan" else ""
+        dashboardWeatherLabel?.text = weatherText
+        headerWeatherLabel?.text = weatherText
         snapshot.prayerTimes.forEachIndexed { index, time -> prayerTimeLabels.getOrNull(index)?.text = time }
         val next = DashboardServices.nextPrayer(snapshot)
         val hijri = hijriDate(Date(), snapshot.timeZone)
@@ -3777,17 +3815,24 @@ class MainActivity : Activity() {
         favoriteDockView?.visibility = View.GONE
         backgroundAudioRowView?.visibility = View.GONE
         actionMenuView?.visibility = View.GONE
-        // Keep clock, current weather, and prayer times visible even in minimalist mode.
-        dashboardPanelView?.visibility = View.VISIBLE
+        homeExploreHeaderView?.visibility = View.GONE
+        // A true minimalist home: only manually retained recommendation rows and the compact
+        // clock/weather/prayer stack remain visible. Hide the full dashboard and media/CCTV row.
+        dashboardPanelView?.visibility = View.GONE
+        homeMediaRowView?.visibility = View.GONE
         applyPreviewRowVisibility()
+        headerBrandView?.visibility = View.GONE
+        headerTimeLabel?.text = SimpleDateFormat("EEEE, dd MMM yyyy", Locale("id", "ID")).apply {
+            timeZone = java.util.TimeZone.getTimeZone(dashboardSnapshot?.timeZone ?: DashboardServices.selectedCity(this@MainActivity).timeZone)
+        }.format(Date())
+        headerClockLabel?.visibility = View.VISIBLE
+        headerWeatherLabel?.visibility = View.VISIBLE
         headerPrayerMetaLabel?.visibility = View.VISIBLE
         headerNextPrayerLabel?.visibility = View.VISIBLE
         homeHeaderView?.let { view ->
-            view.layoutParams = view.layoutParams.apply { height = dp(62) }
+            view.layoutParams = view.layoutParams.apply { height = dp(104) }
             view.requestLayout()
         }
-        // Keep Continue Watching and CCTV selectable, but make the whole row more compact.
-        homeMediaRowView?.animate()?.translationY(dp(6).toFloat())?.scaleX(0.92f)?.scaleY(0.86f)?.setDuration(260L)?.start()
         // The native tuner must own the video plane while idle mode is active.
         // Release every ExoPlayer wallpaper (custom video and MotionBGS), not only weather mode.
         if (getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("live_tv_idle_background", false)) {
@@ -3806,8 +3851,13 @@ class MainActivity : Activity() {
         favoriteDockView?.visibility = View.VISIBLE
         backgroundAudioRowView?.visibility = View.VISIBLE
         actionMenuView?.visibility = View.VISIBLE
+        homeExploreHeaderView?.visibility = View.VISIBLE
         dashboardPanelView?.visibility = View.VISIBLE
+        homeMediaRowView?.visibility = View.VISIBLE
         applyPreviewRowVisibility()
+        headerBrandView?.visibility = View.VISIBLE
+        headerClockLabel?.visibility = View.GONE
+        headerWeatherLabel?.visibility = View.GONE
         headerPrayerMetaLabel?.visibility = View.GONE
         headerNextPrayerLabel?.visibility = View.GONE
         homeHeaderView?.let { view ->
