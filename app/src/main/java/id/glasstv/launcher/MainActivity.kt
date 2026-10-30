@@ -3000,6 +3000,7 @@ class MainActivity : Activity() {
             toast("Susunan rekomendasi dan riwayat disimpan")
         }
         val cancelButton = footerButton("BATAL", false) { dialog.dismiss() }
+        var refreshEditor: (() -> Unit)? = null
         val resetButton = footerButton("RESET", false) {
             hidden.clear()
             keepInCompact.clear()
@@ -3007,7 +3008,7 @@ class MainActivity : Activity() {
                 .forEach { keepInCompact.add(previewRowKey(it)) }
             ordered.clear()
             ordered.addAll(channels)
-            renderRows()
+            refreshEditor?.invoke()
             toast("Pengaturan sementara dikembalikan ke awal")
         }
         footer.addView(saveButton, LinearLayout.LayoutParams(0, dp(44), 1f).apply { rightMargin = dp(6) })
@@ -3105,6 +3106,7 @@ class MainActivity : Activity() {
                 list.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(7) })
             }
         }
+        refreshEditor = { renderRows() }
         renderRows()
         dialog.show()
         dialog.window?.setLayout(safeDialogWidth(780),
