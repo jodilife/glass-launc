@@ -3436,12 +3436,28 @@ class MainActivity : Activity() {
             toast("Android TV tidak melaporkan input tuner atau HDMI.")
             return
         }
-        val ids = listOf("auto") + candidates.map { it.id }
-        val labels = listOf("Otomatis (pilih kanal tuner)") + candidates.map { info ->
-            val type = if (info.isPassthroughInput) "HDMI / Passthrough" else "TV Digital / Tuner"
-            val name = try { info.loadLabel(this).toString() } catch (_: Exception) { info.id }
-            "$name · $type"
+        fun inputDisplayName(info: TvInputInfo): String {
+            val raw = try { info.loadLabel(this).toString() } catch (_: Exception) { info.id }
+            val identity = (raw + " " + info.id).lowercase(Locale.ROOT)
+            if (!info.isPassthroughInput) return "TV Digital / Antena"
+            return when {
+                Regex("hdmi\\s*1|hdmi1|hw2").containsMatchIn(identity) -> "HDMI 1"
+                Regex("hdmi\\s*2|hdmi2|hw3").containsMatchIn(identity) -> "HDMI 2"
+                Regex("\\bav\\b|composite|cvbs|hw1").containsMatchIn(identity) -> "AV"
+                else -> raw.ifBlank { "Input eksternal" }
+            }
         }
+        val orderedCandidates = candidates.sortedBy { info ->
+            when (inputDisplayName(info)) {
+                "TV Digital / Antena" -> 0
+                "HDMI 1" -> 1
+                "HDMI 2" -> 2
+                "AV" -> 3
+                else -> 4
+            }
+        }
+        val ids = listOf("auto") + orderedCandidates.map { it.id }
+        val labels = listOf("Otomatis (pilih kanal tuner)") + orderedCandidates.map { inputDisplayName(it) }
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val selected = prefs.getString("live_tv_input_id", "auto") ?: "auto"
         AlertDialog.Builder(this)
@@ -3600,7 +3616,12 @@ class MainActivity : Activity() {
         liveTvBackgroundScrim = null
         liveTvBackgroundInputId = null
         liveTvBackgroundChannelUri = null
-        if (::wallpaperTarget.isInitialized && !isFinishing) applyWallpaper(wallpaperTarget)
+        // Do not recreate a wallpaper video while the tuner is being switched/restarted in idle mode.
+        // Restore it only after leaving idle mode.
+        if (!idleMode && ::wallpaperTarget.isInitialized && !isFinishing) {
+            applyWallpaper(wallpaperTarget)
+            setupVideoWallpaper(wallpaperTarget)
+        }
     }
 
     private fun enterIdleMode() {
@@ -3619,9 +3640,11 @@ class MainActivity : Activity() {
             view.requestLayout()
         }
         homeMediaRowView?.animate()?.translationY(dp(10).toFloat())?.setDuration(260L)?.start()
-        // Avoid competing hardware video surfaces while the native tuner is active.
-        if (getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("live_tv_idle_background", false) &&
-            getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_source", "bing") == "weather_motionbgs") releaseVideoWallpaperPlayer()
+        // The native tuner must own the video plane while idle mode is active.
+        // Release every ExoPlayer wallpaper (custom video and MotionBGS), not only weather mode.
+        if (getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("live_tv_idle_background", false)) {
+            releaseVideoWallpaperPlayer()
+        }
         // Stop and detach Home CCTV surfaces before the tuner creates its own video surface.
         homePreviewPlayerViews.forEach { it.visibility = View.GONE }
         homePreviewPlayers.forEach { it.pause() }
