@@ -3465,8 +3465,10 @@ class MainActivity : Activity() {
             isFocusableInTouchMode = false
             alpha = 1f
             // Keep the tuner surface in the media plane, behind the launcher's glass UI.
-            setZOrderOnTop(false)
-            setZOrderMediaOverlay(false)
+            if (android.os.Build.VERSION.SDK_INT >= 24) {
+                setZOrderOnTop(false)
+                setZOrderMediaOverlay(false)
+            }
             setCallback(object : TvView.TvInputCallback() {
                 override fun onConnectionFailed(inputId: String?) {
                     android.util.Log.e("GlassTVLiveTv", "CONNECTION_FAILED input=$inputId")
