@@ -712,7 +712,14 @@ class MainActivity : Activity() {
         if (snapshot == null) return
         dashboardLocationLabel?.text = "📍 ${snapshot.city}"
         val shortCondition = snapshot.condition.take(24).trimEnd()
-        dashboardWeatherLabel?.text = "${snapshot.temperature}  •  ${shortCondition}" + if (error != null) " · tersimpan" else ""
+        val weatherIcon = when {
+            listOf("petir", "badai", "thunder", "storm").any { snapshot.condition.contains(it, true) } -> "⛈"
+            listOf("hujan", "gerimis", "rain", "drizzle").any { snapshot.condition.contains(it, true) } -> "🌧"
+            listOf("kabut", "fog", "mist").any { snapshot.condition.contains(it, true) } -> "🌫"
+            listOf("mendung", "berawan", "awan", "cloud", "overcast").any { snapshot.condition.contains(it, true) } -> "☁"
+            else -> "☀"
+        }
+        dashboardWeatherLabel?.text = "$weatherIcon  ${snapshot.temperature}  •  ${shortCondition}" + if (error != null) " · tersimpan" else ""
         snapshot.prayerTimes.forEachIndexed { index, time -> prayerTimeLabels.getOrNull(index)?.text = time }
         val next = DashboardServices.nextPrayer(snapshot)
         val hijri = hijriDate(Date(), snapshot.timeZone)
@@ -3630,8 +3637,8 @@ class MainActivity : Activity() {
         favoriteDockView?.visibility = View.GONE
         backgroundAudioRowView?.visibility = View.GONE
         actionMenuView?.visibility = View.GONE
-        // Keep the dashboard's layout slot transparent so media content does not jump upward.
-        dashboardPanelView?.visibility = View.INVISIBLE
+        // Keep clock, current weather, and prayer times visible even in minimalist mode.
+        dashboardPanelView?.visibility = View.VISIBLE
         applyPreviewRowVisibility()
         headerPrayerMetaLabel?.visibility = View.VISIBLE
         headerNextPrayerLabel?.visibility = View.VISIBLE
@@ -3639,7 +3646,8 @@ class MainActivity : Activity() {
             view.layoutParams = view.layoutParams.apply { height = dp(62) }
             view.requestLayout()
         }
-        homeMediaRowView?.animate()?.translationY(dp(10).toFloat())?.setDuration(260L)?.start()
+        // Keep Continue Watching and CCTV selectable, but make the whole row more compact.
+        homeMediaRowView?.animate()?.translationY(dp(6).toFloat())?.scaleX(0.92f)?.scaleY(0.86f)?.setDuration(260L)?.start()
         // The native tuner must own the video plane while idle mode is active.
         // Release every ExoPlayer wallpaper (custom video and MotionBGS), not only weather mode.
         if (getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("live_tv_idle_background", false)) {
@@ -3666,7 +3674,7 @@ class MainActivity : Activity() {
             view.layoutParams = view.layoutParams.apply { height = dp(42) }
             view.requestLayout()
         }
-        homeMediaRowView?.animate()?.translationY(0f)?.setDuration(220L)?.start()
+        homeMediaRowView?.animate()?.translationY(0f)?.scaleX(1f)?.scaleY(1f)?.setDuration(220L)?.start()
         stopLiveTvBackground()
         homePreviewPlayerViews.forEach { it.visibility = View.VISIBLE }
         homePreviewPlayers.forEach { player ->
