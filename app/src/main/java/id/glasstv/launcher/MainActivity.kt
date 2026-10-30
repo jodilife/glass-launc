@@ -106,6 +106,7 @@ class MainActivity : Activity() {
     private var actionMenuView: View? = null
     private var videoWallpaperPlayer: ExoPlayer? = null
     private var videoWallpaperView: PlayerView? = null
+    private var weatherWallpaperLoading = false
     private val idleTimeout = object : Runnable {
         override fun run() { enterIdleMode() }
     }
@@ -728,6 +729,7 @@ class MainActivity : Activity() {
             prayerTimeLabels.getOrNull(index)?.setTextColor(if (active) Color.WHITE else Color.rgb(225, 232, 242))
         }
         updateHeaderPrayerInfo()
+        refreshWeatherWallpaper(snapshot)
     }
 
     private fun safeDialogWidth(maxWidthDp: Int): Int {
@@ -2455,7 +2457,7 @@ class MainActivity : Activity() {
             dialog.dismiss()
             showIdleTimeoutPicker()
         }
-        settingRow("Sumber wallpaper", "Bing, Reddit, Gradient, atau gambar sendiri", wallpaperSourceLabel()) {
+        settingRow("Sumber wallpaper", "Bing, Reddit, Gradient, cuaca MotionBGS, atau gambar sendiri", wallpaperSourceLabel()) {
             dialog.dismiss()
             showWallpaperSourcePicker()
         }
@@ -3461,18 +3463,24 @@ class MainActivity : Activity() {
         val tv = TvView(this).apply {
             isFocusable = false
             isFocusableInTouchMode = false
-            alpha = 0.96f
+            alpha = 1f
+            // Keep the tuner surface in the media plane, behind the launcher's glass UI.
+            setZOrderOnTop(false)
+            setZOrderMediaOverlay(false)
             setCallback(object : TvView.TvInputCallback() {
                 override fun onConnectionFailed(inputId: String?) {
+                    android.util.Log.e("GlassTVLiveTv", "CONNECTION_FAILED input=$inputId")
                     runOnUiThread {
                         stopLiveTvBackground()
-                        toast("Tuner Live TV tidak dapat dihubungkan. Wallpaper biasa tetap digunakan.")
+                        toast("Tuner gagal tersambung. Periksa input Live TV.")
                     }
                 }
                 override fun onVideoAvailable(inputId: String?) {
+                    android.util.Log.i("GlassTVLiveTv", "VIDEO_AVAILABLE input=$inputId channel=$liveTvBackgroundChannelUri")
                     runOnUiThread { liveTvBackgroundScrim?.setBackgroundColor(Color.argb(28, 3, 7, 13)) }
                 }
                 override fun onVideoUnavailable(inputId: String?, reason: Int) {
+                    android.util.Log.w("GlassTVLiveTv", "VIDEO_UNAVAILABLE input=$inputId reason=$reason channel=$liveTvBackgroundChannelUri")
                     runOnUiThread { liveTvBackgroundScrim?.setBackgroundColor(Color.argb(72, 3, 7, 13)) }
                 }
             })
@@ -3481,6 +3489,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.argb(72, 3, 7, 13))
             isFocusable = false
         }
+        tv.setStreamVolume(1f)
         target.addView(tv, 0, FrameLayout.LayoutParams(-1, -1))
         target.addView(scrim, 1, FrameLayout.LayoutParams(-1, -1))
         liveTvBackgroundView = tv
@@ -3519,37 +3528,59 @@ class MainActivity : Activity() {
                 wallpaperTarget.setBackgroundColor(Color.rgb(4, 7, 12))
                 return
             }
+            data class TunedChannel(val id: Long, val inputId: String, val serviceType: String)
             val channels = contentResolver.query(
                 TvContract.Channels.CONTENT_URI,
-                arrayOf(TvContract.Channels._ID, TvContract.Channels.COLUMN_INPUT_ID),
-                null, null, null
+                arrayOf(TvContract.Channels._ID, TvContract.Channels.COLUMN_INPUT_ID,
+                    TvContract.Channels.COLUMN_SERVICE_TYPE, TvContract.Channels.COLUMN_DISPLAY_NUMBER),
+                null, null, TvContract.Channels.COLUMN_DISPLAY_NUMBER + " ASC"
             )?.use { cursor ->
-                val found = mutableListOf<Pair<Long, String>>()
+                val found = mutableListOf<TunedChannel>()
                 while (cursor.moveToNext()) {
                     val idIndex = cursor.getColumnIndex(TvContract.Channels._ID)
                     val inputIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_INPUT_ID)
+                    val typeIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_SERVICE_TYPE)
                     if (idIndex >= 0 && inputIndex >= 0 && !cursor.isNull(inputIndex)) {
-                        found.add(cursor.getLong(idIndex) to cursor.getString(inputIndex))
+                        found.add(TunedChannel(cursor.getLong(idIndex), cursor.getString(inputIndex),
+                            if (typeIndex >= 0) cursor.getString(typeIndex).orEmpty() else ""))
                     }
                 }
                 found
             }.orEmpty()
             val tunerInfos = if (inputInfo != null) listOf(inputInfo) else {
-                inputs.filter { it.type == TvInputInfo.TYPE_TUNER }
+                inputs.filter { it.type == TvInputInfo.TYPE_TUNER }.sortedBy { info ->
+                    val pkg = info.serviceInfo.packageName.lowercase(Locale.ROOT)
+                    when {
+                        pkg.contains("tuner") -> 0
+                        pkg.contains("dtv") -> 1
+                        pkg.contains("mitv") || pkg.contains("livetv") -> 2
+                        else -> 3
+                    }
+                }
             }
             val savedChannelId = prefs.getLong("live_tv_channel_id", -1L)
             val selectedTuner = tunerInfos.firstOrNull { info ->
-                channels.any { it.second == info.id && it.first == savedChannelId }
-            } ?: tunerInfos.firstOrNull { info -> channels.any { it.second == info.id } }
+                channels.any { it.inputId == info.id && it.id == savedChannelId }
+            } ?: tunerInfos.firstOrNull { info ->
+                channels.any { it.inputId == info.id && it.serviceType == TvContract.Channels.SERVICE_TYPE_AUDIO_VIDEO }
+            } ?: tunerInfos.firstOrNull { info -> channels.any { it.inputId == info.id } }
                 ?: run {
                     toast("Kanal belum cocok dengan input tuner yang tersedia. Buka Live TV bawaan, pindai kanal, lalu coba lagi.")
                     return
                 }
-            val channel = channels.firstOrNull { it.second == selectedTuner.id && it.first == savedChannelId }
-                ?: channels.firstOrNull { it.second == selectedTuner.id } ?: return
-            val channelUri = TvContract.buildChannelUri(channel.first)
+            val inputChannels = channels.filter { it.inputId == selectedTuner.id }
+            val savedChannel = inputChannels.firstOrNull { it.id == savedChannelId }
+            val channel = savedChannel?.takeIf { it.serviceType != TvContract.Channels.SERVICE_TYPE_AUDIO }
+                ?: inputChannels.firstOrNull { it.serviceType == TvContract.Channels.SERVICE_TYPE_AUDIO_VIDEO }
+                ?: inputChannels.firstOrNull()
+                ?: return
+            if (savedChannel?.serviceType == TvContract.Channels.SERVICE_TYPE_AUDIO) {
+                android.util.Log.w("GlassTVLiveTv", "Saved channel $savedChannelId is audio-only; switching to A/V channel " + channel.id)
+            }
+            val channelUri = TvContract.buildChannelUri(channel.id)
             liveTvBackgroundInputId = selectedTuner.id
             liveTvBackgroundChannelUri = channelUri
+            android.util.Log.i("GlassTVLiveTv", "TUNING input=" + selectedTuner.id + " channel=" + channel.id + " serviceType=" + channel.serviceType)
             tv.tune(selectedTuner.id, channelUri)
             wallpaperTarget.setBackgroundColor(Color.rgb(4, 7, 12))
         } catch (_: SecurityException) {
@@ -3587,6 +3618,9 @@ class MainActivity : Activity() {
             view.requestLayout()
         }
         homeMediaRowView?.animate()?.translationY(dp(10).toFloat())?.setDuration(260L)?.start()
+        // Avoid competing hardware video surfaces while the native tuner is active.
+        if (getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("live_tv_idle_background", false) &&
+            getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_source", "bing") == "weather_motionbgs") releaseVideoWallpaperPlayer()
         // Stop and detach Home CCTV surfaces before the tuner creates its own video surface.
         homePreviewPlayerViews.forEach { it.visibility = View.GONE }
         homePreviewPlayers.forEach { it.pause() }
@@ -3651,7 +3685,11 @@ class MainActivity : Activity() {
     }
 
     private fun setupVideoWallpaper(target: FrameLayout) {
-        val rawUri = getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_video_uri", null) ?: return
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val weatherMode = prefs.getString("wallpaper_source", "bing") == "weather_motionbgs"
+        val rawUri = if (weatherMode) prefs.getString("wallpaper_weather_video_path", null)?.let { Uri.fromFile(File(it)) }
+            else prefs.getString("wallpaper_video_uri", null)?.let { Uri.parse(it) } ?: return
+        if (rawUri == null) return
         if (videoWallpaperPlayer != null && videoWallpaperView?.parent === target) return
         releaseVideoWallpaperPlayer()
         try {
@@ -3667,7 +3705,7 @@ class MainActivity : Activity() {
             val player = ExoPlayer.Builder(this).build().apply {
                 volume = 0f
                 repeatMode = Player.REPEAT_MODE_ONE
-                setMediaItem(MediaItem.fromUri(Uri.parse(rawUri)))
+                setMediaItem(MediaItem.fromUri(rawUri))
                 prepare()
                 playWhenReady = true
             }
@@ -3690,11 +3728,47 @@ class MainActivity : Activity() {
         videoWallpaperView = null
     }
 
+    private fun refreshWeatherWallpaper(snapshot: DashboardServices.Snapshot, force: Boolean = false) {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (prefs.getString("wallpaper_source", "bing") != "weather_motionbgs") return
+        val hour = Calendar.getInstance(java.util.TimeZone.getTimeZone(snapshot.timeZone)).get(Calendar.HOUR_OF_DAY)
+        val category = MotionBgsWeatherWallpaper.categoryFor(snapshot.condition, hour)
+        val file = File(cacheDir, "glasstv_motionbgs_weather.mp4")
+        val savedCategory = prefs.getString("wallpaper_weather_category", "")
+        val lastRefresh = prefs.getLong("wallpaper_weather_refresh", 0L)
+        if (!force && file.exists() && file.length() > 100_000L && savedCategory == category &&
+            System.currentTimeMillis() - lastRefresh < 6L * 60L * 60L * 1000L) {
+            if (!idleMode && videoWallpaperPlayer == null && ::wallpaperTarget.isInitialized) setupVideoWallpaper(wallpaperTarget)
+            return
+        }
+        if (weatherWallpaperLoading) return
+        weatherWallpaperLoading = true
+        MotionBgsWeatherWallpaper.download(this, category) { result, error ->
+            weatherWallpaperLoading = false
+            if (result == null) {
+                android.util.Log.w("GlassTVWallpaper", "MotionBGS download failed: " + error)
+                if (!file.exists()) toast("Wallpaper cuaca belum tersedia; wallpaper foto tetap digunakan.")
+                return@download
+            }
+            prefs.edit().putString("wallpaper_weather_video_path", result.file.absolutePath)
+                .putString("wallpaper_weather_category", result.category)
+                .putLong("wallpaper_weather_refresh", System.currentTimeMillis()).apply()
+            android.util.Log.i("GlassTVWallpaper", "Weather wallpaper loaded: " + result.title + " [" + result.category + "]")
+            if (!isFinishing && !idleMode && ::wallpaperTarget.isInitialized &&
+                prefs.getString("wallpaper_source", "bing") == "weather_motionbgs") {
+                releaseVideoWallpaperPlayer()
+                setupVideoWallpaper(wallpaperTarget)
+                toast("Wallpaper cuaca diperbarui: " + result.title)
+            }
+        }
+    }
+
     private fun wallpaperSourceLabel(): String = when (
         getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_source", "bing")
     ) {
         "reddit" -> "Reddit"
         "gradient" -> "Gradient"
+        "weather_motionbgs" -> "Cuaca otomatis · MotionBGS"
         "custom" -> "Gambar sendiri"
         else -> "Bing Photo of the Day"
     }
@@ -3708,14 +3782,16 @@ class MainActivity : Activity() {
     }
 
     private fun showWallpaperSourcePicker() {
-        val values = arrayOf("bing", "reddit", "gradient", "custom")
-        val labels = arrayOf("Photo of the day (Bing)", "Reddit", "Gradient", "My image")
+        val values = arrayOf("bing", "reddit", "gradient", "weather_motionbgs", "custom")
+        val labels = arrayOf("Photo of the day (Bing)", "Reddit", "Gradient", "Cuaca otomatis · MotionBGS", "My image")
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val current = values.indexOf(prefs.getString("wallpaper_source", "bing")).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("SUMBER WALLPAPER")
             .setSingleChoiceItems(labels, current) { picker, which ->
                 prefs.edit().putString("wallpaper_source", values[which]).apply()
+                if (values[which] == "weather_motionbgs") prefs.edit().remove("wallpaper_video_uri").apply()
                 picker.dismiss()
+                releaseVideoWallpaperPlayer()
                 if (values[which] == "custom" && prefs.getString("wallpaper_custom_uri", null) == null) {
                     pickCustomWallpaper()
                 } else {
@@ -3794,6 +3870,16 @@ class MainActivity : Activity() {
 
     private fun applyWallpaper(target: FrameLayout, forceRefresh: Boolean = false) {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val source = prefs.getString("wallpaper_source", "bing") ?: "bing"
+        if (source == "weather_motionbgs") {
+            target.setBackgroundColor(Color.rgb(5, 8, 14))
+            val cachedPath = prefs.getString("wallpaper_weather_video_path", null)
+            if (cachedPath != null && File(cachedPath).exists()) setupVideoWallpaper(target)
+            else target.background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(13, 31, 49), Color.rgb(27, 27, 48), Color.rgb(5, 9, 17)))
+            dashboardSnapshot?.let { refreshWeatherWallpaper(it, forceRefresh) } ?: fetchDashboardData()
+            return
+        }
         if (prefs.getString("wallpaper_video_uri", null) != null) {
             target.setBackgroundColor(Color.rgb(5, 8, 14))
             return
@@ -3801,7 +3887,6 @@ class MainActivity : Activity() {
         if (target === wallpaperTarget && ::root.isInitialized && continueWatchingCard?.hasFocus() != true) {
             root.setBackgroundColor(Color.TRANSPARENT)
         }
-        val source = prefs.getString("wallpaper_source", "bing") ?: "bing"
         val dimAlpha = when (prefs.getString("wallpaper_dim", "medium")) {
             "light" -> 42
             "strong" -> 132
