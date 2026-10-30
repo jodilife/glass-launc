@@ -2463,11 +2463,17 @@ class MainActivity : Activity() {
             scheduleWallpaperRotation()
             reopen("Rotasi wallpaper ${if (!wallpaperAuto) "diaktifkan" else "dimatikan"}")
         }
-        settingRow("Wallpaper berikutnya", "Ambil gambar baru dari sumber terpilih") {
+        settingRow("Wallpaper berikutnya", "Pindah ke gambar lain dari sumber terpilih") {
+            val source = prefs.getString("wallpaper_source", "bing")
+            when (source) {
+                "reddit" -> prefs.edit().putInt("wallpaper_reddit_index", prefs.getInt("wallpaper_reddit_index", 0) + 1).apply()
+                "bing" -> prefs.edit().putInt("wallpaper_bing_index", prefs.getInt("wallpaper_bing_index", 0) + 1).apply()
+                "gradient" -> prefs.edit().putInt("wallpaper_index", prefs.getInt("wallpaper_index", 0) + 1).apply()
+            }
             applyWallpaper(wallpaperTarget, forceRefresh = true)
             scheduleWallpaperRotation()
             dialog.dismiss()
-            toast("Memuat wallpaper berikutnya")
+            toast(if (source == "custom") "Pilih sumber wallpaper online atau gradient untuk mengganti gambar." else "Memuat wallpaper berikutnya")
         }
         settingRow("Google Ambient / Art Gallery", "Buka pengaturan screensaver Android TV") {
             dialog.dismiss(); openGoogleAmbientSettings()
@@ -3829,6 +3835,18 @@ class MainActivity : Activity() {
             showCached()
             return
         }
+        if (!file.exists() || file.length() < 12_000L) {
+            val fallback = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(13, 31, 49), Color.rgb(27, 27, 48), Color.rgb(5, 9, 17))
+            )
+            val fallbackScrim = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.argb((dimAlpha * 0.65f).toInt(), 4, 8, 16),
+                    Color.argb(dimAlpha, 5, 9, 17), Color.argb((dimAlpha * 1.35f).toInt().coerceAtMost(210), 4, 7, 13))
+            )
+            target.background = LayerDrawable(arrayOf(fallback, fallbackScrim))
+        }
         // Keep the last known-good wallpaper visible until a replacement is fully downloaded and decoded.
         val pendingFile = File(cacheDir, "glasstv_wallpaper_pending.tmp")
         Thread({
@@ -3861,7 +3879,7 @@ class MainActivity : Activity() {
                     if (candidates.isEmpty()) throw IllegalStateException("Tidak ada gambar 16:9–21:9 pada subreddit tersebut.")
                     candidates[prefs.getInt("wallpaper_reddit_index", 0).mod(candidates.size)]
                 } else {
-                    connection = URL("https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=en-US").openConnection() as HttpURLConnection
+                    connection = URL("https://www.bing.com/HPImageArchive.aspx?format=js&idx=${prefs.getInt("wallpaper_bing_index", 0).mod(8)}&n=1&mkt=en-US").openConnection() as HttpURLConnection
                     connection.connectTimeout = 9000
                     connection.readTimeout = 12000
                     connection.setRequestProperty("User-Agent", "Mozilla/5.0 GlassTVLauncher/0.5")
