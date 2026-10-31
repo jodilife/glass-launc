@@ -248,7 +248,6 @@ class MainActivity : Activity() {
             color = Color.argb(165, 240, 245, 252)
             textSize = dp(11).toFloat()
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            letterSpacing = 0.08f
         }
         private var current: Bitmap? = null
         private var incoming: Bitmap? = null
@@ -494,7 +493,8 @@ class MainActivity : Activity() {
             val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
             if (!prefs.getBoolean("wallpaper_auto", true)) return
             val source = prefs.getString("wallpaper_source", "bing")
-            if (prefs.getString("wallpaper_video_uri", null) != null) return
+            if (prefs.getString("wallpaper_video_uri", null) != null ||
+                prefs.getString("wallpaper_source", "bing") == "catalog_video") return
             val edit = prefs.edit().putLong("wallpaper_last_refresh", System.currentTimeMillis())
             if (source == "bing") edit.putInt("wallpaper_bing_index", (prefs.getInt("wallpaper_bing_index", 0) + 1).mod(8))
             if (source == "gradient") edit.putInt("wallpaper_index", prefs.getInt("wallpaper_index", 0) + 1)
@@ -3548,7 +3548,7 @@ class MainActivity : Activity() {
             showWallpaperVideoSearchDialog("all")
         }
         val photoModeCount = prefs.getStringSet("photo_mode_uris", emptySet())?.size ?: 0
-        settingRow("Foto Photo Mode", "Tambah foto pribadi untuk slideshow dengan gerak Ken Burns dan transisi lembut", if (photoModeCount == 0) "PILIH FOTO" else "$photoModeCount FOTO") {
+        settingRow("Foto Photo Mode", "Tambah foto pribadi untuk slideshow ala Aura: gerak Ken Burns, transisi silang, dan foto Bing cadangan", if (photoModeCount == 0) "FOTO BING OTOMATIS" else "$photoModeCount FOTO") {
             dialog.dismiss()
             pickPhotoModeImages()
         }
@@ -5929,7 +5929,6 @@ class MainActivity : Activity() {
                 if (values[which] == "custom" && prefs.getString("wallpaper_custom_uri", null) == null) {
                     pickCustomWallpaper()
                 } else if (values[which] == "catalog_video") {
-                    showSettings("Tampilan")
                     showWallpaperVideoSearchDialog("all")
                 } else {
                     if (values[which] == "bing") {
@@ -6006,6 +6005,7 @@ class MainActivity : Activity() {
             return
         }
         if (prefs.getString("wallpaper_video_uri", null) == null &&
+            prefs.getString("wallpaper_source", "bing") != "catalog_video" &&
             prefs.getBoolean("wallpaper_auto", true) &&
             prefs.getString("wallpaper_source", "bing") != "custom") {
             val hours = prefs.getInt("wallpaper_interval_hours", 3).coerceIn(1, 24)
