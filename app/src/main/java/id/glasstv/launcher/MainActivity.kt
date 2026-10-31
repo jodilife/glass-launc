@@ -1960,7 +1960,11 @@ class MainActivity : Activity() {
                     .apply { setPadding(0, dp(4), 0, dp(4)) })
             } else if (url.startsWith("rtsp://", true) || url.startsWith("rtsps://", true)) {
                 try {
-                    val player = ExoPlayer.Builder(this).build()
+                    // Allow Media3 to try another decoder when the TV firmware exposes a
+            // hardware codec that cannot initialize this downloaded MP4.
+            val renderersFactory = androidx.media3.exoplayer.DefaultRenderersFactory(this)
+                .setEnableDecoderFallback(true)
+            val player = ExoPlayer.Builder(this, renderersFactory).build()
                     homePreviewPlayers.add(player)
                     playerView.player = player
                     player.volume = 0f
@@ -5534,16 +5538,19 @@ class MainActivity : Activity() {
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
+                    val cause = generateSequence<Throwable>(error) { it.cause }.lastOrNull()
                     android.util.Log.e(
                         "GlassTVWallpaper",
-                        "Video wallpaper playback failed source=$source uri=$rawUri",
+                        "Video wallpaper playback failed code=${error.errorCodeName} source=$source uri=$rawUri cause=${cause?.javaClass?.simpleName}: ${cause?.message}",
                         error
                     )
                     runOnUiThread {
                         if (videoWallpaperPlayer === player && !isFinishing) {
                             val sourceLabel = getSharedPreferences("glass_tv", MODE_PRIVATE)
                                 .getString("wallpaper_catalog_video_source", source ?: "video")
-                            toast("Video wallpaper $sourceLabel tidak kompatibel atau gagal dibaca. Pilih video lain; wallpaper foto tetap tersedia.")
+                            val detail = cause?.message?.take(90)?.takeIf { it.isNotBlank() }
+                            val suffix = if (detail == null) " (${error.errorCodeName})" else " (${error.errorCodeName}): $detail"
+                            toast("Video $sourceLabel gagal diputar$suffix")
                         }
                     }
                 }
@@ -5552,7 +5559,12 @@ class MainActivity : Activity() {
             player.repeatMode = Player.REPEAT_MODE_ONE
             view.player = player
             videoWallpaperPlayer = player
-            player.setMediaItem(MediaItem.fromUri(rawUri))
+            player.setMediaItem(
+                MediaItem.Builder()
+                    .setUri(rawUri)
+                    .setMimeType(androidx.media3.common.MimeTypes.VIDEO_MP4)
+                    .build()
+            )
             player.prepare()
             player.playWhenReady = true
             android.util.Log.i("GlassTVWallpaper", "Video wallpaper attached source=$source uri=$rawUri")
