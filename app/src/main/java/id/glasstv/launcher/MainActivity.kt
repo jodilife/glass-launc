@@ -313,6 +313,7 @@ class MainActivity : Activity() {
         releaseVideoWallpaperPlayer()
         stopLiveTvBackground()
         wallpaperHandler.removeCallbacks(wallpaperCycle)
+        wallpaperHandler.removeCallbacks(dayNightSwitch)
         idleHandler.removeCallbacks(idleTimeout)
         getSharedPreferences("glass_tv", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(musicPrefsListener)
         super.onPause()
@@ -335,30 +336,35 @@ class MainActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN && idleMode) {
+        // Intercept channel keys in both normal Home and minimalist mode.
+        if (event.action == KeyEvent.ACTION_DOWN) {
             when (event.keyCode) {
-                KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_MUTE -> {
-                    resetIdleTimer()
-                    return super.dispatchKeyEvent(event)
-                }
                 KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_PAGE_UP -> {
                     resetIdleTimer()
+                    android.util.Log.i("GlassTVLiveTv", "Remote CH+ key=" + event.keyCode + " repeat=" + event.repeatCount + " idle=" + idleMode)
                     val changed = changeLiveTvChannel(1)
-                    if (changed) return true
-                    android.util.Log.w("GlassTVLiveTv", "CH+ received but no next channel was tuned")
+                    if (!changed) android.util.Log.w("GlassTVLiveTv", "CH+ could not tune a channel")
                     return true
                 }
                 KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_PAGE_DOWN -> {
                     resetIdleTimer()
+                    android.util.Log.i("GlassTVLiveTv", "Remote CH- key=" + event.keyCode + " repeat=" + event.repeatCount + " idle=" + idleMode)
                     val changed = changeLiveTvChannel(-1)
-                    if (changed) return true
-                    android.util.Log.w("GlassTVLiveTv", "CH- received but no previous channel was tuned")
+                    if (!changed) android.util.Log.w("GlassTVLiveTv", "CH- could not tune a channel")
                     return true
                 }
-                else -> exitIdleMode()
             }
+            if (idleMode) {
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_MUTE -> {
+                        resetIdleTimer()
+                        return super.dispatchKeyEvent(event)
+                    }
+                    else -> exitIdleMode()
+                }
+            }
+            resetIdleTimer()
         }
-        if (event.action == KeyEvent.ACTION_DOWN) resetIdleTimer()
         return super.dispatchKeyEvent(event)
     }
 
@@ -3073,9 +3079,17 @@ class MainActivity : Activity() {
             dialog.dismiss()
             showMinimalistPanelPositionPicker()
         }
-        settingRow("Sumber wallpaper", "Foto harian Bing, Gradient, atau gambar sendiri", wallpaperSourceLabel()) {
+        settingRow("Sumber wallpaper", "Bing, gradient, gambar sendiri, atau jadwal siang/malam", wallpaperSourceLabel()) {
             dialog.dismiss()
             showWallpaperSourcePicker()
+        }
+        settingRow("Wallpaper siang", "Pilih gambar untuk pukul 06.00–17.59") {
+            dialog.dismiss()
+            pickDayNightWallpaper(false)
+        }
+        settingRow("Wallpaper malam", "Pilih gambar gelap untuk pukul 18.00–05.59") {
+            dialog.dismiss()
+            pickDayNightWallpaper(true)
         }
         settingRow("Ganti gambar setiap", "Interval rotasi wallpaper", "${prefs.getInt("wallpaper_interval_hours", 3)} jam") {
             dialog.dismiss()
@@ -4579,6 +4593,21 @@ class MainActivity : Activity() {
             toast("Gambar sendiri dijadikan wallpaper")
             return
         }
+        if ((requestCode == 7144 || requestCode == 7145) && resultCode == RESULT_OK) {
+            val imageUri = data?.data ?: return
+            try {
+                contentResolver.takePersistableUriPermission(imageUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (_: Exception) { }
+            val key = if (requestCode == 7145) "wallpaper_night_uri" else "wallpaper_day_uri"
+            getSharedPreferences("glass_tv", MODE_PRIVATE).edit()
+                .putString(key, imageUri.toString())
+                .putString("wallpaper_source", "daynight")
+                .putBoolean("wallpaper_auto", true)
+                .apply()
+            showHome()
+            toast(if (requestCode == 7145) "Wallpaper malam disimpan" else "Wallpaper siang disimpan")
+            return
+        }
         if (requestCode != wallpaperVideoRequestCode || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         try {
@@ -4677,7 +4706,18 @@ class MainActivity : Activity() {
         "bing" -> "Photo of the Day · Bing"
         "gradient" -> "Gradient"
         "custom" -> "Gambar sendiri"
+        "daynight" -> "Otomatis · Siang / Malam"
         else -> "Photo of the Day · Bing"
+    }
+
+    private fun pickDayNightWallpaper(night: Boolean) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try { startActivityForResult(intent, if (night) 7145 else 7144) }
+        catch (_: Exception) { toast("Pemilih gambar tidak tersedia pada TV ini.") }
     }
 
     private fun wallpaperDimLabel(): String = when (
@@ -4689,8 +4729,8 @@ class MainActivity : Activity() {
     }
 
     private fun showWallpaperSourcePicker() {
-        val values = arrayOf("bing", "gradient", "custom")
-        val labels = arrayOf("Photo of the Day · Bing (berganti otomatis)", "Gradient · tanpa internet", "Gambar sendiri (termasuk foto Pexels)")
+        val values = arrayOf("bing", "gradient", "custom", "daynight")
+        val labels = arrayOf("Photo of the Day · Bing (berganti otomatis)", "Gradient · tanpa internet", "Gambar sendiri (termasuk foto Pexels)", "Otomatis Siang / Malam · 06.00–18.00")
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val current = values.indexOf(prefs.getString("wallpaper_source", "photos")).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("SUMBER WALLPAPER")
@@ -4745,9 +4785,33 @@ class MainActivity : Activity() {
         catch (_: Exception) { toast("Pemilih gambar tidak tersedia pada TV ini.") }
     }
 
+    private val dayNightSwitch = object : Runnable {
+        override fun run() {
+            if (::wallpaperTarget.isInitialized &&
+                getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_source", "bing") == "daynight") {
+                applyWallpaper(wallpaperTarget, forceRefresh = true)
+                scheduleWallpaperRotation()
+            }
+        }
+    }
+
     private fun scheduleWallpaperRotation() {
         wallpaperHandler.removeCallbacks(wallpaperCycle)
+        wallpaperHandler.removeCallbacks(dayNightSwitch)
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (prefs.getString("wallpaper_source", "bing") == "daynight") {
+            val now = Calendar.getInstance()
+            val next = (now.clone() as Calendar).apply {
+                val hour = now.get(Calendar.HOUR_OF_DAY)
+                set(Calendar.HOUR_OF_DAY, if (hour in 6..17) 18 else 6)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+                if (timeInMillis <= now.timeInMillis) add(Calendar.DAY_OF_YEAR, 1)
+            }
+            wallpaperHandler.postDelayed(dayNightSwitch, (next.timeInMillis - now.timeInMillis).coerceAtLeast(1000L))
+            return
+        }
         if (prefs.getString("wallpaper_video_uri", null) == null &&
             prefs.getBoolean("wallpaper_auto", true) &&
             prefs.getString("wallpaper_source", "bing") != "custom") {
@@ -4771,10 +4835,12 @@ class MainActivity : Activity() {
         if (target === wallpaperTarget && ::root.isInitialized && continueWatchingCard?.hasFocus() != true) {
             root.setBackgroundColor(Color.TRANSPARENT)
         }
+        val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val nightSlot = source == "daynight" && (currentHour >= 18 || currentHour < 6)
         val dimAlpha = when (prefs.getString("wallpaper_dim", "medium")) {
-            "light" -> 42
-            "strong" -> 132
-            else -> 82
+            "light" -> if (nightSlot) 104 else 42
+            "strong" -> 166
+            else -> if (nightSlot) 142 else 82
         }
         fun display(bitmap: Bitmap) {
             runOnUiThread {
@@ -4806,6 +4872,29 @@ class MainActivity : Activity() {
             )
             target.background = LayerDrawable(arrayOf(gradient, gradientDim))
             return
+        }
+        if (source == "daynight") {
+            val selectedUri = prefs.getString(if (nightSlot) "wallpaper_night_uri" else "wallpaper_day_uri", null)
+            if (selectedUri != null) {
+                Thread({
+                    try {
+                        val bitmap = contentResolver.openInputStream(Uri.parse(selectedUri))?.use { BitmapFactory.decodeStream(it) }
+                        if (bitmap != null) display(bitmap)
+                    } catch (error: Exception) {
+                        android.util.Log.w("GlassTVWallpaper", "Day/night image could not be decoded", error)
+                    }
+                }, "glasstv-daynight-wallpaper").start()
+                return
+            }
+            if (nightSlot) {
+                val nightGradient = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(Color.rgb(5, 12, 25), Color.rgb(10, 17, 31), Color.rgb(2, 5, 12)))
+                val nightScrim = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                    intArrayOf(Color.argb(30, 2, 5, 12), Color.argb(118, 2, 5, 12), Color.argb(185, 1, 3, 8)))
+                target.background = LayerDrawable(arrayOf(nightGradient, nightScrim))
+                return
+            }
+            source = "bing"
         }
         if (source == "custom") {
             val raw = prefs.getString("wallpaper_custom_uri", null) ?: run {
