@@ -208,7 +208,7 @@ class MainActivity : Activity() {
                 !prefs.getBoolean("wallpaper_auto", true)) return
             val source = prefs.getString("wallpaper_source", "bing")
             val edit = prefs.edit().putLong("wallpaper_last_refresh", System.currentTimeMillis())
-            if (source == "art") edit.putInt("wallpaper_art_index", prefs.getInt("wallpaper_art_index", 0) + 1)
+            if (source == "photos") edit.putInt("wallpaper_photo_index", prefs.getInt("wallpaper_photo_index", 0) + 1)
             if (source == "gradient") edit.putInt("wallpaper_index", prefs.getInt("wallpaper_index", 0) + 1)
             edit.apply()
             applyWallpaper(wallpaperTarget, forceRefresh = true)
@@ -302,11 +302,63 @@ class MainActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN) {
-            if (idleMode) exitIdleMode()
-            resetIdleTimer()
+        if (event.action == KeyEvent.ACTION_DOWN && idleMode) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_MUTE -> {
+                    resetIdleTimer()
+                    return super.dispatchKeyEvent(event)
+                }
+                KeyEvent.KEYCODE_CHANNEL_UP -> {
+                    resetIdleTimer()
+                    return changeLiveTvChannel(1) || super.dispatchKeyEvent(event)
+                }
+                KeyEvent.KEYCODE_CHANNEL_DOWN -> {
+                    resetIdleTimer()
+                    return changeLiveTvChannel(-1) || super.dispatchKeyEvent(event)
+                }
+                else -> exitIdleMode()
+            }
         }
+        if (event.action == KeyEvent.ACTION_DOWN) resetIdleTimer()
         return super.dispatchKeyEvent(event)
+    }
+
+    private fun changeLiveTvChannel(direction: Int): Boolean {
+        val inputId = liveTvBackgroundInputId ?: return false
+        val currentId = liveTvBackgroundChannelUri?.lastPathSegment?.toLongOrNull() ?: return false
+        return try {
+            val channels = mutableListOf<Pair<Long, String>>()
+            contentResolver.query(
+                TvContract.Channels.CONTENT_URI,
+                arrayOf(TvContract.Channels._ID, TvContract.Channels.COLUMN_DISPLAY_NUMBER),
+                "${TvContract.Channels.COLUMN_INPUT_ID} = ? AND ${TvContract.Channels.COLUMN_SERVICE_TYPE} = ?",
+                arrayOf(inputId, TvContract.Channels.SERVICE_TYPE_AUDIO_VIDEO),
+                TvContract.Channels.COLUMN_DISPLAY_NUMBER + " ASC"
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val idIndex = cursor.getColumnIndex(TvContract.Channels._ID)
+                    val numberIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NUMBER)
+                    if (idIndex >= 0 && numberIndex >= 0) channels.add(cursor.getLong(idIndex) to cursor.getString(numberIndex).orEmpty())
+                }
+            }
+            if (channels.size < 2) {
+                toast("Kanal TV belum cukup. Pindai kanal melalui Live TV bawaan.")
+                return false
+            }
+            val currentIndex = channels.indexOfFirst { it.first == currentId }
+            val nextIndex = if (currentIndex < 0) 0 else (currentIndex + direction + channels.size) % channels.size
+            val next = channels[nextIndex]
+            val uri = TvContract.buildChannelUri(next.first)
+            liveTvBackgroundView?.tune(inputId, uri) ?: return false
+            liveTvBackgroundChannelUri = uri
+            getSharedPreferences("glass_tv", MODE_PRIVATE).edit().putLong("live_tv_channel_id", next.first).apply()
+            android.util.Log.i("GlassTVLiveTv", "CHANNEL_CHANGED number=${next.second} id=${next.first}")
+            true
+        } catch (error: Exception) {
+            android.util.Log.e("GlassTVLiveTv", "Channel change failed", error)
+            toast("Tidak dapat mengganti kanal dari panel minimalis.")
+            false
+        }
     }
 
     private fun showHome() {
@@ -4389,13 +4441,12 @@ class MainActivity : Activity() {
     }
 
     private fun wallpaperSourceLabel(): String = when (
-        getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_source", "bing")
+        getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_source", "photos")
     ) {
-        "art" -> "Lukisan klasik · Art Institute of Chicago"
+        "photos" -> "Foto pilihan · Unsplash"
         "gradient" -> "Gradient"
-        "weather_motionbgs" -> "Photo of the day (Bing)"
         "custom" -> "Gambar sendiri"
-        else -> "Bing Photo of the Day"
+        else -> "Foto pilihan · Unsplash"
     }
 
     private fun wallpaperDimLabel(): String = when (
@@ -4407,14 +4458,14 @@ class MainActivity : Activity() {
     }
 
     private fun showWallpaperSourcePicker() {
-        val values = arrayOf("bing", "art", "gradient", "custom")
-        val labels = arrayOf("Photo of the day (Bing)", "Lukisan klasik · Art Institute of Chicago", "Gradient", "Gambar sendiri (termasuk foto Pexels yang diunduh manual)")
+        val values = arrayOf("photos", "gradient", "custom")
+        val labels = arrayOf("Foto pilihan · Unsplash (langsung)", "Gradient · tanpa internet", "Gambar sendiri (termasuk foto Pexels)")
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        val current = values.indexOf(prefs.getString("wallpaper_source", "bing")).coerceAtLeast(0)
+        val current = values.indexOf(prefs.getString("wallpaper_source", "photos")).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("SUMBER WALLPAPER")
             .setSingleChoiceItems(labels, current) { picker, which ->
                 prefs.edit().putString("wallpaper_source", values[which]).apply()
-                if (values[which] == "weather_motionbgs") prefs.edit().remove("wallpaper_video_uri").apply()
+                if (values[which] == "photos") prefs.edit().remove("wallpaper_video_uri").putBoolean("wallpaper_auto", true).apply()
                 picker.dismiss()
                 releaseVideoWallpaperPlayer()
                 if (values[which] == "custom" && prefs.getString("wallpaper_custom_uri", null) == null) {
@@ -4468,7 +4519,7 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         if (prefs.getString("wallpaper_video_uri", null) == null &&
             prefs.getBoolean("wallpaper_auto", true) &&
-            prefs.getString("wallpaper_source", "bing") != "custom") {
+            prefs.getString("wallpaper_source", "photos") != "custom") {
             val hours = prefs.getInt("wallpaper_interval_hours", 3).coerceIn(1, 24)
             wallpaperHandler.postDelayed(wallpaperCycle, hours * 60L * 60L * 1000L)
         }
@@ -4476,22 +4527,13 @@ class MainActivity : Activity() {
 
     private fun applyWallpaper(target: FrameLayout, forceRefresh: Boolean = false) {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        var source = prefs.getString("wallpaper_source", "bing") ?: "bing"
-        if (source == "weather_motionbgs") {
-            // MotionBGS is retired from the source picker; migrate old selections to Bing.
-            prefs.edit().putString("wallpaper_source", "bing").remove("wallpaper_weather_video_path").apply()
-            source = "bing"
+        var source = prefs.getString("wallpaper_source", "photos") ?: "photos"
+        if (source == "weather_motionbgs" || source == "art" || source == "bing") {
+            // Retire unreliable legacy sources; use direct photo CDN URLs instead.
+            prefs.edit().putString("wallpaper_source", "photos").remove("wallpaper_weather_video_path").apply()
+            source = "photos"
         }
-        if (source == "weather_motionbgs") {
-            target.setBackgroundColor(Color.rgb(5, 8, 14))
-            val cachedPath = prefs.getString("wallpaper_weather_video_path", null)
-            if (cachedPath != null && File(cachedPath).exists()) setupVideoWallpaper(target)
-            else target.background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(13, 31, 49), Color.rgb(27, 27, 48), Color.rgb(5, 9, 17)))
-            dashboardSnapshot?.let { refreshWeatherWallpaper(it, forceRefresh) } ?: fetchDashboardData()
-            return
-        }
-        if (prefs.getString("wallpaper_video_uri", null) != null) {
+remove legacy branch        if (prefs.getString("wallpaper_video_uri", null) != null) {
             target.setBackgroundColor(Color.rgb(5, 8, 14))
             return
         }
@@ -4576,40 +4618,7 @@ class MainActivity : Activity() {
         Thread({
             var connection: HttpURLConnection? = null
             try {
-                val imageUrl = if (source == "art") {
-                    val artIndex = prefs.getInt("wallpaper_art_index", 0)
-                    val searchUrl = "https://api.artic.edu/api/v1/artworks/search?q=painting&fields=id,title,image_id,artist_title,is_public_domain&limit=100"
-                    connection = URL(searchUrl).openConnection() as HttpURLConnection
-                    connection.connectTimeout = 12000
-                    connection.readTimeout = 15000
-                    connection.instanceFollowRedirects = true
-                    connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11; GlassTV) AppleWebKit/537.36 Chrome/120 Safari/537.36")
-                    connection.setRequestProperty("Accept", "application/json")
-                    val apiCode = connection.responseCode
-                    if (apiCode !in 200..299) throw IllegalStateException("Art Institute API HTTP $apiCode")
-                    val json = connection.inputStream.bufferedReader().use { it.readText() }
-                    connection.disconnect()
-                    connection = null
-                    val data = JSONObject(json).optJSONArray("data")
-                    val candidates = mutableListOf<String>()
-                    if (data != null) for (i in 0 until data.length()) {
-                        val artwork = data.optJSONObject(i) ?: continue
-                        if (!artwork.optBoolean("is_public_domain", false)) continue
-                        val imageId = artwork.optString("image_id").takeIf { it.isNotBlank() && it != "null" } ?: continue
-                        candidates.add("https://www.artic.edu/iiif/2/$imageId/full/1600,/0/default.jpg")
-                    }
-                    if (candidates.isEmpty()) throw IllegalStateException("Belum ada lukisan public-domain dengan gambar yang tersedia.")
-                    candidates[artIndex.mod(candidates.size)]
-                } else {
-                    connection = URL("https://www.bing.com/HPImageArchive.aspx?format=js&idx=${prefs.getInt("wallpaper_bing_index", 0).mod(8)}&n=1&mkt=en-US").openConnection() as HttpURLConnection
-                    connection.connectTimeout = 9000
-                    connection.readTimeout = 12000
-                    connection.setRequestProperty("User-Agent", "Mozilla/5.0 GlassTVLauncher/0.6")
-                    val json = connection.inputStream.bufferedReader().use { it.readText() }
-                    val imagePath = JSONObject(json).optJSONArray("images")?.optJSONObject(0)?.optString("url").orEmpty()
-                    if (imagePath.isBlank()) throw IllegalStateException("Bing tidak mengirim gambar hari ini.")
-                    "https://www.bing.com" + imagePath
-                }
+                val imageUrl = wallpaperUrls[prefs.getInt("wallpaper_photo_index", 0).mod(wallpaperUrls.size)]
                 connection = URL(imageUrl).openConnection() as HttpURLConnection
                 connection.connectTimeout = 15000
                 connection.readTimeout = 25000
