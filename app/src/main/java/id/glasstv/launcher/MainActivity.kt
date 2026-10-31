@@ -2759,7 +2759,7 @@ class MainActivity : Activity() {
             "Lokasi cuaca & waktu salat", "Info GlassTV" -> "Cuaca & Waktu Salat"
             "Azan otomatis", "Uji suara azan" -> "Waktu Salat"
             "Live TV sebagai background", "Pilih kanal Live TV" -> "Live TV"
-            "Input TV (HDMI / AV)" -> "Perangkat & Input"
+            "Input TV (HDMI / AV)" -> "Live TV"
             "Tata letak CCTV" -> "Kamera CCTV"
             "Aplikasi Entertainment", "Rekomendasi & riwayat Android TV", "Atur rekomendasi & riwayat",
             "Urutan rekomendasi & riwayat", "Dock aplikasi favorit", "Dock pemutar musik",
