@@ -429,14 +429,40 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun promptNativeLiveTvScan() {
+        AlertDialog.Builder(this)
+            .setTitle("PINDAI KANAL TV")
+            .setMessage("GlassTV belum menemukan daftar kanal digital. Buka Live TV bawaan Mi TV, jalankan Pencarian Kanal / Pemindaian Otomatis pada pengaturan antena, lalu kembali ke GlassTV. Setelah pemindaian selesai, tekan CH+ atau CH− lagi.")
+            .setPositiveButton("Buka Live TV") { _, _ ->
+                val launchIntent = packageManager.getLaunchIntentForPackage("com.mitv.livetv")
+                if (launchIntent == null) {
+                    toast("Aplikasi Live TV bawaan tidak ditemukan.")
+                } else {
+                    refreshOnResume = true
+                    try {
+                        startActivity(launchIntent)
+                    } catch (error: Exception) {
+                        android.util.Log.e("GlassTVLiveTv", "Unable to open native Live TV", error)
+                        toast("Live TV bawaan tidak dapat dibuka.")
+                    }
+                }
+            }
+            .setNegativeButton("Nanti", null)
+            .show()
+    }
+
     private fun showLiveTvChannelOverlay(direction: Int) {
+        if (!hasTvListingsPermission()) {
+            showTvListingsPermissionDialog()
+            return
+        }
         if (!::wallpaperTarget.isInitialized || liveTvBackgroundView == null || liveTvBackgroundInputId == null) {
             toast("Live TV belum siap. Tunggu tuner tersambung, lalu tekan CH lagi.")
             return
         }
         liveTvChannelRows = loadLiveTvChannelRows()
         if (liveTvChannelRows.isEmpty()) {
-            toast("Daftar kanal kosong. Pindai kanal melalui Live TV bawaan.")
+            promptNativeLiveTvScan()
             return
         }
         val currentId = liveTvBackgroundChannelUri?.lastPathSegment?.toLongOrNull()
@@ -4372,7 +4398,7 @@ class MainActivity : Activity() {
             }
             .sortedWith(compareBy<ChannelRow>({ it.number }, { it.name }))
         if (channels.isEmpty()) {
-            toast("Belum ada kanal TV digital. Buka Live TV bawaan dan pindai kanal terlebih dahulu.")
+            promptNativeLiveTvScan()
             return
         }
         val labels = listOf("Otomatis (kanal pertama)") + channels.map { row ->
