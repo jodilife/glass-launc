@@ -10,6 +10,11 @@ import android.media.tv.TvInputInfo
 import android.media.tv.TvView
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.LinearGradient
+import android.graphics.Shader
 import android.graphics.Color
 import android.graphics.Typeface
 import android.text.style.StyleSpan
@@ -128,7 +133,105 @@ class MainActivity : Activity() {
     private var actionMenuView: View? = null
     private var videoWallpaperPlayer: ExoPlayer? = null
     private var videoWallpaperView: PlayerView? = null
+    private var liveAmbientWallpaperView: LiveAmbientWallpaperView? = null
+    private val wallpaperDownloadLock = Any()
+    private val wallpaperDownloadSlots = mutableSetOf<String>()
     private var weatherWallpaperLoading = false
+
+    /**
+     * Lightweight native night-sky ambient background. It avoids a continuously decoded
+     * video stream and is only attached while compact mode has no Live TV priority.
+     */
+    private inner class LiveAmbientWallpaperView(context: android.content.Context) : View(context) {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat()
+            val h = height.toFloat()
+            if (w <= 0f || h <= 0f) return
+
+            val phase = (android.os.SystemClock.uptimeMillis() % 36000L) / 36000.0 * Math.PI * 2.0
+            paint.style = Paint.Style.FILL
+            paint.shader = LinearGradient(
+                0f, 0f, w, h,
+                intArrayOf(Color.rgb(3, 8, 20), Color.rgb(9, 23, 42), Color.rgb(12, 20, 39)),
+                null, Shader.TileMode.CLAMP
+            )
+            canvas.drawRect(0f, 0f, w, h, paint)
+            paint.shader = null
+
+            // A soft atmospheric glow above the horizon.
+            paint.shader = android.graphics.RadialGradient(
+                w * 0.48f, h * 0.61f, w * 0.72f,
+                intArrayOf(Color.argb(52, 38, 111, 128), Color.argb(18, 26, 70, 103), Color.TRANSPARENT),
+                null, Shader.TileMode.CLAMP
+            )
+            canvas.drawRect(0f, 0f, w, h, paint)
+            paint.shader = null
+
+            // Stable star positions with a gentle, low-frequency twinkle.
+            for (i in 0 until 26) {
+                val x = ((i * 37 + 13) % 97) / 97f * w
+                val y = ((i * 53 + 7) % 61) / 61f * h * 0.66f
+                val twinkle = (0.45 + 0.55 * kotlin.math.sin(phase * (0.35 + (i % 4) * 0.12) + i)).toFloat()
+                    .coerceIn(0.08f, 1f)
+                paint.color = Color.argb((65 + twinkle * 150).toInt(), 218, 231, 245)
+                canvas.drawCircle(x, y, if (i % 5 == 0) dp(1.7).toFloat() else dp(1).toFloat(), paint)
+            }
+
+            // Crescent moon.
+            val moonX = w * 0.79f
+            val moonY = h * 0.24f
+            val moonR = (h * 0.075f).coerceAtLeast(dp(16).toFloat())
+            paint.color = Color.rgb(213, 224, 235)
+            canvas.drawCircle(moonX, moonY, moonR, paint)
+            paint.color = Color.rgb(9, 20, 37)
+            canvas.drawCircle(moonX + moonR * 0.38f, moonY - moonR * 0.18f, moonR * 0.91f, paint)
+
+            // Slow aurora ribbons; one simple path and a second softer layer.
+            paint.style = Paint.Style.STROKE
+            paint.strokeCap = Paint.Cap.ROUND
+            paint.strokeWidth = (h * 0.045f).coerceAtLeast(dp(12).toFloat())
+            paint.shader = LinearGradient(
+                0f, h * 0.28f, w, h * 0.66f,
+                intArrayOf(Color.argb(0, 45, 130, 152), Color.argb(92, 58, 180, 163),
+                    Color.argb(58, 91, 133, 196), Color.argb(0, 45, 130, 152)),
+                null, Shader.TileMode.CLAMP
+            )
+            val drift = kotlin.math.sin(phase).toFloat()
+            val aurora = Path().apply {
+                moveTo(-w * 0.08f, h * (0.61f + drift * 0.025f))
+                cubicTo(w * 0.22f, h * (0.31f - drift * 0.025f),
+                    w * 0.55f, h * (0.72f + drift * 0.035f),
+                    w * 1.08f, h * (0.43f - drift * 0.02f))
+            }
+            canvas.drawPath(aurora, paint)
+            paint.strokeWidth = (h * 0.022f).coerceAtLeast(dp(6).toFloat())
+            paint.alpha = 125
+            val aurora2 = Path().apply {
+                moveTo(-w * 0.05f, h * 0.69f)
+                cubicTo(w * 0.28f, h * (0.48f + drift * 0.02f),
+                    w * 0.67f, h * (0.78f - drift * 0.025f),
+                    w * 1.05f, h * 0.57f)
+            }
+            canvas.drawPath(aurora2, paint)
+            paint.shader = null
+            paint.alpha = 255
+            paint.style = Paint.Style.FILL
+            paint.strokeCap = Paint.Cap.BUTT
+
+            // Keep the lower edge dark so the launcher information remains legible.
+            paint.shader = LinearGradient(
+                0f, h * 0.68f, 0f, h,
+                intArrayOf(Color.TRANSPARENT, Color.argb(195, 2, 6, 14)),
+                null, Shader.TileMode.CLAMP
+            )
+            canvas.drawRect(0f, h * 0.68f, w, h, paint)
+            paint.shader = null
+            postInvalidateDelayed(120L)
+        }
+    }
     private val idleTimeout = object : Runnable {
         override fun run() { enterIdleMode() }
     }
@@ -317,6 +420,7 @@ class MainActivity : Activity() {
         closeLiveTvChannelOverlay()
         releaseHomePreviewPlayers()
         releaseVideoWallpaperPlayer()
+        releaseLiveAmbientWallpaper()
         stopLiveTvBackground()
         wallpaperHandler.removeCallbacks(wallpaperCycle)
         wallpaperHandler.removeCallbacks(dayNightSwitch)
@@ -629,6 +733,7 @@ class MainActivity : Activity() {
     private fun showHome() {
         releaseHomePreviewPlayers()
         releaseVideoWallpaperPlayer()
+        releaseLiveAmbientWallpaper()
         idleMode = false
         idleHandler.removeCallbacks(idleTimeout)
         actions.clear()
@@ -3022,6 +3127,7 @@ class MainActivity : Activity() {
             "Warna aksen", "Sumber wallpaper", "Ganti gambar setiap",
             "Redupkan wallpaper", "Pilih gambar sendiri", "Rotasi wallpaper", "Wallpaper berikutnya",
             "Wallpaper video", "Gunakan wallpaper foto", "Google Ambient / Art Gallery",
+            "Prioritas background tanpa Live TV",
             "Tampilan saat tidak digunakan", "Posisi panel Minimalis", "Edit nama sapaan" -> "Tampilan"
             "Lokasi cuaca & waktu salat", "Info GlassTV" -> "Cuaca & Waktu Salat"
             "Azan otomatis", "Uji suara azan" -> "Waktu Salat"
@@ -3258,10 +3364,14 @@ class MainActivity : Activity() {
             toast("Wallpaper foto diaktifkan")
         }
         val liveTvBackgroundEnabled = prefs.getBoolean("live_tv_idle_background", false)
-        settingRow("Live TV sebagai background", "Tampilkan siaran tuner saat Home masuk mode ringkas", if (liveTvBackgroundEnabled) "AKTIF" else "MATI") {
+        settingRow("Live TV sebagai background", "Jika aktif, tuner selalu menjadi prioritas tertinggi pada mode ringkas", if (liveTvBackgroundEnabled) "PRIORITAS 1" else "MATI") {
             prefs.edit().putBoolean("live_tv_idle_background", !liveTvBackgroundEnabled).apply()
-            if (!liveTvBackgroundEnabled && idleMode) startLiveTvBackground() else stopLiveTvBackground()
+            if (idleMode) applyIdleBackgroundPriority()
             reopen("Live TV background ${if (!liveTvBackgroundEnabled) "diaktifkan" else "dimatikan"}")
+        }
+        settingRow("Prioritas background tanpa Live TV", "Dipakai saat mode ringkas jika Live TV dimatikan", idleBackgroundModeLabel()) {
+            dialog.dismiss()
+            showIdleBackgroundModePicker()
         }
         settingRow("Input TV (HDMI / AV)", "Pilih TV Digital / Antena, HDMI 1, HDMI 2, atau AV", selectedLiveTvInputLabel()) {
             dialog.dismiss()
@@ -3283,11 +3393,11 @@ class MainActivity : Activity() {
             dialog.dismiss()
             showWallpaperSourcePicker()
         }
-        settingRow("Wallpaper siang", "Pilih gambar untuk pukul 06.00–17.59") {
+        settingRow("Wallpaper siang", "Pilih manual (opsional); jika kosong, foto diunduh otomatis") {
             dialog.dismiss()
             pickDayNightWallpaper(false)
         }
-        settingRow("Wallpaper malam", "Pilih gambar gelap untuk pukul 18.00–05.59") {
+        settingRow("Wallpaper malam", "Pilih manual (opsional); jika kosong, foto malam diunduh otomatis") {
             dialog.dismiss()
             pickDayNightWallpaper(true)
         }
@@ -4710,16 +4820,11 @@ class MainActivity : Activity() {
             }
             view.requestLayout()
         }
-        // The native tuner must own the video plane while idle mode is active.
-        // Release every ExoPlayer wallpaper (custom video and MotionBGS), not only weather mode.
-        if (getSharedPreferences("glass_tv", MODE_PRIVATE).getBoolean("live_tv_idle_background", false)) {
-            releaseVideoWallpaperPlayer()
-        }
-        // Stop and detach Home CCTV surfaces before the tuner creates its own video surface.
+        // Stop and detach Home CCTV surfaces before the selected compact background takes over.
         homePreviewPlayerViews.forEach { it.visibility = View.GONE }
         homePreviewPlayers.forEach { it.pause() }
         root.requestFocus()
-        startLiveTvBackground()
+        applyIdleBackgroundPriority()
     }
 
     private fun exitIdleMode() {
@@ -4765,6 +4870,7 @@ class MainActivity : Activity() {
             view.requestLayout()
         }
         homeMediaRowView?.animate()?.translationY(0f)?.scaleX(1f)?.scaleY(1f)?.setDuration(220L)?.start()
+        releaseLiveAmbientWallpaper()
         stopLiveTvBackground()
         homePreviewPlayerViews.forEach { it.visibility = View.VISIBLE }
         homePreviewPlayers.forEach { player ->
@@ -4819,6 +4925,73 @@ class MainActivity : Activity() {
             .apply()
         showHome()
         toast("Wallpaper video diaktifkan tanpa suara")
+    }
+
+    private fun setupLiveAmbientWallpaper(target: FrameLayout) {
+        val current = liveAmbientWallpaperView
+        if (current != null && current.parent === target) return
+        releaseLiveAmbientWallpaper()
+        releaseVideoWallpaperPlayer()
+        val ambient = LiveAmbientWallpaperView(this)
+        target.addView(ambient, 0, FrameLayout.LayoutParams(-1, -1))
+        liveAmbientWallpaperView = ambient
+    }
+
+    private fun releaseLiveAmbientWallpaper() {
+        (liveAmbientWallpaperView?.parent as? ViewGroup)?.removeView(liveAmbientWallpaperView)
+        liveAmbientWallpaperView = null
+    }
+
+    private fun idleBackgroundModeLabel(): String {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (prefs.getBoolean("live_tv_idle_background", false)) return "LIVE TV UTAMA"
+        return if (prefs.getString("idle_background_mode", "ambient") == "wallpaper") "WALLPAPER" else "LIVE AMBIENT"
+    }
+
+    private fun showIdleBackgroundModePicker() {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val values = arrayOf("ambient", "wallpaper")
+        val labels = arrayOf(
+            "Live Ambient  ·  langit malam, bintang, dan aurora bergerak",
+            "Wallpaper  ·  foto otomatis atau video lokal"
+        )
+        val current = values.indexOf(prefs.getString("idle_background_mode", "ambient")).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("BACKGROUND SAAT LIVE TV MATI")
+            .setSingleChoiceItems(labels, current) { picker, which ->
+                prefs.edit().putString("idle_background_mode", values[which]).apply()
+                picker.dismiss()
+                if (idleMode) applyIdleBackgroundPriority()
+                showSettings("Tampilan")
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    /**
+     * Priority order for compact mode:
+     * 1) Live TV tuner, when enabled.
+     * 2) User-selected Live Ambient or photo/video wallpaper otherwise.
+     */
+    private fun applyIdleBackgroundPriority() {
+        if (!idleMode || isFinishing || !::wallpaperTarget.isInitialized) return
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (prefs.getBoolean("live_tv_idle_background", false)) {
+            releaseLiveAmbientWallpaper()
+            releaseVideoWallpaperPlayer()
+            startLiveTvBackground()
+            return
+        }
+
+        stopLiveTvBackground()
+        if (prefs.getString("idle_background_mode", "ambient") == "ambient") {
+            releaseVideoWallpaperPlayer()
+            setupLiveAmbientWallpaper(wallpaperTarget)
+        } else {
+            releaseLiveAmbientWallpaper()
+            applyWallpaper(wallpaperTarget)
+            setupVideoWallpaper(wallpaperTarget)
+        }
     }
 
     private fun setupVideoWallpaper(target: FrameLayout) {
@@ -4900,13 +5073,108 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun loadAutomaticDayNightWallpaper(nightSlot: Boolean, display: ((Bitmap) -> Unit)?) {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val manualKey = if (nightSlot) "wallpaper_night_uri" else "wallpaper_day_uri"
+        if (!prefs.getString(manualKey, null).isNullOrBlank()) return
+
+        val slot = if (nightSlot) "night" else "day"
+        val cacheFile = File(cacheDir, "glasstv_wallpaper_${slot}.jpg")
+        val refreshKey = "wallpaper_auto_${slot}_downloaded_at"
+        fun showCached() {
+            if (!cacheFile.exists() || cacheFile.length() < 12_000L) return
+            try {
+                val options = BitmapFactory.Options().apply { inSampleSize = 2 }
+                val bitmap = BitmapFactory.decodeFile(cacheFile.absolutePath, options)
+                if (bitmap != null) display?.invoke(bitmap)
+            } catch (error: Exception) {
+                android.util.Log.w("GlassTVWallpaper", "Cached ${slot} wallpaper could not be decoded", error)
+            }
+        }
+
+        showCached()
+        val lastDownload = prefs.getLong(refreshKey, 0L)
+        val needsDownload = !cacheFile.exists() || cacheFile.length() < 12_000L ||
+            System.currentTimeMillis() - lastDownload > 20L * 60L * 60L * 1000L
+        if (!needsDownload) return
+
+        val downloadKey = slot
+        val shouldStart = synchronized(wallpaperDownloadLock) {
+            if (downloadKey in wallpaperDownloadSlots) false
+            else {
+                wallpaperDownloadSlots.add(downloadKey)
+                true
+            }
+        }
+        if (!shouldStart) return
+
+        Thread({
+            var connection: HttpURLConnection? = null
+            val pendingFile = File(cacheDir, "glasstv_wallpaper_${slot}_pending.tmp")
+            try {
+                val index = if (nightSlot) 1 else 0
+                connection = URL("https://www.bing.com/HPImageArchive.aspx?format=js&idx=${index}&n=1&mkt=en-US")
+                    .openConnection() as HttpURLConnection
+                connection.connectTimeout = 12000
+                connection.readTimeout = 15000
+                connection.instanceFollowRedirects = true
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11; GlassTV) AppleWebKit/537.36 Chrome/120 Safari/537.36")
+                connection.setRequestProperty("Accept", "application/json")
+                val apiCode = connection.responseCode
+                if (apiCode !in 200..299) throw IllegalStateException("Bing API HTTP ${apiCode}")
+                val json = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                connection.disconnect()
+                connection = null
+
+                val imagePath = JSONObject(json).optJSONArray("images")?.optJSONObject(0)?.optString("url").orEmpty()
+                if (imagePath.isBlank()) throw IllegalStateException("Bing tidak mengirim URL wallpaper ${slot}.")
+                val imageUrl = if (imagePath.startsWith("http")) imagePath else "https://www.bing.com${imagePath}"
+                connection = URL(imageUrl).openConnection() as HttpURLConnection
+                connection.connectTimeout = 15000
+                connection.readTimeout = 25000
+                connection.instanceFollowRedirects = true
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11; GlassTV) AppleWebKit/537.36 Chrome/120 Safari/537.36")
+                connection.setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+                val imageCode = connection.responseCode
+                if (imageCode !in 200..299) throw IllegalStateException("Unduhan gambar HTTP ${imageCode}")
+                pendingFile.delete()
+                connection.inputStream.use { input -> pendingFile.outputStream().use { output -> input.copyTo(output) } }
+                if (pendingFile.length() < 12_000L) throw IllegalStateException("File wallpaper ${slot} terlalu kecil.")
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(pendingFile.absolutePath, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IllegalStateException("Respons Bing bukan gambar yang valid.")
+                if (cacheFile.exists()) cacheFile.delete()
+                if (!pendingFile.renameTo(cacheFile)) pendingFile.copyTo(cacheFile, overwrite = true)
+                pendingFile.delete()
+                prefs.edit().putLong(refreshKey, System.currentTimeMillis()).apply()
+
+                if (display != null) {
+                    val options = BitmapFactory.Options().apply { inSampleSize = 2 }
+                    BitmapFactory.decodeFile(cacheFile.absolutePath, options)?.let { bitmap ->
+                        display.invoke(bitmap)
+                    }
+                }
+                android.util.Log.i("GlassTVWallpaper", "Automatic ${slot} wallpaper downloaded (${cacheFile.length()} bytes)")
+            } catch (error: Exception) {
+                pendingFile.delete()
+                android.util.Log.w("GlassTVWallpaper", "Automatic ${slot} wallpaper download failed: ${error.message}", error)
+                if (display != null) runOnUiThread {
+                    if (!isFinishing) toast("Wallpaper ${slot} belum dapat diunduh; gambar tersimpan tetap digunakan.")
+                }
+            } finally {
+                connection?.disconnect()
+                synchronized(wallpaperDownloadLock) { wallpaperDownloadSlots.remove(downloadKey) }
+            }
+        }, "glasstv-wallpaper-${slot}").start()
+    }
+
     private fun wallpaperSourceLabel(): String = when (
         getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_source", "bing")
     ) {
         "bing" -> "Photo of the Day · Bing"
         "gradient" -> "Gradient"
         "custom" -> "Gambar sendiri"
-        "daynight" -> "Otomatis · Siang / Malam"
+        "daynight" -> "Otomatis · Unduh Bing Siang / Malam"
         else -> "Photo of the Day · Bing"
     }
 
@@ -4930,7 +5198,7 @@ class MainActivity : Activity() {
 
     private fun showWallpaperSourcePicker() {
         val values = arrayOf("bing", "gradient", "custom", "daynight")
-        val labels = arrayOf("Photo of the Day · Bing (berganti otomatis)", "Gradient · tanpa internet", "Gambar sendiri (termasuk foto Pexels)", "Otomatis Siang / Malam · 06.00–18.00")
+        val labels = arrayOf("Photo of the Day · Bing (berganti otomatis)", "Gradient · tanpa internet", "Gambar sendiri (termasuk foto Pexels)", "Otomatis Siang / Malam · unduh foto Bing dan simpan offline")
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val current = values.indexOf(prefs.getString("wallpaper_source", "photos")).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("SUMBER WALLPAPER")
@@ -5086,15 +5354,11 @@ class MainActivity : Activity() {
                 }, "glasstv-daynight-wallpaper").start()
                 return
             }
-            if (nightSlot) {
-                val nightGradient = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                    intArrayOf(Color.rgb(5, 12, 25), Color.rgb(10, 17, 31), Color.rgb(2, 5, 12)))
-                val nightScrim = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                    intArrayOf(Color.argb(30, 2, 5, 12), Color.argb(118, 2, 5, 12), Color.argb(185, 1, 3, 8)))
-                target.background = LayerDrawable(arrayOf(nightGradient, nightScrim))
-                return
-            }
-            source = "bing"
+            // With no manual image selected, download two independent Bing images and cache
+            // them locally for offline use: today's image for daytime, yesterday's for night.
+            loadAutomaticDayNightWallpaper(nightSlot, display)
+            loadAutomaticDayNightWallpaper(!nightSlot, null)
+            return
         }
         if (source == "custom") {
             val raw = prefs.getString("wallpaper_custom_uri", null) ?: run {
