@@ -196,20 +196,15 @@ class MainActivity : Activity() {
     private val homePreviewStartTasks = mutableListOf<Runnable>()
     private val dashboardHandler = Handler(Looper.getMainLooper())
     private val wallpaperHandler = Handler(Looper.getMainLooper())
-    private val wallpaperUrls = listOf(
-        "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1920&q=82",
-        "https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1920&q=82",
-        "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1920&q=82",
-        "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1920&q=82"
-    )
+    private val wallpaperPhotoSource = "Bing Photo of the Day"
     private val wallpaperCycle = object : Runnable {
         override fun run() {
             val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
             if (prefs.getString("wallpaper_video_uri", null) != null ||
                 !prefs.getBoolean("wallpaper_auto", true)) return
-            val source = prefs.getString("wallpaper_source", "photos")
+            val source = prefs.getString("wallpaper_source", "bing")
             val edit = prefs.edit().putLong("wallpaper_last_refresh", System.currentTimeMillis())
-            if (source == "photos") edit.putInt("wallpaper_photo_index", prefs.getInt("wallpaper_photo_index", 0) + 1)
+            if (source == "bing") edit.putInt("wallpaper_bing_index", (prefs.getInt("wallpaper_bing_index", 0) + 1).mod(8))
             if (source == "gradient") edit.putInt("wallpaper_index", prefs.getInt("wallpaper_index", 0) + 1)
             edit.apply()
             applyWallpaper(wallpaperTarget, forceRefresh = true)
@@ -331,15 +326,21 @@ class MainActivity : Activity() {
             val channels = mutableListOf<Pair<Long, String>>()
             contentResolver.query(
                 TvContract.Channels.CONTENT_URI,
-                arrayOf(TvContract.Channels._ID, TvContract.Channels.COLUMN_DISPLAY_NUMBER),
-                "${TvContract.Channels.COLUMN_INPUT_ID} = ? AND ${TvContract.Channels.COLUMN_SERVICE_TYPE} = ?",
-                arrayOf(inputId, TvContract.Channels.SERVICE_TYPE_AUDIO_VIDEO),
+                arrayOf(TvContract.Channels._ID, TvContract.Channels.COLUMN_INPUT_ID,
+                    TvContract.Channels.COLUMN_SERVICE_TYPE, TvContract.Channels.COLUMN_DISPLAY_NUMBER),
+                "${TvContract.Channels.COLUMN_INPUT_ID} = ?",
+                arrayOf(inputId),
                 TvContract.Channels.COLUMN_DISPLAY_NUMBER + " ASC"
             )?.use { cursor ->
+                val idIndex = cursor.getColumnIndex(TvContract.Channels._ID)
+                val inputIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_INPUT_ID)
+                val typeIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_SERVICE_TYPE)
+                val numberIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NUMBER)
                 while (cursor.moveToNext()) {
-                    val idIndex = cursor.getColumnIndex(TvContract.Channels._ID)
-                    val numberIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NUMBER)
-                    if (idIndex >= 0 && numberIndex >= 0) channels.add(cursor.getLong(idIndex) to cursor.getString(numberIndex).orEmpty())
+                    if (idIndex < 0 || inputIndex < 0 || typeIndex < 0) continue
+                    if (cursor.getString(inputIndex) != inputId) continue
+                    if (cursor.getString(typeIndex) != TvContract.Channels.SERVICE_TYPE_AUDIO_VIDEO) continue
+                    channels.add(cursor.getLong(idIndex) to if (numberIndex >= 0) cursor.getString(numberIndex).orEmpty() else "")
                 }
             }
             if (channels.size < 2) {
@@ -850,9 +851,26 @@ class MainActivity : Activity() {
             headerNextPrayerLabel?.text = "Subuh --:--   ·   Zuhur --:--   ·   Asar --:--   ·   Maghrib --:--   ·   Isya --:--"
             return
         }
-        headerNextPrayerLabel?.text = snapshot.prayerNames.mapIndexedNotNull { index, name ->
-            if (index == 1) null else "$name ${snapshot.prayerTimes.getOrNull(index) ?: "--:--"}"
-        }.joinToString("   ·   ")
+        val prayerIndices = listOf(0, 2, 3, 4, 5)
+        val now = Calendar.getInstance(java.util.TimeZone.getTimeZone(zone))
+        val currentMinute = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
+        val activePrayerIndex = prayerIndices.lastOrNull { index ->
+            val parts = snapshot.prayerTimes.getOrNull(index).orEmpty().split(":")
+            parts.size == 2 && (parts[0].toIntOrNull() ?: 99) * 60 + (parts[1].toIntOrNull() ?: 99) <= currentMinute
+        } ?: 5 // Before Subuh, Isya is the currently active prayer period.
+        val prayerText = SpannableString(prayerIndices.joinToString("   ·   ") { index ->
+            "${snapshot.prayerNames[index]} ${snapshot.prayerTimes.getOrNull(index) ?: "--:--}"
+        })
+        var offset = 0
+        prayerIndices.forEachIndexed { position, index ->
+            val item = "${snapshot.prayerNames[index]} ${snapshot.prayerTimes.getOrNull(index) ?: "--:--}"
+            if (index == activePrayerIndex) {
+                prayerText.setSpan(ForegroundColorSpan(accent), offset, offset + item.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                prayerText.setSpan(StyleSpan(Typeface.BOLD), offset, offset + item.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            offset += item.length + if (position < prayerIndices.lastIndex) 5 else 0
+        }
+        headerNextPrayerLabel?.text = prayerText
     }
 
     private fun renderDashboardSnapshot(snapshot: DashboardServices.Snapshot?, error: String?) {
@@ -1730,8 +1748,10 @@ class MainActivity : Activity() {
             right.layoutParams = LinearLayout.LayoutParams(
                 when { centered -> dp(760); fullWidth -> -1; else -> dp(440) }, -2
             )
-            val stripItems = listOf(headerTimeLabel, headerClockLabel, headerWeatherLabel,
-                headerPrayerMetaLabel, headerHijriLabel, headerNextPrayerLabel)
+            val stripItems = listOf(headerTimeLabel, headerPrayerMetaLabel, headerWeatherLabel,
+                headerClockLabel, headerHijriLabel, headerNextPrayerLabel)
+            right.removeAllViews()
+            stripItems.forEach { text -> if (text != null) right.addView(text) }
             stripItems.forEachIndexed { index, text ->
                 text?.gravity = when {
                     centered -> Gravity.CENTER
@@ -4466,10 +4486,10 @@ class MainActivity : Activity() {
     private fun wallpaperSourceLabel(): String = when (
         getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_source", "photos")
     ) {
-        "photos" -> "Foto pilihan · Unsplash"
+        "bing" -> "Photo of the Day · Bing"
         "gradient" -> "Gradient"
         "custom" -> "Gambar sendiri"
-        else -> "Foto pilihan · Unsplash"
+        else -> "Photo of the Day · Bing"
     }
 
     private fun wallpaperDimLabel(): String = when (
@@ -4481,14 +4501,14 @@ class MainActivity : Activity() {
     }
 
     private fun showWallpaperSourcePicker() {
-        val values = arrayOf("photos", "gradient", "custom")
-        val labels = arrayOf("Foto pilihan · Unsplash (langsung)", "Gradient · tanpa internet", "Gambar sendiri (termasuk foto Pexels)")
+        val values = arrayOf("bing", "gradient", "custom")
+        val labels = arrayOf("Photo of the Day · Bing (berganti otomatis)", "Gradient · tanpa internet", "Gambar sendiri (termasuk foto Pexels)")
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val current = values.indexOf(prefs.getString("wallpaper_source", "photos")).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("SUMBER WALLPAPER")
             .setSingleChoiceItems(labels, current) { picker, which ->
                 prefs.edit().putString("wallpaper_source", values[which]).apply()
-                if (values[which] == "photos") prefs.edit().remove("wallpaper_video_uri").putBoolean("wallpaper_auto", true).apply()
+                if (values[which] == "bing") prefs.edit().remove("wallpaper_video_uri").putBoolean("wallpaper_auto", true).apply()
                 picker.dismiss()
                 releaseVideoWallpaperPlayer()
                 if (values[which] == "custom" && prefs.getString("wallpaper_custom_uri", null) == null) {
@@ -4542,7 +4562,7 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         if (prefs.getString("wallpaper_video_uri", null) == null &&
             prefs.getBoolean("wallpaper_auto", true) &&
-            prefs.getString("wallpaper_source", "photos") != "custom") {
+            prefs.getString("wallpaper_source", "bing") != "custom") {
             val hours = prefs.getInt("wallpaper_interval_hours", 3).coerceIn(1, 24)
             wallpaperHandler.postDelayed(wallpaperCycle, hours * 60L * 60L * 1000L)
         }
@@ -4550,11 +4570,11 @@ class MainActivity : Activity() {
 
     private fun applyWallpaper(target: FrameLayout, forceRefresh: Boolean = false) {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        var source = prefs.getString("wallpaper_source", "photos") ?: "photos"
-        if (source == "weather_motionbgs" || source == "art" || source == "bing") {
-            // Retire unreliable legacy sources; use direct photo CDN URLs instead.
-            prefs.edit().putString("wallpaper_source", "photos").remove("wallpaper_weather_video_path").apply()
-            source = "photos"
+        var source = prefs.getString("wallpaper_source", "bing") ?: "bing"
+        if (source == "weather_motionbgs" || source == "art" || source == "photos") {
+            // Migrate retired wallpaper sources back to the official Bing daily image feed.
+            prefs.edit().putString("wallpaper_source", "bing").remove("wallpaper_weather_video_path").apply()
+            source = "bing"
         }
         if (prefs.getString("wallpaper_video_uri", null) != null) {
             target.setBackgroundColor(Color.rgb(5, 8, 14))
@@ -4641,7 +4661,21 @@ class MainActivity : Activity() {
         Thread({
             var connection: HttpURLConnection? = null
             try {
-                val imageUrl = wallpaperUrls[prefs.getInt("wallpaper_photo_index", 0).mod(wallpaperUrls.size)]
+                val index = prefs.getInt("wallpaper_bing_index", 0).mod(8)
+                connection = URL("https://www.bing.com/HPImageArchive.aspx?format=js&idx=$index&n=1&mkt=en-US").openConnection() as HttpURLConnection
+                connection.connectTimeout = 12000
+                connection.readTimeout = 15000
+                connection.instanceFollowRedirects = true
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11; GlassTV) AppleWebKit/537.36 Chrome/120 Safari/537.36")
+                connection.setRequestProperty("Accept", "application/json")
+                val apiCode = connection.responseCode
+                if (apiCode !in 200..299) throw IllegalStateException("Bing API HTTP $apiCode")
+                val json = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                connection.disconnect()
+                connection = null
+                val imagePath = JSONObject(json).optJSONArray("images")?.optJSONObject(0)?.optString("url").orEmpty()
+                if (imagePath.isBlank()) throw IllegalStateException("Bing tidak mengirim URL foto harian.")
+                val imageUrl = if (imagePath.startsWith("http")) imagePath else "https://www.bing.com$imagePath"
                 connection = URL(imageUrl).openConnection() as HttpURLConnection
                 connection.connectTimeout = 15000
                 connection.readTimeout = 25000
