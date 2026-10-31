@@ -61,6 +61,7 @@ import androidx.media3.ui.PlayerView
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -309,9 +310,14 @@ class MainActivity : Activity() {
     private val wallpaperCycle = object : Runnable {
         override fun run() {
             val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-            if (prefs.getString("wallpaper_video_uri", null) != null ||
-                !prefs.getBoolean("wallpaper_auto", true)) return
+            if (!prefs.getBoolean("wallpaper_auto", true)) return
             val source = prefs.getString("wallpaper_source", "bing")
+            if (source == "pixabay_video") {
+                downloadPixabayNightVideo(force = false)
+                wallpaperHandler.postDelayed(this, 24L * 60L * 60L * 1000L)
+                return
+            }
+            if (prefs.getString("wallpaper_video_uri", null) != null) return
             val edit = prefs.edit().putLong("wallpaper_last_refresh", System.currentTimeMillis())
             if (source == "bing") edit.putInt("wallpaper_bing_index", (prefs.getInt("wallpaper_bing_index", 0) + 1).mod(8))
             if (source == "gradient") edit.putInt("wallpaper_index", prefs.getInt("wallpaper_index", 0) + 1)
@@ -794,9 +800,10 @@ class MainActivity : Activity() {
             clipToPadding = false
             descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         }
-        val videoUri = getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_video_uri", null)
-        if (videoUri != null) {
-            wallpaperTarget.setBackgroundColor(Color.rgb(5, 8, 14))
+        val wallpaperPrefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val videoUri = wallpaperPrefs.getString("wallpaper_video_uri", null)
+        if (videoUri != null || wallpaperPrefs.getString("wallpaper_source", "bing") == "pixabay_video") {
+            if (videoUri != null) wallpaperTarget.setBackgroundColor(Color.rgb(5, 8, 14))
             setupVideoWallpaper(wallpaperTarget)
         }
         homeScroll.addView(root, FrameLayout.LayoutParams(-1, -1))
@@ -3127,7 +3134,8 @@ class MainActivity : Activity() {
             "Warna aksen", "Sumber wallpaper", "Ganti gambar setiap",
             "Redupkan wallpaper", "Pilih gambar sendiri", "Rotasi wallpaper", "Wallpaper berikutnya",
             "Wallpaper video", "Gunakan wallpaper foto", "Google Ambient / Art Gallery",
-            "Prioritas background tanpa Live TV",
+            "API Key Pixabay", "Kata kunci video Pixabay", "Unduh video Pixabay sekarang",
+            "Info / kredit video Pixabay", "Prioritas background tanpa Live TV",
             "Tampilan saat tidak digunakan", "Posisi panel Minimalis", "Edit nama sapaan" -> "Tampilan"
             "Lokasi cuaca & waktu salat", "Info GlassTV" -> "Cuaca & Waktu Salat"
             "Azan otomatis", "Uji suara azan" -> "Waktu Salat"
@@ -3344,6 +3352,24 @@ class MainActivity : Activity() {
         settingRow("Kelola aplikasi & hentikan", "Pilih aplikasi lalu gunakan Info aplikasi untuk Cache atau Paksa berhenti") {
             dialog.dismiss()
             showAppMaintenanceDialog()
+        }
+        settingRow("API Key Pixabay", "Simpan API key di perangkat ini; tidak ditanam di APK",
+            if (prefs.getString("pixabay_api_key", "").orEmpty().isNotBlank()) "TERSIMPAN" else "BELUM DIISI") {
+            dialog.dismiss()
+            showPixabayApiKeyEditor()
+        }
+        settingRow("Kata kunci video Pixabay", "Tema pencarian video malam", prefs.getString("pixabay_video_query", "night") ?: "night") {
+            dialog.dismiss()
+            showPixabayQueryEditor()
+        }
+        settingRow("Unduh video Pixabay sekarang", "Cari satu video, unduh ke cache TV, lalu putar berulang tanpa suara", pixabayVideoStatus()) {
+            prefs.edit().putString("wallpaper_source", "pixabay_video").putBoolean("wallpaper_auto", true).apply()
+            dialog.dismiss()
+            downloadPixabayNightVideo(force = true)
+        }
+        settingRow("Info / kredit video Pixabay", "Lihat kreator dan halaman sumber video yang tersimpan") {
+            dialog.dismiss()
+            showPixabayVideoInfo()
         }
         settingRow("Wallpaper video", "Pilih video lokal sebagai latar bergerak tanpa suara") {
             dialog.dismiss()
@@ -4996,11 +5022,23 @@ class MainActivity : Activity() {
 
     private fun setupVideoWallpaper(target: FrameLayout) {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        val weatherMode = prefs.getString("wallpaper_source", "bing") == "weather_motionbgs"
-        val rawUri = if (weatherMode) prefs.getString("wallpaper_weather_video_path", null)?.let { Uri.fromFile(File(it)) }
-            else prefs.getString("wallpaper_video_uri", null)?.let { Uri.parse(it) } ?: return
-        if (rawUri == null) return
-        if (videoWallpaperPlayer != null && videoWallpaperView?.parent === target) return
+        val source = prefs.getString("wallpaper_source", "bing")
+        val weatherMode = source == "weather_motionbgs"
+        val pixabayMode = source == "pixabay_video"
+        val pixabayFile = File(cacheDir, "glasstv_pixabay_night.mp4")
+        val rawUri = when {
+            weatherMode -> prefs.getString("wallpaper_weather_video_path", null)?.let { Uri.fromFile(File(it)) }
+            pixabayMode -> pixabayFile.takeIf { it.exists() && it.length() > 100_000L }?.let { Uri.fromFile(it) }
+            else -> prefs.getString("wallpaper_video_uri", null)?.let { Uri.parse(it) }
+        }
+        if (rawUri == null) {
+            if (pixabayMode) downloadPixabayNightVideo(force = false)
+            return
+        }
+        if (videoWallpaperPlayer != null && videoWallpaperView?.parent === target) {
+            if (pixabayMode) downloadPixabayNightVideo(force = false)
+            return
+        }
         releaseVideoWallpaperPlayer()
         try {
             val view = PlayerView(this).apply {
@@ -5024,6 +5062,7 @@ class MainActivity : Activity() {
             videoWallpaperView = view
             videoWallpaperPlayer = player
             target.setBackgroundColor(Color.rgb(5, 8, 14))
+            if (pixabayMode) downloadPixabayNightVideo(force = false)
         } catch (_: Exception) {
             releaseVideoWallpaperPlayer()
             toast("Video wallpaper tidak dapat dibuka. Pilih video MP4 lain.")
@@ -5175,7 +5214,225 @@ class MainActivity : Activity() {
         "gradient" -> "Gradient"
         "custom" -> "Gambar sendiri"
         "daynight" -> "Otomatis · Unduh Bing Siang / Malam"
+        "pixabay_video" -> "Pixabay · Video malam otomatis"
         else -> "Photo of the Day · Bing"
+    }
+
+    private fun pixabayVideoStatus(): String {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (prefs.getString("pixabay_api_key", "").orEmpty().isBlank()) return "PERLU API KEY"
+        val file = File(cacheDir, "glasstv_pixabay_night.mp4")
+        return if (file.exists() && file.length() > 100_000L) {
+            "TERSIMPAN · ${file.length() / (1024L * 1024L)} MB"
+        } else "BELUM DIUNDUH"
+    }
+
+    private fun showPixabayApiKeyEditor() {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val input = EditText(this).apply {
+            hint = "Masukkan API key Pixabay"
+            setSingleLine(true)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setText(prefs.getString("pixabay_api_key", "").orEmpty())
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+        }
+        val wrapper = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(22), dp(8), dp(22), 0)
+            addView(input, LinearLayout.LayoutParams(-1, -2))
+            addView(label("Buat API key gratis melalui akun Pixabay. Key hanya disimpan di SharedPreferences lokal TV, bukan di source code atau GitHub.", 10, Color.rgb(170, 189, 213), false).apply {
+                setPadding(0, dp(9), 0, 0)
+            })
+        }
+        AlertDialog.Builder(this)
+            .setTitle("PIXABAY API KEY")
+            .setView(wrapper)
+            .setPositiveButton("Simpan") { _, _ ->
+                val key = input.text.toString().trim()
+                prefs.edit().putString("pixabay_api_key", key).apply()
+                if (key.isBlank()) {
+                    toast("API key Pixabay dikosongkan.")
+                } else {
+                    toast("API key disimpan di TV. Video malam sedang diminta.")
+                    prefs.edit().putString("wallpaper_source", "pixabay_video").putBoolean("wallpaper_auto", true).apply()
+                    downloadPixabayNightVideo(force = true)
+                }
+                showSettings("Tampilan")
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun showPixabayQueryEditor() {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val input = EditText(this).apply {
+            hint = "night"
+            setSingleLine(true)
+            setText(prefs.getString("pixabay_video_query", "night") ?: "night")
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("KATA KUNCI PIXABAY")
+            .setMessage("Contoh: night, aurora, stars, space, moon, northern lights.")
+            .setView(input)
+            .setPositiveButton("Simpan & cari") { _, _ ->
+                val query = input.text.toString().trim().take(100).ifBlank { "night" }
+                prefs.edit().putString("pixabay_video_query", query).apply()
+                prefs.edit().putString("wallpaper_source", "pixabay_video").putBoolean("wallpaper_auto", true).apply()
+                downloadPixabayNightVideo(force = true)
+                showSettings("Tampilan")
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun showPixabayVideoInfo() {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val creator = prefs.getString("wallpaper_pixabay_creator", "Belum ada video") ?: "Belum ada video"
+        val page = prefs.getString("wallpaper_pixabay_page_url", "").orEmpty()
+        val query = prefs.getString("pixabay_video_query", "night") ?: "night"
+        val message = buildString {
+            append("Sumber: Pixabay Video API\\n")
+            append("Kata kunci: ").append(query).append("\\n")
+            append("Kreator: ").append(creator).append("\\n")
+            append("Halaman video: ").append(if (page.isBlank()) "Belum tersedia" else page).append("\\n\\n")
+            append("Video diunduh satu per satu dan disimpan di cache lokal. Kredit kreator ditampilkan sebagai informasi sumber.")
+        }
+        AlertDialog.Builder(this)
+            .setTitle("SUMBER & KREDIT VIDEO")
+            .setMessage(message)
+            .setPositiveButton("Mengerti", null)
+            .show()
+    }
+
+    private fun downloadPixabayNightVideo(force: Boolean = false) {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val apiKey = prefs.getString("pixabay_api_key", "").orEmpty().trim()
+        if (apiKey.isBlank()) {
+            if (force) runOnUiThread { showPixabayApiKeyEditor() }
+            return
+        }
+
+        val cacheFile = File(cacheDir, "glasstv_pixabay_night.mp4")
+        val lastRefresh = prefs.getLong("wallpaper_pixabay_downloaded_at", 0L)
+        val cacheValid = cacheFile.exists() && cacheFile.length() > 100_000L
+        if (!force && cacheValid && System.currentTimeMillis() - lastRefresh < 24L * 60L * 60L * 1000L) return
+
+        val shouldStart = synchronized(wallpaperDownloadLock) {
+            if ("pixabay-video" in wallpaperDownloadSlots) false
+            else {
+                wallpaperDownloadSlots.add("pixabay-video")
+                true
+            }
+        }
+        if (!shouldStart) return
+
+        Thread({
+            var connection: HttpURLConnection? = null
+            val pendingFile = File(cacheDir, "glasstv_pixabay_night_pending.tmp")
+            try {
+                val query = prefs.getString("pixabay_video_query", "night") ?: "night"
+                val encodedKey = URLEncoder.encode(apiKey, "UTF-8")
+                val encodedQuery = URLEncoder.encode(query, "UTF-8")
+                val apiUrl = "https://pixabay.com/api/videos/?key=${encodedKey}&q=${encodedQuery}&video_type=film&min_width=640&min_height=360&safesearch=true&order=popular&per_page=10"
+                connection = URL(apiUrl).openConnection() as HttpURLConnection
+                connection.connectTimeout = 15000
+                connection.readTimeout = 20000
+                connection.instanceFollowRedirects = true
+                connection.setRequestProperty("User-Agent", "GlassTV/0.4 Android TV")
+                val apiCode = connection.responseCode
+                if (apiCode !in 200..299) throw IllegalStateException("Pixabay API HTTP ${apiCode}")
+                val json = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                connection.disconnect()
+                connection = null
+
+                val hits = JSONObject(json).optJSONArray("hits")
+                    ?: throw IllegalStateException("Pixabay tidak mengirim daftar video.")
+                if (hits.length() == 0) throw IllegalStateException("Tidak ada video untuk kata kunci: ${query}")
+                val maxBytes = 32L * 1024L * 1024L
+                var chosenUrl = ""
+                var chosenSize = 0L
+                var chosenVariant = ""
+                var chosenHit: JSONObject? = null
+                for (i in 0 until hits.length()) {
+                    val hit = hits.optJSONObject(i) ?: continue
+                    val videos = hit.optJSONObject("videos") ?: continue
+                    for (variant in listOf("small", "tiny", "medium")) {
+                        val rendition = videos.optJSONObject(variant) ?: continue
+                        val url = rendition.optString("url").orEmpty()
+                        val size = rendition.optLong("size", 0L)
+                        if (url.isNotBlank() && (size <= 0L || size <= maxBytes)) {
+                            chosenUrl = url
+                            chosenSize = size
+                            chosenVariant = variant
+                            chosenHit = hit
+                            break
+                        }
+                    }
+                    if (chosenUrl.isNotBlank()) break
+                }
+                if (chosenUrl.isBlank()) throw IllegalStateException("Tidak ditemukan video dengan ukuran yang cocok untuk TV.")
+                if (chosenSize > maxBytes) throw IllegalStateException("Ukuran video melebihi batas cache GlassTV.")
+
+                connection = URL(chosenUrl).openConnection() as HttpURLConnection
+                connection.connectTimeout = 15000
+                connection.readTimeout = 45000
+                connection.instanceFollowRedirects = true
+                connection.setRequestProperty("User-Agent", "GlassTV/0.4 Android TV")
+                val videoCode = connection.responseCode
+                if (videoCode !in 200..299) throw IllegalStateException("Unduhan video HTTP ${videoCode}")
+                val contentLength = connection.contentLengthLong
+                if (contentLength > maxBytes) throw IllegalStateException("Video terlalu besar untuk cache TV.")
+                pendingFile.delete()
+                var total = 0L
+                connection.inputStream.use { input ->
+                    pendingFile.outputStream().use { output ->
+                        val buffer = ByteArray(16 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            if (total > maxBytes) throw IllegalStateException("Unduhan melampaui batas 32 MB.")
+                            output.write(buffer, 0, count)
+                        }
+                    }
+                }
+                if (total < 100_000L) throw IllegalStateException("File video terlalu kecil atau tidak valid.")
+                val hit = chosenHit ?: JSONObject()
+                if (cacheFile.exists()) cacheFile.delete()
+                if (!pendingFile.renameTo(cacheFile)) pendingFile.copyTo(cacheFile, overwrite = true)
+                pendingFile.delete()
+                prefs.edit()
+                    .putLong("wallpaper_pixabay_downloaded_at", System.currentTimeMillis())
+                    .putString("wallpaper_pixabay_page_url", hit.optString("pageURL"))
+                    .putString("wallpaper_pixabay_creator", hit.optString("user", "Pixabay contributor"))
+                    .putString("wallpaper_pixabay_video_id", hit.optString("id"))
+                    .putString("wallpaper_pixabay_variant", chosenVariant)
+                    .putLong("wallpaper_pixabay_size", total)
+                    .apply()
+                android.util.Log.i("GlassTVWallpaper", "Pixabay night video cached: variant=${chosenVariant}, bytes=${total}")
+                runOnUiThread {
+                    toast("Video Pixabay tersimpan (${total / (1024L * 1024L)} MB).")
+                    val current = getSharedPreferences("glass_tv", MODE_PRIVATE)
+                    val shouldShow = current.getString("wallpaper_source", "bing") == "pixabay_video" &&
+                        (!idleMode || (!current.getBoolean("live_tv_idle_background", false) &&
+                            current.getString("idle_background_mode", "ambient") == "wallpaper"))
+                    if (shouldShow && ::wallpaperTarget.isInitialized && !isFinishing) {
+                        releaseVideoWallpaperPlayer()
+                        setupVideoWallpaper(wallpaperTarget)
+                    }
+                }
+            } catch (error: Exception) {
+                pendingFile.delete()
+                android.util.Log.w("GlassTVWallpaper", "Pixabay video download failed: ${error.message}", error)
+                runOnUiThread {
+                    if (!isFinishing) toast("Pixabay gagal: ${error.message ?: "sumber tidak merespons"}. Video lama tetap disimpan.")
+                }
+            } finally {
+                connection?.disconnect()
+                synchronized(wallpaperDownloadLock) { wallpaperDownloadSlots.remove("pixabay-video") }
+            }
+        }, "glasstv-pixabay-video").start()
     }
 
     private fun pickDayNightWallpaper(night: Boolean) {
@@ -5197,8 +5454,14 @@ class MainActivity : Activity() {
     }
 
     private fun showWallpaperSourcePicker() {
-        val values = arrayOf("bing", "gradient", "custom", "daynight")
-        val labels = arrayOf("Photo of the Day · Bing (berganti otomatis)", "Gradient · tanpa internet", "Gambar sendiri (termasuk foto Pexels)", "Otomatis Siang / Malam · unduh foto Bing dan simpan offline")
+        val values = arrayOf("bing", "gradient", "custom", "daynight", "pixabay_video")
+        val labels = arrayOf(
+            "Photo of the Day · Bing (berganti otomatis)",
+            "Gradient · tanpa internet",
+            "Gambar sendiri (termasuk foto Pexels)",
+            "Otomatis Siang / Malam · unduh foto Bing dan simpan offline",
+            "Pixabay Video Malam · unduh satu MP4 otomatis (perlu API key)"
+        )
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val current = values.indexOf(prefs.getString("wallpaper_source", "photos")).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("SUMBER WALLPAPER")
@@ -5211,6 +5474,10 @@ class MainActivity : Activity() {
                     pickCustomWallpaper()
                 } else {
                     applyWallpaper(wallpaperTarget, forceRefresh = true)
+                    if (values[which] == "pixabay_video") {
+                        setupVideoWallpaper(wallpaperTarget)
+                        if (prefs.getString("pixabay_api_key", "").orEmpty().isBlank()) showPixabayApiKeyEditor()
+                    }
                     scheduleWallpaperRotation()
                     showSettings()
                 }
@@ -5267,6 +5534,12 @@ class MainActivity : Activity() {
         wallpaperHandler.removeCallbacks(wallpaperCycle)
         wallpaperHandler.removeCallbacks(dayNightSwitch)
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (prefs.getString("wallpaper_source", "bing") == "pixabay_video") {
+            if (prefs.getBoolean("wallpaper_auto", true)) {
+                wallpaperHandler.postDelayed(wallpaperCycle, 24L * 60L * 60L * 1000L)
+            }
+            return
+        }
         if (prefs.getString("wallpaper_source", "bing") == "daynight") {
             val now = Calendar.getInstance()
             val next = (now.clone() as Calendar).apply {
@@ -5296,7 +5569,7 @@ class MainActivity : Activity() {
             prefs.edit().putString("wallpaper_source", "bing").remove("wallpaper_weather_video_path").apply()
             source = "bing"
         }
-        if (prefs.getString("wallpaper_video_uri", null) != null) {
+        if (prefs.getString("wallpaper_video_uri", null) != null && source != "pixabay_video") {
             target.setBackgroundColor(Color.rgb(5, 8, 14))
             return
         }
