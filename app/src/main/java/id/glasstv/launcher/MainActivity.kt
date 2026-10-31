@@ -314,6 +314,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         refreshOnResume = true
+        closeLiveTvChannelOverlay()
         releaseHomePreviewPlayers()
         releaseVideoWallpaperPlayer()
         stopLiveTvBackground()
@@ -446,7 +447,6 @@ class MainActivity : Activity() {
             android.util.Log.i("GlassTVLiveTv", "CHANNEL_OVERLAY_OPEN count=${liveTvChannelRows.size} current=$currentIndex")
             return
         }
-        if (currentIndex >= 0) liveTvChannelSelectedIndex = currentIndex
         moveLiveTvChannelSelection(direction)
     }
 
@@ -522,9 +522,15 @@ class MainActivity : Activity() {
         val channel = liveTvChannelRows.getOrNull(index) ?: return
         val inputId = liveTvBackgroundInputId ?: return
         val uri = TvContract.buildChannelUri(channel.first)
-        val tuned = try { liveTvBackgroundView?.tune(inputId, uri) != null } catch (_: Exception) { false }
-        if (!tuned) {
-            android.util.Log.w("GlassTVLiveTv", "Channel selection tune request failed id=${channel.first}")
+        val tv = liveTvBackgroundView
+        if (tv == null) {
+            android.util.Log.w("GlassTVLiveTv", "Channel selection failed: TvView is unavailable")
+            return
+        }
+        try {
+            tv.tune(inputId, uri)
+        } catch (error: Exception) {
+            android.util.Log.e("GlassTVLiveTv", "Channel selection tune request failed id=${channel.first}", error)
             return
         }
         liveTvBackgroundChannelUri = uri
