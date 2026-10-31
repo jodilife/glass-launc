@@ -292,6 +292,15 @@ class MainActivity : Activity() {
             }
             migration.putBoolean("minimalist_home_defaults_v2", true).apply()
         }
+
+        // v3: keep Explore TV available in minimalist mode, but start with external
+        // recommendation rows hidden until the user explicitly configures them.
+        if (!idlePrefs.getBoolean("minimalist_home_defaults_v3", false)) {
+            idlePrefs.edit()
+                .putBoolean("minimalist_show_explore", true)
+                .putBoolean("minimalist_home_defaults_v3", true)
+                .apply()
+        }
         UiSoundEffects.initialize(this)
         window.statusBarColor = bg
         window.navigationBarColor = bg
@@ -2977,7 +2986,9 @@ class MainActivity : Activity() {
         fun minimalistToggle(key: String, title: String, detail: String) {
             val enabled = prefs.getBoolean(key, true)
             settingRow(title, detail, if (enabled) "TAMPIL" else "SEMBUNYI") {
-                prefs.edit().putBoolean(key, !enabled).apply()
+                prefs.edit().putBoolean(key, !enabled)
+                    .putBoolean("minimalist_show_explore_user_set", key == "minimalist_show_explore" || prefs.getBoolean("minimalist_show_explore_user_set", false))
+                    .apply()
                 applyMinimalistSectionVisibility()
                 reopen(title + if (!enabled) " ditampilkan pada mode minimalis" else " disembunyikan pada mode minimalis")
             }
@@ -3408,8 +3419,16 @@ class MainActivity : Activity() {
 
     private fun previewRowShouldShow(key: String, packageName: String): Boolean {
         if (key in previewHiddenKeys()) return false
-        if (!idleMode) return true
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (!idleMode) {
+            // Recommendations from YouTube and other TV apps are opt-in on the Home screen.
+            // Existing users who already saved row visibility keep that choice.
+            val homeRowsConfigured = prefs.getBoolean(
+                "preview_home_rows_configured",
+                prefs.contains("preview_hidden_keys")
+            )
+            return homeRowsConfigured
+        }
         return if (prefs.getBoolean("preview_compact_configured", false)) {
             key in previewCompactKeepKeys()
         } else {
@@ -3811,6 +3830,7 @@ class MainActivity : Activity() {
                 .putString("preview_channel_order", ordered.joinToString(",") { previewRowKey(it) })
                 .putStringSet("preview_hidden_keys", hidden.toSet())
                 .putStringSet("preview_compact_keep_keys", keepInCompact.toSet())
+                .putBoolean("preview_home_rows_configured", true)
                 .putBoolean("preview_compact_configured", true)
                 .apply()
             dialog.dismiss()
