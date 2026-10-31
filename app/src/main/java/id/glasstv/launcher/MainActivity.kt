@@ -61,7 +61,6 @@ import androidx.media3.ui.PlayerView
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -135,6 +134,8 @@ class MainActivity : Activity() {
     private var videoWallpaperPlayer: ExoPlayer? = null
     private var videoWallpaperView: PlayerView? = null
     private var liveAmbientWallpaperView: LiveAmbientWallpaperView? = null
+    private var photoModeWallpaperView: PhotoModeWallpaperView? = null
+    private val photoModeRequestCode = 7150
     private val wallpaperDownloadLock = Any()
     private val wallpaperDownloadSlots = mutableSetOf<String>()
     private var weatherWallpaperLoading = false
@@ -234,6 +235,186 @@ class MainActivity : Activity() {
             postInvalidateDelayed(120L)
         }
     }
+
+    /**
+     * Aura-inspired Photo Mode: one photograph at a time, slowly drifting with long,
+     * soft cross-fades. Images are decoded off the UI thread and capped at 1920 px.
+     * It uses photos selected by the user first, then the cached day/night photographs.
+     */
+    private inner class PhotoModeWallpaperView(context: android.content.Context) : View(context) {
+        private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        private val shadePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val captionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(165, 240, 245, 252)
+            textSize = dp(11).toFloat()
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            letterSpacing = 0.08f
+        }
+        private var current: Bitmap? = null
+        private var incoming: Bitmap? = null
+        private var currentStarted = 0L
+        private var fadeStarted = 0L
+        private var nextIndex = 0
+        private var generation = 0
+        private var running = false
+
+        private val advance = Runnable {
+            if (running && incoming == null) loadNext()
+        }
+
+        fun start() {
+            if (running) return
+            running = true
+            if (current == null) loadFirst() else postInvalidateOnAnimation()
+        }
+
+        fun stop() {
+            running = false
+            generation++
+            removeCallbacks(advance)
+            current?.recycle()
+            incoming?.recycle()
+            current = null
+            incoming = null
+        }
+
+        private fun loadFirst() {
+            loadPhoto { bitmap ->
+                if (bitmap == null) {
+                    postDelayed({ if (running && current == null) loadFirst() }, 5000L)
+                    return@loadPhoto
+                }
+                current = bitmap
+                currentStarted = android.os.SystemClock.uptimeMillis()
+                postInvalidateOnAnimation()
+                postDelayed(advance, 25_000L)
+            }
+        }
+
+        private fun loadNext() {
+            loadPhoto { bitmap ->
+                if (bitmap == null) {
+                    postDelayed(advance, 6000L)
+                    return@loadPhoto
+                }
+                incoming = bitmap
+                fadeStarted = android.os.SystemClock.uptimeMillis()
+                postInvalidateOnAnimation()
+            }
+        }
+
+        private fun loadPhoto(done: (Bitmap?) -> Unit) {
+            val sources = photoModeSources()
+            if (sources.isEmpty()) {
+                done(null)
+                return
+            }
+            val source = sources[nextIndex.mod(sources.size)]
+            nextIndex++
+            val token = generation
+            Thread({
+                val bitmap = decodePhotoModeBitmap(source)
+                post {
+                    if (!running || token != generation) {
+                        bitmap?.recycle()
+                        return@post
+                    }
+                    done(bitmap)
+                }
+            }, "glasstv-photo-mode-decode").start()
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat()
+            val h = height.toFloat()
+            if (w <= 0f || h <= 0f) return
+            canvas.drawColor(Color.rgb(4, 7, 13))
+            val now = android.os.SystemClock.uptimeMillis()
+            val shown = current
+            if (shown != null) drawPhoto(canvas, shown, currentStarted, 255, now)
+
+            val next = incoming
+            if (next != null) {
+                val progress = ((now - fadeStarted).toFloat() / 2400f).coerceIn(0f, 1f)
+                drawPhoto(canvas, next, fadeStarted, (progress * 255).toInt(), now)
+                if (progress >= 1f) {
+                    current?.recycle()
+                    current = next
+                    incoming = null
+                    currentStarted = fadeStarted
+                    fadeStarted = 0L
+                    removeCallbacks(advance)
+                    postDelayed(advance, 25_000L)
+                }
+            }
+
+            shadePaint.shader = LinearGradient(
+                0f, h * 0.58f, 0f, h,
+                intArrayOf(Color.TRANSPARENT, Color.argb(115, 2, 5, 12), Color.argb(205, 2, 5, 12)),
+                null, Shader.TileMode.CLAMP
+            )
+            canvas.drawRect(0f, h * 0.58f, w, h, shadePaint)
+            shadePaint.shader = null
+            captionPaint.alpha = 145
+            canvas.drawText("PHOTO MODE", dp(30).toFloat(), h - dp(92), captionPaint)
+            if (running) postInvalidateDelayed(80L)
+        }
+
+        private fun drawPhoto(canvas: Canvas, bitmap: Bitmap, started: Long, alpha: Int, now: Long) {
+            if (alpha <= 0) return
+            val w = width.toFloat()
+            val h = height.toFloat()
+            val age = ((now - started).coerceAtLeast(0L) / 26_000f).coerceIn(0f, 1.4f)
+            val zoom = 1.035f + 0.075f * age
+            val scale = maxOf(w / bitmap.width, h / bitmap.height) * zoom
+            val dw = bitmap.width * scale
+            val dh = bitmap.height * scale
+            val driftX = kotlin.math.sin(age * Math.PI).toFloat() * dp(12)
+            val driftY = kotlin.math.cos(age * Math.PI * 0.72).toFloat() * dp(8)
+            val left = (w - dw) / 2f + driftX
+            val top = (h - dh) / 2f + driftY
+            imagePaint.alpha = alpha
+            canvas.drawBitmap(bitmap, null, android.graphics.RectF(left, top, left + dw, top + dh), imagePaint)
+            imagePaint.alpha = 255
+        }
+    }
+
+    private fun photoModeSources(): List<String> {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val sources = linkedSetOf<String>()
+        prefs.getStringSet("photo_mode_uris", emptySet()).orEmpty().sorted().forEach { sources.add(it) }
+        prefs.getString("wallpaper_custom_uri", null)?.let { sources.add(it) }
+        prefs.getString("wallpaper_day_uri", null)?.let { sources.add(it) }
+        prefs.getString("wallpaper_night_uri", null)?.let { sources.add(it) }
+        listOf(
+            File(cacheDir, "glasstv_wallpaper_day.jpg"),
+            File(cacheDir, "glasstv_wallpaper_night.jpg")
+        ).filter { it.exists() && it.length() > 10_000L }.forEach { sources.add(it.absolutePath) }
+        return sources.toList()
+    }
+
+    private fun decodePhotoModeBitmap(source: String): Bitmap? {
+        return try {
+            val uri = if (source.startsWith("content:") || source.startsWith("file:")) Uri.parse(source) else null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            if (uri != null) contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+            else BitmapFactory.decodeFile(source, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) > 1920) sample *= 2
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            if (uri != null) contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+            else BitmapFactory.decodeFile(source, options)
+        } catch (error: Exception) {
+            android.util.Log.w("GlassTVPhotoMode", "Photo could not be decoded: $source", error)
+            null
+        }
+    }
+
     private val idleTimeout = object : Runnable {
         override fun run() { enterIdleMode() }
     }
@@ -313,11 +494,6 @@ class MainActivity : Activity() {
             val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
             if (!prefs.getBoolean("wallpaper_auto", true)) return
             val source = prefs.getString("wallpaper_source", "bing")
-            if (source == "pixabay_video") {
-                downloadPixabayNightVideo(force = false)
-                wallpaperHandler.postDelayed(this, 24L * 60L * 60L * 1000L)
-                return
-            }
             if (prefs.getString("wallpaper_video_uri", null) != null) return
             val edit = prefs.edit().putLong("wallpaper_last_refresh", System.currentTimeMillis())
             if (source == "bing") edit.putInt("wallpaper_bing_index", (prefs.getInt("wallpaper_bing_index", 0) + 1).mod(8))
@@ -428,6 +604,7 @@ class MainActivity : Activity() {
         releaseHomePreviewPlayers()
         releaseVideoWallpaperPlayer()
         releaseLiveAmbientWallpaper()
+        releasePhotoModeWallpaper()
         stopLiveTvBackground()
         wallpaperHandler.removeCallbacks(wallpaperCycle)
         wallpaperHandler.removeCallbacks(dayNightSwitch)
@@ -444,9 +621,11 @@ class MainActivity : Activity() {
             showHome()
         } else if (!dashboardLoopStarted) {
             startDashboardUpdates()
-            if (::wallpaperTarget.isInitialized) setupVideoWallpaper(wallpaperTarget)
+            if (::wallpaperTarget.isInitialized) {
+                if (idleMode) applyIdleBackgroundPriority() else setupVideoWallpaper(wallpaperTarget)
+            }
         } else if (::wallpaperTarget.isInitialized) {
-            setupVideoWallpaper(wallpaperTarget)
+            if (idleMode) applyIdleBackgroundPriority() else setupVideoWallpaper(wallpaperTarget)
         }
         scheduleWallpaperRotation()
         resetIdleTimer()
@@ -741,6 +920,7 @@ class MainActivity : Activity() {
         releaseHomePreviewPlayers()
         releaseVideoWallpaperPlayer()
         releaseLiveAmbientWallpaper()
+        releasePhotoModeWallpaper()
         idleMode = false
         idleHandler.removeCallbacks(idleTimeout)
         actions.clear()
@@ -804,8 +984,8 @@ class MainActivity : Activity() {
         val wallpaperPrefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val videoUri = wallpaperPrefs.getString("wallpaper_video_uri", null)
         val savedWallpaperSource = wallpaperPrefs.getString("wallpaper_source", "bing")
-        if (videoUri != null || savedWallpaperSource == "pixabay_video" || savedWallpaperSource == "catalog_video") {
-            if (videoUri != null || savedWallpaperSource == "catalog_video") wallpaperTarget.setBackgroundColor(Color.rgb(5, 8, 14))
+        if (videoUri != null || savedWallpaperSource == "catalog_video") {
+            wallpaperTarget.setBackgroundColor(Color.rgb(5, 8, 14))
             setupVideoWallpaper(wallpaperTarget)
         }
         homeScroll.addView(root, FrameLayout.LayoutParams(-1, -1))
@@ -3136,8 +3316,8 @@ class MainActivity : Activity() {
             "Warna aksen", "Sumber wallpaper", "Ganti gambar setiap",
             "Redupkan wallpaper", "Pilih gambar sendiri", "Rotasi wallpaper", "Wallpaper berikutnya",
             "Wallpaper video", "Gunakan wallpaper foto", "Google Ambient / Art Gallery",
-            "API Key Pixabay", "Kata kunci video Pixabay", "Unduh video Pixabay sekarang",
-            "Info / kredit video Pixabay", "Cari video live wallpaper", "Prioritas background tanpa Live TV",
+            "Cari video live wallpaper", "Live Wallpaper MotionBGS", "Live Wallpaper Lively",
+            "Foto Photo Mode", "Hapus foto Photo Mode", "Prioritas background tanpa Live TV",
             "Tampilan saat tidak digunakan", "Posisi panel Minimalis", "Edit nama sapaan" -> "Tampilan"
             "Lokasi cuaca & waktu salat", "Info GlassTV" -> "Cuaca & Waktu Salat"
             "Azan otomatis", "Uji suara azan" -> "Waktu Salat"
@@ -3355,27 +3535,39 @@ class MainActivity : Activity() {
             dialog.dismiss()
             showAppMaintenanceDialog()
         }
-        settingRow("API Key Pixabay", "Simpan API key di perangkat ini; tidak ditanam di APK",
-            if (prefs.getString("pixabay_api_key", "").orEmpty().isNotBlank()) "TERSIMPAN" else "BELUM DIISI") {
+        settingRow("Live Wallpaper MotionBGS", "Pilih dan ganti video dari koleksi MotionBGS", currentCatalogWallpaperLabel("MotionBGS")) {
             dialog.dismiss()
-            showPixabayApiKeyEditor()
+            showWallpaperVideoSearchDialog("motionbgs")
         }
-        settingRow("Kata kunci video Pixabay", "Tema pencarian video malam", prefs.getString("pixabay_video_query", "night") ?: "night") {
+        settingRow("Live Wallpaper Lively", "Pilih dan ganti video dari koleksi Lively", currentCatalogWallpaperLabel("Lively")) {
             dialog.dismiss()
-            showPixabayQueryEditor()
+            showWallpaperVideoSearchDialog("lively")
         }
-        settingRow("Unduh video Pixabay sekarang", "Cari satu video, unduh ke cache TV, lalu putar berulang tanpa suara", pixabayVideoStatus()) {
-            prefs.edit().putString("wallpaper_source", "pixabay_video").putBoolean("wallpaper_auto", true).apply()
+        settingRow("Cari video live wallpaper", "Cari gabungan koleksi MotionBGS dan Lively dengan kata kunci", currentCatalogWallpaperLabel()) {
             dialog.dismiss()
-            downloadPixabayNightVideo(force = true)
+            showWallpaperVideoSearchDialog("all")
         }
-        settingRow("Info / kredit video Pixabay", "Lihat kreator dan halaman sumber video yang tersimpan") {
+        val photoModeCount = prefs.getStringSet("photo_mode_uris", emptySet())?.size ?: 0
+        settingRow("Foto Photo Mode", "Tambah foto pribadi untuk slideshow dengan gerak Ken Burns dan transisi lembut", if (photoModeCount == 0) "PILIH FOTO" else "$photoModeCount FOTO") {
             dialog.dismiss()
-            showPixabayVideoInfo()
+            pickPhotoModeImages()
         }
-        settingRow("Cari video live wallpaper", "Cari dan ganti video dari MotionBGS atau koleksi Lively tanpa API key", currentCatalogWallpaperLabel()) {
-            dialog.dismiss()
-            showWallpaperVideoSearchDialog()
+        if (photoModeCount > 0) {
+            settingRow("Hapus foto Photo Mode", "Kosongkan daftar foto pribadi; foto otomatis Bing tetap dapat digunakan", "HAPUS") {
+                dialog.dismiss()
+                AlertDialog.Builder(this)
+                    .setTitle("HAPUS FOTO PHOTO MODE?")
+                    .setMessage("Daftar foto pribadi GlassTV akan dikosongkan. File asli di penyimpanan TV tidak dihapus.")
+                    .setNegativeButton("Batal", null)
+                    .setPositiveButton("Hapus") { _, _ ->
+                        prefs.edit().remove("photo_mode_uris").apply()
+                        if (idleMode && prefs.getString("idle_background_mode", "ambient") == "photo") {
+                            applyIdleBackgroundPriority()
+                        }
+                        showSettings("Tampilan")
+                    }
+                    .show()
+            }
         }
         settingRow("Wallpaper video", "Pilih video lokal sebagai latar bergerak tanpa suara") {
             dialog.dismiss()
@@ -3389,8 +3581,7 @@ class MainActivity : Activity() {
         }
         settingRow("Gunakan wallpaper foto", "Kembali ke wallpaper foto otomatis") {
             val edit = getSharedPreferences("glass_tv", MODE_PRIVATE).edit().remove("wallpaper_video_uri")
-            if (prefs.getString("wallpaper_source", "bing") == "pixabay_video" ||
-                prefs.getString("wallpaper_source", "bing") == "catalog_video") {
+            if (prefs.getString("wallpaper_source", "bing") == "catalog_video") {
                 edit.putString("wallpaper_source", "bing")
             }
             edit.apply()
@@ -3426,7 +3617,7 @@ class MainActivity : Activity() {
             dialog.dismiss()
             showMinimalistPanelPositionPicker()
         }
-        settingRow("Sumber wallpaper", "Bing, gradient, gambar sendiri, atau jadwal siang/malam", wallpaperSourceLabel()) {
+        settingRow("Sumber wallpaper", "Bing, foto siang/malam, MotionBGS, Lively, atau gambar sendiri", wallpaperSourceLabel()) {
             dialog.dismiss()
             showWallpaperSourcePicker()
         }
@@ -4908,6 +5099,7 @@ class MainActivity : Activity() {
         }
         homeMediaRowView?.animate()?.translationY(0f)?.scaleX(1f)?.scaleY(1f)?.setDuration(220L)?.start()
         releaseLiveAmbientWallpaper()
+        releasePhotoModeWallpaper()
         stopLiveTvBackground()
         homePreviewPlayerViews.forEach { it.visibility = View.VISIBLE }
         homePreviewPlayers.forEach { player ->
@@ -4922,6 +5114,30 @@ class MainActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == photoModeRequestCode && resultCode == RESULT_OK) {
+            val chosen = mutableListOf<Uri>()
+            val clips = data?.clipData
+            if (clips != null) {
+                for (i in 0 until clips.itemCount) clips.getItemAt(i).uri?.let { chosen.add(it) }
+            } else {
+                data?.data?.let { chosen.add(it) }
+            }
+            if (chosen.isEmpty()) return
+            val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+            val saved = LinkedHashSet(prefs.getStringSet("photo_mode_uris", emptySet()).orEmpty())
+            chosen.forEach { uri ->
+                try {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (_: Exception) { }
+                saved.add(uri.toString())
+            }
+            prefs.edit().putStringSet("photo_mode_uris", saved).apply()
+            if (idleMode && prefs.getString("idle_background_mode", "ambient") == "photo" &&
+                !prefs.getBoolean("live_tv_idle_background", false)) applyIdleBackgroundPriority()
+            toast("${chosen.size} foto ditambahkan ke Photo Mode.")
+            showSettings("Tampilan")
+            return
+        }
         if (requestCode == 7143 && resultCode == RESULT_OK) {
             val imageUri = data?.data ?: return
             try {
@@ -4969,6 +5185,7 @@ class MainActivity : Activity() {
         val current = liveAmbientWallpaperView
         if (current != null && current.parent === target) return
         releaseLiveAmbientWallpaper()
+        releasePhotoModeWallpaper()
         releaseVideoWallpaperPlayer()
         val ambient = LiveAmbientWallpaperView(this)
         target.addView(ambient, 0, FrameLayout.LayoutParams(-1, -1))
@@ -4980,18 +5197,54 @@ class MainActivity : Activity() {
         liveAmbientWallpaperView = null
     }
 
+    private fun setupPhotoModeWallpaper(target: FrameLayout) {
+        if (photoModeWallpaperView?.parent === target) return
+        releasePhotoModeWallpaper()
+        releaseLiveAmbientWallpaper()
+        releaseVideoWallpaperPlayer()
+        // Warm two daily photos for the first Photo Mode use; cached files remain on the TV.
+        loadAutomaticDayNightWallpaper(false, null)
+        loadAutomaticDayNightWallpaper(true, null)
+        val view = PhotoModeWallpaperView(this)
+        target.addView(view, 0, FrameLayout.LayoutParams(-1, -1))
+        photoModeWallpaperView = view
+        view.start()
+    }
+
+    private fun releasePhotoModeWallpaper() {
+        photoModeWallpaperView?.stop()
+        (photoModeWallpaperView?.parent as? ViewGroup)?.removeView(photoModeWallpaperView)
+        photoModeWallpaperView = null
+    }
+
+    private fun pickPhotoModeImages() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try { startActivityForResult(intent, photoModeRequestCode) }
+        catch (_: Exception) { toast("Pemilih foto tidak tersedia pada TV ini.") }
+    }
+
     private fun idleBackgroundModeLabel(): String {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         if (prefs.getBoolean("live_tv_idle_background", false)) return "LIVE TV UTAMA"
-        return if (prefs.getString("idle_background_mode", "ambient") == "wallpaper") "WALLPAPER" else "LIVE AMBIENT"
+        return when (prefs.getString("idle_background_mode", "ambient")) {
+            "photo" -> "PHOTO MODE · SLIDESHOW"
+            "wallpaper" -> "WALLPAPER FOTO / VIDEO"
+            else -> "LIVE AMBIENT"
+        }
     }
 
     private fun showIdleBackgroundModePicker() {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        val values = arrayOf("ambient", "wallpaper")
+        val values = arrayOf("ambient", "photo", "wallpaper")
         val labels = arrayOf(
             "Live Ambient  ·  langit malam, bintang, dan aurora bergerak",
-            "Wallpaper  ·  foto otomatis atau video lokal"
+            "Photo Mode  ·  slideshow foto, gerak perlahan, dan transisi lembut",
+            "Wallpaper  ·  satu foto otomatis atau video lokal / katalog"
         )
         val current = values.indexOf(prefs.getString("idle_background_mode", "ambient")).coerceAtLeast(0)
         AlertDialog.Builder(this)
@@ -5016,19 +5269,26 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         if (prefs.getBoolean("live_tv_idle_background", false)) {
             releaseLiveAmbientWallpaper()
+            releasePhotoModeWallpaper()
             releaseVideoWallpaperPlayer()
             startLiveTvBackground()
             return
         }
 
         stopLiveTvBackground()
-        if (prefs.getString("idle_background_mode", "ambient") == "ambient") {
-            releaseVideoWallpaperPlayer()
-            setupLiveAmbientWallpaper(wallpaperTarget)
-        } else {
-            releaseLiveAmbientWallpaper()
-            applyWallpaper(wallpaperTarget)
-            setupVideoWallpaper(wallpaperTarget)
+        when (prefs.getString("idle_background_mode", "ambient")) {
+            "ambient" -> {
+                releasePhotoModeWallpaper()
+                releaseVideoWallpaperPlayer()
+                setupLiveAmbientWallpaper(wallpaperTarget)
+            }
+            "photo" -> setupPhotoModeWallpaper(wallpaperTarget)
+            else -> {
+                releaseLiveAmbientWallpaper()
+                releasePhotoModeWallpaper()
+                applyWallpaper(wallpaperTarget)
+                setupVideoWallpaper(wallpaperTarget)
+            }
         }
     }
 
@@ -5036,28 +5296,21 @@ class MainActivity : Activity() {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val source = prefs.getString("wallpaper_source", "bing")
         val weatherMode = source == "weather_motionbgs"
-        val pixabayMode = source == "pixabay_video"
         val catalogMode = source == "catalog_video"
-        val pixabayFile = File(cacheDir, "glasstv_pixabay_night.mp4")
         val catalogFile = prefs.getString("wallpaper_catalog_video_path", null)?.let { File(it) }
         val rawUri = when {
             weatherMode -> prefs.getString("wallpaper_weather_video_path", null)?.let { Uri.fromFile(File(it)) }
-            pixabayMode -> pixabayFile.takeIf { it.exists() && it.length() > 100_000L }?.let { Uri.fromFile(it) }
             catalogMode -> catalogFile?.takeIf { it.exists() && it.length() > 100_000L }?.let { Uri.fromFile(it) }
             else -> prefs.getString("wallpaper_video_uri", null)?.let { Uri.parse(it) }
         }
         if (rawUri == null) {
-            if (pixabayMode) downloadPixabayNightVideo(force = false)
             if (catalogMode) {
                 val id = prefs.getString("wallpaper_catalog_video_id", null)
                 WallpaperVideoCatalog.items.firstOrNull { it.id == id }?.let { downloadWallpaperCatalogVideo(it) }
             }
             return
         }
-        if (videoWallpaperPlayer != null && videoWallpaperView?.parent === target) {
-            if (pixabayMode) downloadPixabayNightVideo(force = false)
-            return
-        }
+        if (videoWallpaperPlayer != null && videoWallpaperView?.parent === target) return
         releaseVideoWallpaperPlayer()
         try {
             val view = PlayerView(this).apply {
@@ -5081,7 +5334,6 @@ class MainActivity : Activity() {
             videoWallpaperView = view
             videoWallpaperPlayer = player
             target.setBackgroundColor(Color.rgb(5, 8, 14))
-            if (pixabayMode) downloadPixabayNightVideo(force = false)
         } catch (_: Exception) {
             releaseVideoWallpaperPlayer()
             toast("Video wallpaper tidak dapat dibuka. Pilih video MP4 lain.")
@@ -5233,110 +5485,26 @@ class MainActivity : Activity() {
         "gradient" -> "Gradient"
         "custom" -> "Gambar sendiri"
         "daynight" -> "Otomatis · Unduh Bing Siang / Malam"
-        "pixabay_video" -> "Pixabay · Video malam otomatis"
+        "catalog_video" -> {
+            val source = getSharedPreferences("glass_tv", MODE_PRIVATE)
+                .getString("wallpaper_catalog_video_source", "Live Video")
+            val title = getSharedPreferences("glass_tv", MODE_PRIVATE)
+                .getString("wallpaper_catalog_video_title", "Pilihan tersimpan")
+            "$source · $title"
+        }
         else -> "Photo of the Day · Bing"
     }
 
-    private fun pixabayVideoStatus(): String {
+    private fun currentCatalogWallpaperLabel(provider: String? = null): String {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        if (prefs.getString("pixabay_api_key", "").orEmpty().isBlank()) return "PERLU API KEY"
-        val file = File(cacheDir, "glasstv_pixabay_night.mp4")
-        return if (file.exists() && file.length() > 100_000L) {
-            "TERSIMPAN · ${file.length() / (1024L * 1024L)} MB"
-        } else "BELUM DIUNDUH"
-    }
-
-    private fun showPixabayApiKeyEditor() {
-        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        val input = EditText(this).apply {
-            hint = "Masukkan API key Pixabay"
-            setSingleLine(true)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setText(prefs.getString("pixabay_api_key", "").orEmpty())
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-        }
-        val wrapper = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(22), dp(8), dp(22), 0)
-            addView(input, LinearLayout.LayoutParams(-1, -2))
-            addView(label("Buat API key gratis melalui akun Pixabay. Key hanya disimpan di SharedPreferences lokal TV, bukan di source code atau GitHub.", 10, Color.rgb(170, 189, 213), false).apply {
-                setPadding(0, dp(9), 0, 0)
-            })
-        }
-        AlertDialog.Builder(this)
-            .setTitle("PIXABAY API KEY")
-            .setView(wrapper)
-            .setPositiveButton("Simpan") { _, _ ->
-                val key = input.text.toString().trim()
-                prefs.edit().putString("pixabay_api_key", key).apply()
-                if (key.isBlank()) {
-                    toast("API key Pixabay dikosongkan.")
-                } else {
-                    toast("API key disimpan di TV. Video malam sedang diminta.")
-                    prefs.edit().putString("wallpaper_source", "pixabay_video").putBoolean("wallpaper_auto", true).apply()
-                    downloadPixabayNightVideo(force = true)
-                }
-                showSettings("Tampilan")
-            }
-            .setNegativeButton("Batal", null)
-            .show()
-    }
-
-    private fun showPixabayQueryEditor() {
-        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        val input = EditText(this).apply {
-            hint = "night"
-            setSingleLine(true)
-            setText(prefs.getString("pixabay_video_query", "night") ?: "night")
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-        }
-        AlertDialog.Builder(this)
-            .setTitle("KATA KUNCI PIXABAY")
-            .setMessage("Contoh: night, aurora, stars, space, moon, northern lights.")
-            .setView(input)
-            .setPositiveButton("Simpan & cari") { _, _ ->
-                val query = input.text.toString().trim().take(100).ifBlank { "night" }
-                prefs.edit().putString("pixabay_video_query", query).apply()
-                prefs.edit().putString("wallpaper_source", "pixabay_video").putBoolean("wallpaper_auto", true).apply()
-                if (prefs.getString("pixabay_api_key", "").orEmpty().isBlank()) {
-                    showSettings("Tampilan")
-                    showPixabayApiKeyEditor()
-                } else {
-                    downloadPixabayNightVideo(force = true)
-                    showSettings("Tampilan")
-                }
-            }
-            .setNegativeButton("Batal", null)
-            .show()
-    }
-
-    private fun showPixabayVideoInfo() {
-        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        val creator = prefs.getString("wallpaper_pixabay_creator", "Belum ada video") ?: "Belum ada video"
-        val page = prefs.getString("wallpaper_pixabay_page_url", "").orEmpty()
-        val query = prefs.getString("pixabay_video_query", "night") ?: "night"
-        val message = buildString {
-            append("Sumber: Pixabay Video API\n")
-            append("Kata kunci: ").append(query).append("\n")
-            append("Kreator: ").append(creator).append("\n")
-            append("Halaman video: ").append(if (page.isBlank()) "Belum tersedia" else page).append("\n\n")
-            append("Video diunduh satu per satu dan disimpan di cache lokal. Kredit kreator ditampilkan sebagai informasi sumber.")
-        }
-        AlertDialog.Builder(this)
-            .setTitle("SUMBER & KREDIT VIDEO")
-            .setMessage(message)
-            .setPositiveButton("Mengerti", null)
-            .show()
-    }
-
-    private fun currentCatalogWallpaperLabel(): String {
-        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        if (prefs.getString("wallpaper_source", "bing") != "catalog_video") return "CARI VIDEO"
+        val selectedSource = prefs.getString("wallpaper_catalog_video_source", "").orEmpty()
+        if (prefs.getString("wallpaper_source", "bing") != "catalog_video") return "PILIH VIDEO"
+        if (provider != null && !selectedSource.contains(provider, ignoreCase = true)) return "PILIH VIDEO"
         val title = prefs.getString("wallpaper_catalog_video_title", "Video tersimpan") ?: "Video tersimpan"
         return title.take(28)
     }
 
-    private fun showWallpaperVideoSearchDialog() {
+    private fun showWallpaperVideoSearchDialog(initialFilter: String = "all") {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -5375,7 +5543,7 @@ class MainActivity : Activity() {
         }
         var searchDialog: AlertDialog? = null
         var renderResults: () -> Unit = {}
-        var selectedFilter = "all"
+        var selectedFilter = initialFilter
         val filterRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -5403,6 +5571,7 @@ class MainActivity : Activity() {
                 isClickable = true
                 setOnClickListener {
                     selectedFilter = key
+                    prefs.edit().putString("wallpaper_catalog_source_filter", key).apply()
                     renderFilters()
                     renderResults.invoke()
                 }
@@ -5420,6 +5589,7 @@ class MainActivity : Activity() {
         addFilter("MotionBGS", "motionbgs")
         addFilter("Lively", "lively")
         content.addView(filterRow)
+        filterButtons.firstOrNull { it.first == selectedFilter }?.second?.isSelected = true
 
         content.addView(label(
             "Pilih video untuk mengganti wallpaper aktif. Video lama tetap dipakai sampai unduhan baru selesai.",
@@ -5721,136 +5891,6 @@ class MainActivity : Activity() {
         return prefs.getString("idle_background_mode", "ambient") == "wallpaper"
     }
 
-    private fun downloadPixabayNightVideo(force: Boolean = false) {
-        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        val apiKey = prefs.getString("pixabay_api_key", "").orEmpty().trim()
-        if (apiKey.isBlank()) {
-            if (force) runOnUiThread { showPixabayApiKeyEditor() }
-            return
-        }
-
-        val cacheFile = File(cacheDir, "glasstv_pixabay_night.mp4")
-        val lastRefresh = prefs.getLong("wallpaper_pixabay_downloaded_at", 0L)
-        val cacheValid = cacheFile.exists() && cacheFile.length() > 100_000L
-        if (!force && cacheValid && System.currentTimeMillis() - lastRefresh < 24L * 60L * 60L * 1000L) return
-
-        val shouldStart = synchronized(wallpaperDownloadLock) {
-            if ("pixabay-video" in wallpaperDownloadSlots) false
-            else {
-                wallpaperDownloadSlots.add("pixabay-video")
-                true
-            }
-        }
-        if (!shouldStart) return
-
-        Thread({
-            var connection: HttpURLConnection? = null
-            val pendingFile = File(cacheDir, "glasstv_pixabay_night_pending.tmp")
-            try {
-                val query = prefs.getString("pixabay_video_query", "night") ?: "night"
-                val encodedKey = URLEncoder.encode(apiKey, "UTF-8")
-                val encodedQuery = URLEncoder.encode(query, "UTF-8")
-                val apiUrl = "https://pixabay.com/api/videos/?key=${encodedKey}&q=${encodedQuery}&video_type=film&min_width=640&min_height=360&safesearch=true&order=popular&per_page=10"
-                connection = URL(apiUrl).openConnection() as HttpURLConnection
-                connection.connectTimeout = 15000
-                connection.readTimeout = 20000
-                connection.instanceFollowRedirects = true
-                connection.setRequestProperty("User-Agent", "GlassTV/0.4 Android TV")
-                val apiCode = connection.responseCode
-                if (apiCode !in 200..299) throw IllegalStateException("Pixabay API HTTP ${apiCode}")
-                val json = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                connection.disconnect()
-                connection = null
-
-                val hits = JSONObject(json).optJSONArray("hits")
-                    ?: throw IllegalStateException("Pixabay tidak mengirim daftar video.")
-                if (hits.length() == 0) throw IllegalStateException("Tidak ada video untuk kata kunci: ${query}")
-                val maxBytes = 32L * 1024L * 1024L
-                var chosenUrl = ""
-                var chosenSize = 0L
-                var chosenVariant = ""
-                var chosenHit: JSONObject? = null
-                for (i in 0 until hits.length()) {
-                    val hit = hits.optJSONObject(i) ?: continue
-                    val videos = hit.optJSONObject("videos") ?: continue
-                    for (variant in listOf("small", "tiny", "medium")) {
-                        val rendition = videos.optJSONObject(variant) ?: continue
-                        val url = rendition.optString("url").orEmpty()
-                        val size = rendition.optLong("size", 0L)
-                        if (url.isNotBlank() && (size <= 0L || size <= maxBytes)) {
-                            chosenUrl = url
-                            chosenSize = size
-                            chosenVariant = variant
-                            chosenHit = hit
-                            break
-                        }
-                    }
-                    if (chosenUrl.isNotBlank()) break
-                }
-                if (chosenUrl.isBlank()) throw IllegalStateException("Tidak ditemukan video dengan ukuran yang cocok untuk TV.")
-                if (chosenSize > maxBytes) throw IllegalStateException("Ukuran video melebihi batas cache GlassTV.")
-
-                connection = URL(chosenUrl).openConnection() as HttpURLConnection
-                connection.connectTimeout = 15000
-                connection.readTimeout = 45000
-                connection.instanceFollowRedirects = true
-                connection.setRequestProperty("User-Agent", "GlassTV/0.4 Android TV")
-                val videoCode = connection.responseCode
-                if (videoCode !in 200..299) throw IllegalStateException("Unduhan video HTTP ${videoCode}")
-                val contentLength = connection.contentLengthLong
-                if (contentLength > maxBytes) throw IllegalStateException("Video terlalu besar untuk cache TV.")
-                pendingFile.delete()
-                var total = 0L
-                connection.inputStream.use { input ->
-                    pendingFile.outputStream().use { output ->
-                        val buffer = ByteArray(16 * 1024)
-                        while (true) {
-                            val count = input.read(buffer)
-                            if (count < 0) break
-                            total += count
-                            if (total > maxBytes) throw IllegalStateException("Unduhan melampaui batas 32 MB.")
-                            output.write(buffer, 0, count)
-                        }
-                    }
-                }
-                if (total < 100_000L) throw IllegalStateException("File video terlalu kecil atau tidak valid.")
-                val hit = chosenHit ?: JSONObject()
-                if (cacheFile.exists()) cacheFile.delete()
-                if (!pendingFile.renameTo(cacheFile)) pendingFile.copyTo(cacheFile, overwrite = true)
-                pendingFile.delete()
-                prefs.edit()
-                    .putLong("wallpaper_pixabay_downloaded_at", System.currentTimeMillis())
-                    .putString("wallpaper_pixabay_page_url", hit.optString("pageURL"))
-                    .putString("wallpaper_pixabay_creator", hit.optString("user", "Pixabay contributor"))
-                    .putString("wallpaper_pixabay_video_id", hit.optString("id"))
-                    .putString("wallpaper_pixabay_variant", chosenVariant)
-                    .putLong("wallpaper_pixabay_size", total)
-                    .apply()
-                android.util.Log.i("GlassTVWallpaper", "Pixabay night video cached: variant=${chosenVariant}, bytes=${total}")
-                runOnUiThread {
-                    toast("Video Pixabay tersimpan (${total / (1024L * 1024L)} MB).")
-                    val current = getSharedPreferences("glass_tv", MODE_PRIVATE)
-                    val shouldShow = current.getString("wallpaper_source", "bing") == "pixabay_video" &&
-                        (!idleMode || (!current.getBoolean("live_tv_idle_background", false) &&
-                            current.getString("idle_background_mode", "ambient") == "wallpaper"))
-                    if (shouldShow && ::wallpaperTarget.isInitialized && !isFinishing) {
-                        releaseVideoWallpaperPlayer()
-                        setupVideoWallpaper(wallpaperTarget)
-                    }
-                }
-            } catch (error: Exception) {
-                pendingFile.delete()
-                android.util.Log.w("GlassTVWallpaper", "Pixabay video download failed: ${error.message}", error)
-                runOnUiThread {
-                    if (!isFinishing) toast("Pixabay gagal: ${error.message ?: "sumber tidak merespons"}. Video lama tetap disimpan.")
-                }
-            } finally {
-                connection?.disconnect()
-                synchronized(wallpaperDownloadLock) { wallpaperDownloadSlots.remove("pixabay-video") }
-            }
-        }, "glasstv-pixabay-video").start()
-    }
-
     private fun pickDayNightWallpaper(night: Boolean) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -5870,13 +5910,13 @@ class MainActivity : Activity() {
     }
 
     private fun showWallpaperSourcePicker() {
-        val values = arrayOf("bing", "gradient", "custom", "daynight", "pixabay_video")
+        val values = arrayOf("bing", "gradient", "custom", "daynight", "catalog_video")
         val labels = arrayOf(
             "Photo of the Day · Bing (berganti otomatis)",
             "Gradient · tanpa internet",
             "Gambar sendiri (termasuk foto Pexels)",
             "Otomatis Siang / Malam · unduh foto Bing dan simpan offline",
-            "Pixabay Video Malam · unduh satu MP4 otomatis (perlu API key)"
+            "Live Wallpaper · MotionBGS / Lively (pilih video)"
         )
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val current = values.indexOf(prefs.getString("wallpaper_source", "photos")).coerceAtLeast(0)
@@ -5888,14 +5928,16 @@ class MainActivity : Activity() {
                 releaseVideoWallpaperPlayer()
                 if (values[which] == "custom" && prefs.getString("wallpaper_custom_uri", null) == null) {
                     pickCustomWallpaper()
+                } else if (values[which] == "catalog_video") {
+                    showSettings("Tampilan")
+                    showWallpaperVideoSearchDialog("all")
                 } else {
+                    if (values[which] == "bing") {
+                        prefs.edit().remove("wallpaper_video_uri").putBoolean("wallpaper_auto", true).apply()
+                    }
                     applyWallpaper(wallpaperTarget, forceRefresh = true)
-                    val needsPixabayKey = values[which] == "pixabay_video" &&
-                        prefs.getString("pixabay_api_key", "").orEmpty().isBlank()
-                    if (values[which] == "pixabay_video") setupVideoWallpaper(wallpaperTarget)
                     scheduleWallpaperRotation()
                     showSettings()
-                    if (needsPixabayKey) showPixabayApiKeyEditor()
                 }
             }.setNegativeButton("Batal", null).show()
     }
@@ -5950,12 +5992,6 @@ class MainActivity : Activity() {
         wallpaperHandler.removeCallbacks(wallpaperCycle)
         wallpaperHandler.removeCallbacks(dayNightSwitch)
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        if (prefs.getString("wallpaper_source", "bing") == "pixabay_video") {
-            if (prefs.getBoolean("wallpaper_auto", true)) {
-                wallpaperHandler.postDelayed(wallpaperCycle, 24L * 60L * 60L * 1000L)
-            }
-            return
-        }
         if (prefs.getString("wallpaper_source", "bing") == "daynight") {
             val now = Calendar.getInstance()
             val next = (now.clone() as Calendar).apply {
@@ -5980,12 +6016,28 @@ class MainActivity : Activity() {
     private fun applyWallpaper(target: FrameLayout, forceRefresh: Boolean = false) {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         var source = prefs.getString("wallpaper_source", "bing") ?: "bing"
+        if (source == "pixabay_video") {
+            prefs.edit()
+                .putString("wallpaper_source", "bing")
+                .remove("pixabay_api_key")
+                .remove("pixabay_video_query")
+                .remove("wallpaper_pixabay_downloaded_at")
+                .remove("wallpaper_pixabay_page_url")
+                .remove("wallpaper_pixabay_creator")
+                .remove("wallpaper_pixabay_video_id")
+                .remove("wallpaper_pixabay_variant")
+                .remove("wallpaper_pixabay_size")
+                .apply()
+            File(cacheDir, "glasstv_pixabay_night.mp4").delete()
+            File(cacheDir, "glasstv_pixabay_night_pending.tmp").delete()
+            source = "bing"
+        }
         if (source == "weather_motionbgs" || source == "art" || source == "photos") {
             // Migrate retired wallpaper sources back to the official Bing daily image feed.
             prefs.edit().putString("wallpaper_source", "bing").remove("wallpaper_weather_video_path").apply()
             source = "bing"
         }
-        if (prefs.getString("wallpaper_video_uri", null) != null && source != "pixabay_video") {
+        if (source == "catalog_video" || prefs.getString("wallpaper_video_uri", null) != null) {
             target.setBackgroundColor(Color.rgb(5, 8, 14))
             return
         }
