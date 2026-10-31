@@ -245,10 +245,31 @@ class MainActivity : Activity() {
     private inner class PhotoModeWallpaperView(context: android.content.Context) : View(context) {
         private val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         private val shadePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val captionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(165, 240, 245, 252)
-            textSize = dp(11).toFloat()
+        private val infoPanelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(112, 5, 10, 19) }
+        private val infoBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(55, 230, 240, 255); style = Paint.Style.STROKE; strokeWidth = dp(1).toFloat()
+        }
+        private val clockPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE; textSize = dp(58).toFloat()
+            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+            setShadowLayer(dp(5).toFloat(), 0f, dp(2).toFloat(), Color.BLACK)
+        }
+        private val datePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(225, 245, 248, 252); textSize = dp(15).toFloat()
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setShadowLayer(dp(3).toFloat(), 0f, dp(1).toFloat(), Color.BLACK)
+        }
+        private val prayerTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(190, 202, 218, 238); textSize = dp(11).toFloat()
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        }
+        private val prayerMainPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE; textSize = dp(22).toFloat()
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        }
+        private val prayerListPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(220, 235, 241, 249); textSize = dp(13).toFloat()
+            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
         }
         private var current: Bitmap? = null
         private var incoming: Bitmap? = null
@@ -356,9 +377,47 @@ class MainActivity : Activity() {
             )
             canvas.drawRect(0f, h * 0.58f, w, h, shadePaint)
             shadePaint.shader = null
-            captionPaint.alpha = 145
-            canvas.drawText("PHOTO MODE", dp(30).toFloat(), h - dp(92), captionPaint)
-            if (running) postInvalidateDelayed(if (current == null) 1000L else 80L)
+            drawPhotoModeInformation(canvas, w, h)
+            if (running) postInvalidateDelayed(if (current == null) 1000L else 500L)
+        }
+
+        private fun drawPhotoModeInformation(canvas: Canvas, w: Float, h: Float) {
+            val snapshot = dashboardSnapshot ?: DashboardServices.cached(this@MainActivity)
+            val selectedCity = DashboardServices.selectedCity(this@MainActivity)
+            val city = snapshot?.city ?: selectedCity.name
+            val zone = java.util.TimeZone.getTimeZone(snapshot?.timeZone ?: selectedCity.timeZone)
+            val now = Date()
+            val clock = SimpleDateFormat("HH:mm", Locale("id", "ID")).apply { timeZone = zone }.format(now)
+            val date = SimpleDateFormat("EEEE, d MMMM yyyy", Locale("id", "ID")).apply { timeZone = zone }.format(now)
+            val left = dp(44).toFloat()
+            val top = dp(58).toFloat()
+            canvas.drawText(clock, left, top + dp(58), clockPaint)
+            canvas.drawText("$date  ·  $city", left + dp(3), top + dp(86), datePaint)
+
+            val panelMargin = dp(38).toFloat()
+            val panelHeight = dp(112).toFloat()
+            val panel = android.graphics.RectF(panelMargin, h - panelHeight - panelMargin, w - panelMargin, h - panelMargin)
+            canvas.drawRoundRect(panel, dp(18).toFloat(), dp(18).toFloat(), infoPanelPaint)
+            canvas.drawRoundRect(panel, dp(18).toFloat(), dp(18).toFloat(), infoBorderPaint)
+            val textLeft = panel.left + dp(24)
+            val titleY = panel.top + dp(28)
+            canvas.drawText("WAKTU SHOLAT  ·  $city", textLeft, titleY, prayerTitlePaint)
+            if (snapshot == null || snapshot.prayerTimes.size < 6) {
+                canvas.drawText("Memuat jadwal Subuh–Isya…", textLeft, titleY + dp(34), prayerMainPaint)
+            } else {
+                val next = DashboardServices.nextPrayer(snapshot, Calendar.getInstance(zone))
+                canvas.drawText("BERIKUTNYA  ${next.first}  ${next.second}", textLeft, titleY + dp(34), prayerMainPaint)
+                val indices = listOf(0, 2, 3, 4, 5)
+                val schedule = indices.joinToString("     ·     ") { index ->
+                    "${snapshot.prayerNames.getOrNull(index)?.uppercase(Locale("id", "ID")) ?: "SALAT"}  ${snapshot.prayerTimes.getOrNull(index) ?: "--:--"}"
+                }
+                canvas.drawText(schedule, textLeft, titleY + dp(60), prayerListPaint)
+            }
+            val photoLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.argb(135, 245, 248, 252); textSize = dp(10).toFloat()
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            }
+            canvas.drawText("GLASSTV  ·  PHOTO MODE", panel.right - dp(178), panel.top - dp(10), photoLabel)
         }
 
         private fun drawPhoto(canvas: Canvas, bitmap: Bitmap, started: Long, alpha: Int, now: Long) {
