@@ -264,6 +264,19 @@ class MainActivity : Activity() {
             idlePrefs.edit().putInt("idle_timeout_seconds", 30)
                 .putBoolean("idle_timeout_30_migration", true).apply()
         }
+        if (!idlePrefs.getBoolean("minimalist_home_defaults_v1", false)) {
+            idlePrefs.edit()
+                .putBoolean("minimalist_show_continue", false)
+                .putBoolean("minimalist_show_cctv", false)
+                .putBoolean("minimalist_show_explore", false)
+                .putBoolean("minimalist_show_favorites", false)
+                .putBoolean("minimalist_show_music", false)
+                .putString("minimalist_panel_position", "bottom_full")
+                .putBoolean("preview_compact_configured", true)
+                .putStringSet("preview_compact_keep_keys", emptySet())
+                .putBoolean("minimalist_home_defaults_v1", true)
+                .apply()
+        }
         UiSoundEffects.initialize(this)
         window.statusBarColor = bg
         window.navigationBarColor = bg
@@ -568,13 +581,10 @@ class MainActivity : Activity() {
         applyMinimalistSectionVisibility()
         setContentView(wallpaperTarget)
         root.post {
-            if (lastFocusedTitle == "LANJUTKAN MENONTON") {
-                continueWatchingCard?.requestFocus()
+            if (!isFinishing && hasWindowFocus()) {
+                enterIdleMode()
             } else {
-                val target = actions.firstOrNull {
-                    it.contentDescription?.toString()?.startsWith(lastFocusedTitle) == true
-                } ?: actions.firstOrNull()
-                target?.requestFocus()
+                root.postDelayed({ if (!isFinishing && hasWindowFocus()) enterIdleMode() }, 500L)
             }
         }
         dashboardSnapshot = DashboardServices.cached(this)
@@ -867,13 +877,12 @@ class MainActivity : Activity() {
         }
         val prayerIndices = listOf(0, 2, 3, 4, 5)
         val now = Calendar.getInstance(java.util.TimeZone.getTimeZone(zone))
-        val currentMinute = now.get(Calendar.HOUR_OF_DAY) * 60 + now.get(Calendar.MINUTE)
-        val activePrayerIndex = prayerIndices.lastOrNull { index ->
-            val parts = snapshot.prayerTimes.getOrNull(index).orEmpty().split(":")
-            parts.size == 2 && (parts[0].toIntOrNull() ?: 99) * 60 + (parts[1].toIntOrNull() ?: 99) <= currentMinute
-        } ?: 5 // Before Subuh, Isya is the currently active prayer period.
+        val nextPrayerName = DashboardServices.nextPrayer(snapshot, now).first
+        val activePrayerIndex = prayerIndices.firstOrNull { index ->
+            snapshot.prayerNames.getOrNull(index) == nextPrayerName
+        } ?: prayerIndices.first()
         val prayerText = SpannableString(prayerIndices.joinToString("   ·   ") { index ->
-            "${snapshot.prayerNames[index]} ${snapshot.prayerTimes.getOrNull(index) ?: "--:--"}"
+            "${snapshot.prayerNames.getOrNull(index) ?: "Salat"} ${snapshot.prayerTimes.getOrNull(index) ?: "--:--"}"
         })
         var offset = 0
         prayerIndices.forEachIndexed { position, index ->
@@ -1773,11 +1782,16 @@ class MainActivity : Activity() {
                     else -> Gravity.END
                 }
                 if (fullWidth && text != null) {
-                    text.textSize = if (text === headerClockLabel) 22f else if (text === headerNextPrayerLabel) 9f else 10f
+                    text.textSize = when {
+                        text === headerClockLabel -> 22f
+                        text === headerNextPrayerLabel -> 10f
+                        else -> 10f
+                    }
+                    text.includeFontPadding = false
                     text.maxLines = 1
-                    text.setPadding(dp(7), 0, dp(7), 0)
+                    text.setPadding(dp(6), 0, dp(6), 0)
                     text.layoutParams = LinearLayout.LayoutParams(0, -2,
-                        floatArrayOf(1.15f, 0.95f, 1.2f, 0.95f, 1.25f, 3.5f)[index])
+                        floatArrayOf(1.15f, 1.0f, 1.2f, 0.95f, 1.3f, 4.6f)[index])
                 } else if (text != null) {
                     text.textSize = when (text) { headerClockLabel -> 30f; headerNextPrayerLabel -> 12f; else -> 10f }
                     text.setPadding(0, 0, 0, 0)
@@ -3341,6 +3355,8 @@ class MainActivity : Activity() {
         previewRowViews.forEach { row ->
             row.view.visibility = if (previewRowShouldShow(row.key, row.packageName)) View.VISIBLE else View.GONE
         }
+        val hasVisibleCompactRows = idleMode && previewRowViews.any { it.view.visibility == View.VISIBLE }
+        idlePreviewSpacer?.visibility = if (hasVisibleCompactRows) View.VISIBLE else View.GONE
     }
 
     private fun addPreviewChannelRows(container: LinearLayout) {
@@ -4307,7 +4323,6 @@ class MainActivity : Activity() {
         // clock/weather/prayer stack remain visible. Hide the full dashboard and media/CCTV row.
         dashboardPanelView?.visibility = View.GONE
         applyPreviewRowVisibility()
-        idlePreviewSpacer?.visibility = View.VISIBLE
         headerBrandView?.visibility = View.GONE
         headerTimeLabel?.text = SimpleDateFormat("EEEE, dd MMM yyyy", Locale("id", "ID")).apply {
             timeZone = java.util.TimeZone.getTimeZone(dashboardSnapshot?.timeZone ?: DashboardServices.selectedCity(this@MainActivity).timeZone)
@@ -4350,7 +4365,11 @@ class MainActivity : Activity() {
             header.background = null
             header.setPadding(0, 0, 0, 0)
             headerSpacerView?.visibility = View.VISIBLE
-            headerRightView?.let { right -> right.gravity = Gravity.END or Gravity.CENTER_VERTICAL; right.layoutParams = LinearLayout.LayoutParams(dp(440), -2) }
+            headerRightView?.let { right ->
+                right.orientation = LinearLayout.VERTICAL
+                right.gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                right.layoutParams = LinearLayout.LayoutParams(dp(440), -2)
+            }
             listOf(headerTimeLabel, headerClockLabel, headerWeatherLabel, headerPrayerMetaLabel, headerHijriLabel, headerNextPrayerLabel).forEach {
                 it?.gravity = Gravity.END
                 if (it != null) {
