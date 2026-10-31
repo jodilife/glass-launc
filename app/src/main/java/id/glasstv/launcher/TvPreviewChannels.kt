@@ -26,7 +26,7 @@ internal object TvPreviewChannels {
         val category: String = "recommendations"
     )
 
-    fun read(context: Context, maxChannels: Int = 4, maxPrograms: Int = 8): List<Channel> {
+    fun read(context: Context, maxChannels: Int = 10, maxPrograms: Int = 8): List<Channel> {
         if (context.checkSelfPermission("android.permission.READ_TV_LISTINGS") != PackageManager.PERMISSION_GRANTED) {
             return emptyList()
         }
