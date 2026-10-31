@@ -3,6 +3,21 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Optional shared debug key.
+// Place the same debug.keystore here on the developer machine and restore it
+// from GitHub Actions Secrets in CI. Without the file, AGP's normal debug key
+// remains the fallback so fresh checkouts can still build.
+val stableDebugKeystoreFile = file("debug.keystore")
+val stableDebugStorePassword = providers.gradleProperty("glasstvDebugStorePassword")
+    .orElse(providers.environmentVariable("GLASSTV_DEBUG_STORE_PASSWORD"))
+    .orElse("android")
+val stableDebugKeyAlias = providers.gradleProperty("glasstvDebugKeyAlias")
+    .orElse(providers.environmentVariable("GLASSTV_DEBUG_KEY_ALIAS"))
+    .orElse("androiddebugkey")
+val stableDebugKeyPassword = providers.gradleProperty("glasstvDebugKeyPassword")
+    .orElse(providers.environmentVariable("GLASSTV_DEBUG_KEY_PASSWORD"))
+    .orElse("android")
+
 android {
     namespace = "id.glasstv.launcher"
     compileSdk = 35
@@ -15,10 +30,24 @@ android {
         versionName = "0.4.0"
     }
 
+    signingConfigs {
+        if (stableDebugKeystoreFile.isFile) {
+            create("stableDebug") {
+                storeFile = stableDebugKeystoreFile
+                storePassword = stableDebugStorePassword.get()
+                keyAlias = stableDebugKeyAlias.get()
+                keyPassword = stableDebugKeyPassword.get()
+            }
+        }
+    }
+
     // Debug is a side-by-side preview so it cannot overwrite the installed app.
     // Release builds keep the original applicationId.
     buildTypes {
         getByName("debug") {
+            if (stableDebugKeystoreFile.isFile) {
+                signingConfig = signingConfigs.getByName("stableDebug")
+            }
             applicationIdSuffix = ".dashboardtest"
             versionNameSuffix = "-preview"
         }
