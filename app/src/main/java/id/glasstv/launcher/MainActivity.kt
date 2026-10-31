@@ -138,6 +138,7 @@ class MainActivity : Activity() {
     private val wallpaperDownloadLock = Any()
     private val wallpaperDownloadSlots = mutableSetOf<String>()
     private var weatherWallpaperLoading = false
+    private var wallpaperCatalogDownloadInProgress = false
 
     /**
      * Lightweight native night-sky ambient background. It avoids a continuously decoded
@@ -802,8 +803,9 @@ class MainActivity : Activity() {
         }
         val wallpaperPrefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val videoUri = wallpaperPrefs.getString("wallpaper_video_uri", null)
-        if (videoUri != null || wallpaperPrefs.getString("wallpaper_source", "bing") == "pixabay_video") {
-            if (videoUri != null) wallpaperTarget.setBackgroundColor(Color.rgb(5, 8, 14))
+        val savedWallpaperSource = wallpaperPrefs.getString("wallpaper_source", "bing")
+        if (videoUri != null || savedWallpaperSource == "pixabay_video" || savedWallpaperSource == "catalog_video") {
+            if (videoUri != null || savedWallpaperSource == "catalog_video") wallpaperTarget.setBackgroundColor(Color.rgb(5, 8, 14))
             setupVideoWallpaper(wallpaperTarget)
         }
         homeScroll.addView(root, FrameLayout.LayoutParams(-1, -1))
@@ -3135,7 +3137,7 @@ class MainActivity : Activity() {
             "Redupkan wallpaper", "Pilih gambar sendiri", "Rotasi wallpaper", "Wallpaper berikutnya",
             "Wallpaper video", "Gunakan wallpaper foto", "Google Ambient / Art Gallery",
             "API Key Pixabay", "Kata kunci video Pixabay", "Unduh video Pixabay sekarang",
-            "Info / kredit video Pixabay", "Prioritas background tanpa Live TV",
+            "Info / kredit video Pixabay", "Cari video live wallpaper", "Prioritas background tanpa Live TV",
             "Tampilan saat tidak digunakan", "Posisi panel Minimalis", "Edit nama sapaan" -> "Tampilan"
             "Lokasi cuaca & waktu salat", "Info GlassTV" -> "Cuaca & Waktu Salat"
             "Azan otomatis", "Uji suara azan" -> "Waktu Salat"
@@ -3371,6 +3373,10 @@ class MainActivity : Activity() {
             dialog.dismiss()
             showPixabayVideoInfo()
         }
+        settingRow("Cari video live wallpaper", "Cari dan ganti video dari MotionBGS atau koleksi Lively tanpa API key", currentCatalogWallpaperLabel()) {
+            dialog.dismiss()
+            showWallpaperVideoSearchDialog()
+        }
         settingRow("Wallpaper video", "Pilih video lokal sebagai latar bergerak tanpa suara") {
             dialog.dismiss()
             val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -3383,7 +3389,10 @@ class MainActivity : Activity() {
         }
         settingRow("Gunakan wallpaper foto", "Kembali ke wallpaper foto otomatis") {
             val edit = getSharedPreferences("glass_tv", MODE_PRIVATE).edit().remove("wallpaper_video_uri")
-            if (prefs.getString("wallpaper_source", "bing") == "pixabay_video") edit.putString("wallpaper_source", "bing")
+            if (prefs.getString("wallpaper_source", "bing") == "pixabay_video" ||
+                prefs.getString("wallpaper_source", "bing") == "catalog_video") {
+                edit.putString("wallpaper_source", "bing")
+            }
             edit.apply()
             releaseVideoWallpaperPlayer()
             applyWallpaper(wallpaperTarget)
@@ -5028,14 +5037,21 @@ class MainActivity : Activity() {
         val source = prefs.getString("wallpaper_source", "bing")
         val weatherMode = source == "weather_motionbgs"
         val pixabayMode = source == "pixabay_video"
+        val catalogMode = source == "catalog_video"
         val pixabayFile = File(cacheDir, "glasstv_pixabay_night.mp4")
+        val catalogFile = prefs.getString("wallpaper_catalog_video_path", null)?.let { File(it) }
         val rawUri = when {
             weatherMode -> prefs.getString("wallpaper_weather_video_path", null)?.let { Uri.fromFile(File(it)) }
             pixabayMode -> pixabayFile.takeIf { it.exists() && it.length() > 100_000L }?.let { Uri.fromFile(it) }
+            catalogMode -> catalogFile?.takeIf { it.exists() && it.length() > 100_000L }?.let { Uri.fromFile(it) }
             else -> prefs.getString("wallpaper_video_uri", null)?.let { Uri.parse(it) }
         }
         if (rawUri == null) {
             if (pixabayMode) downloadPixabayNightVideo(force = false)
+            if (catalogMode) {
+                val id = prefs.getString("wallpaper_catalog_video_id", null)
+                WallpaperVideoCatalog.items.firstOrNull { it.id == id }?.let { downloadWallpaperCatalogVideo(it) }
+            }
             return
         }
         if (videoWallpaperPlayer != null && videoWallpaperView?.parent === target) {
@@ -5311,6 +5327,394 @@ class MainActivity : Activity() {
             .setMessage(message)
             .setPositiveButton("Mengerti", null)
             .show()
+    }
+
+    private fun currentCatalogWallpaperLabel(): String {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (prefs.getString("wallpaper_source", "bing") != "catalog_video") return "CARI VIDEO"
+        val title = prefs.getString("wallpaper_catalog_video_title", "Video tersimpan") ?: "Video tersimpan"
+        return title.take(28)
+    }
+
+    private fun showWallpaperVideoSearchDialog() {
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(12), dp(18), dp(8))
+            clipChildren = false
+            clipToPadding = false
+        }
+
+        val searchRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val searchInput = EditText(this).apply {
+            hint = "Cari night, aurora, mountain, rain..."
+            setSingleLine(true)
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.rgb(135, 151, 173))
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.argb(155, 20, 31, 47))
+                setStroke(dp(1), accentAlpha(100))
+            }
+            setText(prefs.getString("wallpaper_catalog_query", "").orEmpty())
+        }
+        searchRow.addView(searchInput, LinearLayout.LayoutParams(0, dp(48), 1f).apply {
+            rightMargin = dp(8)
+        })
+        content.addView(searchRow)
+
+        var selectedFilter = "all"
+        val filterRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, dp(8))
+        }
+        val filterButtons = mutableListOf<Pair<String, TextView>>()
+        fun renderFilters() {
+            filterButtons.forEach { (key, view) ->
+                val selected = selectedFilter == key
+                view.setTextColor(if (selected) Color.WHITE else Color.rgb(180, 194, 213))
+                view.background = GradientDrawable().apply {
+                    cornerRadius = dp(9).toFloat()
+                    setColor(if (selected) accentAlpha(100) else Color.argb(80, 35, 48, 66))
+                    setStroke(dp(if (selected) 1 else 1), if (selected) accent else Color.argb(70, 150, 170, 195))
+                }
+            }
+        }
+        fun addFilter(labelText: String, key: String) {
+            val chip = TextView(this).apply {
+                text = labelText
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                isFocusable = true
+                isClickable = true
+                setOnClickListener {
+                    selectedFilter = key
+                    renderFilters()
+                    renderResults()
+                }
+                setOnFocusChangeListener { view, focused ->
+                    if (focused) playNavigationSound()
+                    view.elevation = if (focused) dp(5).toFloat() else 0f
+                }
+            }
+            filterButtons.add(key to chip)
+            filterRow.addView(chip, LinearLayout.LayoutParams(-2, dp(36)).apply {
+                rightMargin = dp(7)
+            })
+        }
+        addFilter("Semua sumber", "all")
+        addFilter("MotionBGS", "motionbgs")
+        addFilter("Lively", "lively")
+        content.addView(filterRow)
+
+        content.addView(label(
+            "Pilih video untuk mengganti wallpaper aktif. Video lama tetap dipakai sampai unduhan baru selesai.",
+            10, Color.rgb(165, 184, 207), false
+        ).apply { setPadding(0, 0, 0, dp(8)) })
+
+        val results = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
+            clipToPadding = false
+        }
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(results, ScrollView.LayoutParams(-1, -2))
+        }
+        content.addView(scroll, LinearLayout.LayoutParams(-1, dp(340)))
+
+        val catalogLinks = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(9), 0, 0)
+        }
+        fun catalogLink(textValue: String, url: String) {
+            val link = TextView(this).apply {
+                text = textValue
+                textSize = 10f
+                gravity = Gravity.CENTER
+                setTextColor(accent)
+                setPadding(dp(10), dp(7), dp(10), dp(7))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(Color.argb(55, 40, 70, 106))
+                    setStroke(dp(1), accentAlpha(85))
+                }
+                isFocusable = true
+                isClickable = true
+                setOnClickListener {
+                    try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                    catch (_: Exception) { toast("Halaman katalog tidak dapat dibuka.") }
+                }
+                setOnFocusChangeListener { view, focused ->
+                    if (focused) playNavigationSound()
+                    view.background = GradientDrawable().apply {
+                        cornerRadius = dp(8).toFloat()
+                        setColor(if (focused) accentAlpha(120) else Color.argb(55, 40, 70, 106))
+                        setStroke(dp(1), if (focused) Color.WHITE else accentAlpha(85))
+                    }
+                }
+            }
+            catalogLinks.addView(link, LinearLayout.LayoutParams(-2, dp(34)).apply {
+                rightMargin = dp(8)
+            })
+        }
+        catalogLink("Katalog MotionBGS", "https://motionbgs.com/tag:landscape/")
+        catalogLink("Katalog Lively", "https://livelywallpaper.app/live-wallpapers/")
+        content.addView(catalogLinks)
+
+        lateinit var dialog: AlertDialog
+        fun renderResults() {
+            results.removeAllViews()
+            val query = searchInput.text?.toString().orEmpty()
+            val matches = WallpaperVideoCatalog.search(query, selectedFilter)
+            prefs.edit().putString("wallpaper_catalog_query", query).apply()
+            if (matches.isEmpty()) {
+                results.addView(label("Tidak ada video dalam koleksi untuk kata kunci ini. Coba aurora, night, rain, mountain, sea, atau forest.", 12,
+                    Color.rgb(190, 203, 220), false).apply {
+                    setPadding(dp(12), dp(18), dp(12), dp(18))
+                })
+                return
+            }
+
+            matches.forEach { item ->
+                val selected = prefs.getString("wallpaper_catalog_video_id", null) == item.id
+                val card = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(13), dp(10), dp(13), dp(10))
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(11).toFloat()
+                        setColor(Color.argb(if (selected) 145 else 105, 28, 40, 57))
+                        setStroke(dp(1), if (selected) accent else Color.argb(65, 160, 181, 205))
+                    }
+                    isFocusable = true
+                    isClickable = true
+                    setOnClickListener {
+                        showWallpaperVideoConfirmDialog(item, dialog)
+                    }
+                    setOnFocusChangeListener { view, focused ->
+                        view.background = GradientDrawable().apply {
+                            cornerRadius = dp(11).toFloat()
+                            setColor(if (focused) Color.argb(225, 48, 70, 98) else Color.argb(if (selected) 145 else 105, 28, 40, 57))
+                            setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else if (selected) accent else Color.argb(65, 160, 181, 205))
+                        }
+                        view.elevation = if (focused) dp(6).toFloat() else 0f
+                        if (focused) playNavigationSound()
+                    }
+                }
+                val heading = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                heading.addView(label(item.title, 13, Color.WHITE, true), LinearLayout.LayoutParams(0, -2, 1f))
+                if (selected) {
+                    heading.addView(label("SEDANG DIPAKAI", 9, accent, true))
+                }
+                card.addView(heading)
+                card.addView(label(item.source + "  ·  " + item.sizeLabel, 10, accent, true).apply {
+                    setPadding(0, dp(4), 0, 0)
+                })
+                card.addView(label(item.description, 10, Color.rgb(180, 194, 213), false).apply {
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setPadding(0, dp(3), 0, 0)
+                })
+                results.addView(card, LinearLayout.LayoutParams(-1, -2).apply {
+                    bottomMargin = dp(7)
+                })
+            }
+        }
+
+        searchInput.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderResults() }
+            override fun afterTextChanged(s: android.text.Editable?) {}
+        })
+        renderFilters()
+        renderResults()
+
+        dialog = AlertDialog.Builder(this)
+            .setTitle("CARI VIDEO LIVE WALLPAPER")
+            .setView(content)
+            .setNegativeButton("Tutup", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+            dialog.window?.setLayout(safeDialogWidth(780),
+                (resources.displayMetrics.heightPixels * 0.88f).toInt())
+            searchInput.requestFocus()
+        }
+        dialog.show()
+    }
+
+    private fun showWallpaperVideoConfirmDialog(item: WallpaperVideoItem, searchDialog: AlertDialog) {
+        AlertDialog.Builder(this)
+            .setTitle(item.title)
+            .setMessage(
+                item.source + "\n" + item.sizeLabel + "\n\n" +
+                    item.description + "\n\nVideo akan diunduh ke penyimpanan GlassTV dan diputar tanpa suara. " +
+                    "Video yang sedang dipakai tidak diganti sampai unduhan baru selesai."
+            )
+            .setPositiveButton("Unduh & gunakan") { _, _ ->
+                searchDialog.dismiss()
+                downloadWallpaperCatalogVideo(item)
+            }
+            .setNeutralButton("Lihat sumber") { _, _ ->
+                try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.pageUrl))) }
+                catch (_: Exception) { toast("Halaman sumber tidak dapat dibuka.") }
+            }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun downloadWallpaperCatalogVideo(item: WallpaperVideoItem) {
+        if (wallpaperCatalogDownloadInProgress) {
+            toast("Unduhan video lain masih berlangsung.")
+            return
+        }
+
+        val folder = File(filesDir, "wallpapers")
+        if (!folder.exists() && !folder.mkdirs()) {
+            toast("Penyimpanan wallpaper GlassTV tidak dapat dibuat.")
+            return
+        }
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val currentPath = prefs.getString("wallpaper_catalog_video_path", null)
+        val existing = currentPath?.let { File(it) }
+        if (prefs.getString("wallpaper_catalog_video_id", null) == item.id &&
+            existing != null && existing.exists() && existing.length() > 100_000L) {
+            prefs.edit()
+                .putString("wallpaper_source", "catalog_video")
+                .putBoolean("wallpaper_auto", false)
+                .apply()
+            if (shouldDisplayWallpaperVideoNow()) {
+                releaseLiveAmbientWallpaper()
+                releaseVideoWallpaperPlayer()
+                setupVideoWallpaper(wallpaperTarget)
+            }
+            toast("Video " + item.title + " sudah tersimpan dan diaktifkan.")
+            return
+        }
+
+        wallpaperCatalogDownloadInProgress = true
+        val progress = AlertDialog.Builder(this)
+            .setTitle("MENGUNDUH VIDEO")
+            .setMessage("Mengunduh " + item.title + "...\nWallpaper lama tetap dipakai sampai file baru selesai dan diperiksa.")
+            .setCancelable(false)
+            .create()
+        progress.show()
+
+        Thread({
+            var connection: HttpURLConnection? = null
+            val pending = File(folder, "wallpaper_pending_" + item.id + ".tmp")
+            try {
+                connection = URL(item.videoUrl).openConnection() as HttpURLConnection
+                connection.connectTimeout = 15000
+                connection.readTimeout = 45000
+                connection.instanceFollowRedirects = true
+                connection.setRequestProperty("User-Agent", "GlassTV Android TV Wallpaper")
+                connection.setRequestProperty("Accept", "video/mp4,application/octet-stream;q=0.9,*/*;q=0.5")
+                val response = connection.responseCode
+                if (response !in 200..299) throw IllegalStateException("Server HTTP " + response)
+                val contentType = connection.contentType.orEmpty().lowercase(Locale.ROOT)
+                if (contentType.contains("text/html")) throw IllegalStateException("Sumber mengirim halaman web, bukan file video.")
+                val contentLength = connection.contentLengthLong
+                val maxBytes = 32L * 1024L * 1024L
+                if (contentLength > maxBytes) throw IllegalStateException("Video lebih besar dari batas 32 MB.")
+
+                pending.delete()
+                var total = 0L
+                connection.inputStream.use { input ->
+                    pending.outputStream().use { output ->
+                        val buffer = ByteArray(16 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            if (total > maxBytes) throw IllegalStateException("Unduhan melebihi batas 32 MB.")
+                            output.write(buffer, 0, count)
+                        }
+                    }
+                }
+                if (total < 100_000L) throw IllegalStateException("File video terlalu kecil atau tidak lengkap.")
+                val header = ByteArray(12)
+                val headerBytes = pending.inputStream().use { it.read(header) }
+                if (headerBytes < 8 || String(header, 4, 4, Charsets.US_ASCII) != "ftyp") {
+                    throw IllegalStateException("Berkas yang diterima bukan MP4 yang valid.")
+                }
+
+                val destination = File(folder, "wallpaper_" + item.id + ".mp4")
+                val oldPath = prefs.getString("wallpaper_catalog_video_path", null)
+                runOnUiThread {
+                    val shouldDisplay = shouldDisplayWallpaperVideoNow()
+                    if (shouldDisplay) {
+                        releaseLiveAmbientWallpaper()
+                        releaseVideoWallpaperPlayer()
+                    }
+                    try {
+                        if (destination.exists() && !destination.delete()) {
+                            throw IllegalStateException("Video lama tidak dapat diganti.")
+                        }
+                        if (!pending.renameTo(destination)) {
+                            pending.copyTo(destination, overwrite = true)
+                            pending.delete()
+                        }
+                        prefs.edit()
+                            .putString("wallpaper_source", "catalog_video")
+                            .putString("wallpaper_catalog_video_id", item.id)
+                            .putString("wallpaper_catalog_video_title", item.title)
+                            .putString("wallpaper_catalog_video_source", item.source)
+                            .putString("wallpaper_catalog_video_page", item.pageUrl)
+                            .putString("wallpaper_catalog_video_path", destination.absolutePath)
+                            .putLong("wallpaper_catalog_video_downloaded_at", System.currentTimeMillis())
+                            .remove("wallpaper_video_uri")
+                            .putBoolean("wallpaper_auto", false)
+                            .apply()
+
+                        if (shouldDisplay && ::wallpaperTarget.isInitialized && !isFinishing) {
+                            setupVideoWallpaper(wallpaperTarget)
+                        }
+                        if (!oldPath.isNullOrBlank() && oldPath != destination.absolutePath) {
+                            val oldFile = File(oldPath)
+                            if (oldFile.parentFile?.canonicalPath == folder.canonicalPath) oldFile.delete()
+                        }
+                        progress.dismiss()
+                        toast("Video " + item.title + " berhasil diunduh dan dipilih.")
+                    } catch (error: Exception) {
+                        progress.dismiss()
+                        android.util.Log.e("GlassTVWallpaper", "Unable to activate downloaded catalog video", error)
+                        toast("Video selesai diunduh, tetapi gagal diaktifkan: " + (error.message ?: "kesalahan penyimpanan"))
+                    } finally {
+                        wallpaperCatalogDownloadInProgress = false
+                    }
+                }
+            } catch (error: Exception) {
+                pending.delete()
+                android.util.Log.w("GlassTVWallpaper", "Wallpaper catalogue download failed for " + item.id, error)
+                runOnUiThread {
+                    progress.dismiss()
+                    wallpaperCatalogDownloadInProgress = false
+                    toast("Video " + item.title + " gagal diunduh: " + (error.message ?: "sumber tidak tersedia") +
+                        ". Wallpaper yang lama tetap dipakai.")
+                }
+            } finally {
+                connection?.disconnect()
+            }
+        }, "glasstv-wallpaper-catalog").start()
+    }
+
+    private fun shouldDisplayWallpaperVideoNow(): Boolean {
+        if (!idleMode) return true
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        if (prefs.getBoolean("live_tv_idle_background", false)) return false
+        return prefs.getString("idle_background_mode", "ambient") == "wallpaper"
     }
 
     private fun downloadPixabayNightVideo(force: Boolean = false) {
