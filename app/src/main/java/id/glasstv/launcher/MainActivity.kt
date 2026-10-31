@@ -4556,7 +4556,7 @@ class MainActivity : Activity() {
             prefs.edit().putString("wallpaper_source", "photos").remove("wallpaper_weather_video_path").apply()
             source = "photos"
         }
-remove legacy branch        if (prefs.getString("wallpaper_video_uri", null) != null) {
+        if (prefs.getString("wallpaper_video_uri", null) != null) {
             target.setBackgroundColor(Color.rgb(5, 8, 14))
             return
         }
