@@ -49,6 +49,30 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 
+      # On the first run, export the exact default debug key used to sign this APK.
+      # Save it as GLASSTV_DEBUG_KEYSTORE_BASE64 so later GitHub builds use one stable signature.
+      - name: Export one-time debug keystore setup
+        if: ${{ hashFiles('app/debug.keystore') == '' }}
+        run: |
+          KEY_PATH="$HOME/.android/debug.keystore"
+          if [ ! -s "$KEY_PATH" ]; then
+            echo "Gradle debug keystore was not found at $KEY_PATH"
+            exit 1
+          fi
+          mkdir -p app/build/keystore-setup
+          cp "$KEY_PATH" app/build/keystore-setup/glasstv-debug.keystore
+          chmod 600 app/build/keystore-setup/glasstv-debug.keystore
+          keytool -list -keystore "$KEY_PATH" -storepass android -alias androiddebugkey
+
+      - name: Upload one-time debug keystore setup
+        if: ${{ hashFiles('app/debug.keystore') == '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: GlassTV-Debug-Keystore-Setup
+          path: app/build/keystore-setup/glasstv-debug.keystore
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
