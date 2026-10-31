@@ -5340,10 +5340,14 @@ class MainActivity : Activity() {
 
         releaseVideoWallpaperPlayer()
         try {
-            val view = PlayerView(this).apply {
+            val view = layoutInflater.inflate(
+                R.layout.view_wallpaper_player,
+                target,
+                false
+            ) as PlayerView
+            view.apply {
                 useController = false
                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                setUseTextureView(true)
                 setShutterBackgroundColor(Color.rgb(5, 8, 14))
                 setBackgroundColor(Color.rgb(5, 8, 14))
                 alpha = 1f
