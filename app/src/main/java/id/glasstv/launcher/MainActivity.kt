@@ -207,7 +207,7 @@ class MainActivity : Activity() {
             val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
             if (prefs.getString("wallpaper_video_uri", null) != null ||
                 !prefs.getBoolean("wallpaper_auto", true)) return
-            val source = prefs.getString("wallpaper_source", "bing")
+            val source = prefs.getString("wallpaper_source", "photos")
             val edit = prefs.edit().putLong("wallpaper_last_refresh", System.currentTimeMillis())
             if (source == "photos") edit.putInt("wallpaper_photo_index", prefs.getInt("wallpaper_photo_index", 0) + 1)
             if (source == "gradient") edit.putInt("wallpaper_index", prefs.getInt("wallpaper_index", 0) + 1)
