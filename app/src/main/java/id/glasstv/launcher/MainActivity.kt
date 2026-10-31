@@ -873,11 +873,11 @@ class MainActivity : Activity() {
             parts.size == 2 && (parts[0].toIntOrNull() ?: 99) * 60 + (parts[1].toIntOrNull() ?: 99) <= currentMinute
         } ?: 5 // Before Subuh, Isya is the currently active prayer period.
         val prayerText = SpannableString(prayerIndices.joinToString("   ·   ") { index ->
-            "${snapshot.prayerNames[index]} ${snapshot.prayerTimes.getOrNull(index) ?: "--:--}"
+            "${snapshot.prayerNames[index]} ${snapshot.prayerTimes.getOrNull(index) ?: "--:--"}"
         })
         var offset = 0
         prayerIndices.forEachIndexed { position, index ->
-            val item = "${snapshot.prayerNames[index]} ${snapshot.prayerTimes.getOrNull(index) ?: "--:--}"
+            val item = "${snapshot.prayerNames[index]} ${snapshot.prayerTimes.getOrNull(index) ?: "--:--"}"
             if (index == activePrayerIndex) {
                 prayerText.setSpan(ForegroundColorSpan(accent), offset, offset + item.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 prayerText.setSpan(StyleSpan(Typeface.BOLD), offset, offset + item.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
