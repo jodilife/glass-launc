@@ -5577,6 +5577,8 @@ class MainActivity : Activity() {
             clipChildren = false
             clipToPadding = false
         }
+        val resultCards = mutableListOf<View>()
+        var resultScroll: ScrollView? = null
         var searchDialog: AlertDialog? = null
         var renderResults: () -> Unit = {}
         var selectedFilter = initialFilter
@@ -5611,6 +5613,20 @@ class MainActivity : Activity() {
                     renderFilters()
                     renderResults.invoke()
                 }
+                setOnKeyListener { _, keyCode, event ->
+                    if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                    when (keyCode) {
+                        KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            resultCards.firstOrNull()?.requestFocus()
+                            true
+                        }
+                        KeyEvent.KEYCODE_DPAD_UP -> {
+                            searchInput.requestFocus()
+                            true
+                        }
+                        else -> false
+                    }
+                }
                 setOnFocusChangeListener { view, focused ->
                     if (focused) playNavigationSound()
                     view.elevation = if (focused) dp(5).toFloat() else 0f
@@ -5633,9 +5649,13 @@ class MainActivity : Activity() {
         ).apply { setPadding(0, 0, 0, dp(8)) })
 
         val scroll = ScrollView(this).apply {
-            isVerticalScrollBarEnabled = false
+            isVerticalScrollBarEnabled = true
+            isSmoothScrollingEnabled = true
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+            overScrollMode = View.OVER_SCROLL_NEVER
             addView(results, FrameLayout.LayoutParams(-1, -2))
         }
+        resultScroll = scroll
         content.addView(scroll, LinearLayout.LayoutParams(-1, dp(340)))
 
         val catalogLinks = LinearLayout(this).apply {
@@ -5661,6 +5681,12 @@ class MainActivity : Activity() {
                     try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
                     catch (_: Exception) { toast("Halaman katalog tidak dapat dibuka.") }
                 }
+                setOnKeyListener { _, keyCode, event ->
+                    if (event.action == KeyEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                        resultCards.lastOrNull()?.requestFocus()
+                        true
+                    } else false
+                }
                 setOnFocusChangeListener { view, focused ->
                     if (focused) playNavigationSound()
                     view.background = GradientDrawable().apply {
@@ -5680,6 +5706,7 @@ class MainActivity : Activity() {
 
         renderResults = render@{
             results.removeAllViews()
+            resultCards.clear()
             val query = searchInput.text?.toString().orEmpty()
             val matches = WallpaperVideoCatalog.search(query, selectedFilter)
             prefs.edit().putString("wallpaper_catalog_query", query).apply()
@@ -5691,7 +5718,7 @@ class MainActivity : Activity() {
                 return@render
             }
 
-            matches.forEach { item ->
+            matches.forEachIndexed { index, item ->
                 val selected = prefs.getString("wallpaper_catalog_video_id", null) == item.id
                 val card = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
@@ -5708,6 +5735,25 @@ class MainActivity : Activity() {
                             showWallpaperVideoConfirmDialog(item, activeDialog)
                         }
                     }
+                    setOnKeyListener { _, keyCode, event ->
+                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                        when (keyCode) {
+                            KeyEvent.KEYCODE_DPAD_UP -> {
+                                val previous = resultCards.getOrNull(index - 1)
+                                if (previous != null) previous.requestFocus()
+                                else filterButtons.firstOrNull { it.first == selectedFilter }?.second?.requestFocus()
+                                    ?: searchInput.requestFocus()
+                                true
+                            }
+                            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                val next = resultCards.getOrNull(index + 1)
+                                if (next != null) next.requestFocus()
+                                else catalogLinks.getChildAt(0)?.requestFocus()
+                                true
+                            }
+                            else -> false
+                        }
+                    }
                     setOnFocusChangeListener { view, focused ->
                         view.background = GradientDrawable().apply {
                             cornerRadius = dp(11).toFloat()
@@ -5715,7 +5761,20 @@ class MainActivity : Activity() {
                             setStroke(dp(if (focused) 2 else 1), if (focused) Color.WHITE else if (selected) accent else Color.argb(65, 160, 181, 205))
                         }
                         view.elevation = if (focused) dp(6).toFloat() else 0f
-                        if (focused) playNavigationSound()
+                        if (focused) {
+                            playNavigationSound()
+                            view.post {
+                                val container = resultScroll ?: return@post
+                                val top = view.top
+                                val bottom = view.bottom
+                                val viewportTop = container.scrollY
+                                val viewportBottom = viewportTop + container.height
+                                when {
+                                    top < viewportTop -> container.scrollTo(0, top)
+                                    bottom > viewportBottom -> container.scrollTo(0, bottom - container.height)
+                                }
+                            }
+                        }
                     }
                 }
                 val heading = LinearLayout(this).apply {
@@ -5735,6 +5794,7 @@ class MainActivity : Activity() {
                     ellipsize = android.text.TextUtils.TruncateAt.END
                     setPadding(0, dp(3), 0, 0)
                 })
+                resultCards.add(card)
                 results.addView(card, LinearLayout.LayoutParams(-1, -2).apply {
                     bottomMargin = dp(7)
                 })
