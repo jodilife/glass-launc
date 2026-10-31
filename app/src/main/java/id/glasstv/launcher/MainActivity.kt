@@ -1599,13 +1599,12 @@ class MainActivity : Activity() {
 
     private fun applyMinimalistHeaderPosition() {
         if (!idleMode || !::root.isInitialized) return
-        val header = homeHeaderView ?: return
+        val header = homeHeaderView as? LinearLayout ?: return
         val position = getSharedPreferences("glass_tv", MODE_PRIVATE)
             .getString("minimalist_panel_position", "top_right") ?: "top_right"
         val centered = position == "bottom_center"
         val atTop = position == "top_right"
         root.removeView(header)
-        root.gravity = if (atTop) Gravity.TOP else Gravity.BOTTOM
         header.orientation = if (centered) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         header.gravity = if (centered) Gravity.CENTER else Gravity.CENTER_VERTICAL
         header.background = if (centered) GradientDrawable().apply {
@@ -1623,8 +1622,13 @@ class MainActivity : Activity() {
                 .forEach { it?.gravity = if (centered) Gravity.CENTER else Gravity.END }
         }
         val height = if (centered) dp(132) else dp(104)
-        header.layoutParams = LinearLayout.LayoutParams(if (centered) dp(800) else -1, height)
-        root.addView(header, if (atTop) 0 else root.childCount, header.layoutParams)
+        val width = if (centered) dp(800) else dp(440)
+        val headerGravity = when {
+            atTop -> Gravity.TOP or Gravity.END
+            centered -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            else -> Gravity.BOTTOM or Gravity.END
+        }
+        root.addView(header, FrameLayout.LayoutParams(width, height, headerGravity))
         header.requestLayout()
     }
 
@@ -4171,8 +4175,8 @@ class MainActivity : Activity() {
     private fun exitIdleMode() {
         if (!idleMode) return
         idleMode = false
-        root.gravity = Gravity.TOP
-        homeHeaderView?.let { header ->
+        homeHeaderView?.let { headerView ->
+            val header = headerView as? LinearLayout ?: return@let
             root.removeView(header)
             header.orientation = LinearLayout.HORIZONTAL
             header.gravity = Gravity.CENTER_VERTICAL
@@ -4181,7 +4185,7 @@ class MainActivity : Activity() {
             headerSpacerView?.visibility = View.VISIBLE
             headerRightView?.let { right -> right.gravity = Gravity.END or Gravity.CENTER_VERTICAL; right.layoutParams = LinearLayout.LayoutParams(dp(440), -2) }
             listOf(headerTimeLabel, headerClockLabel, headerWeatherLabel, headerPrayerMetaLabel, headerNextPrayerLabel).forEach { it?.gravity = Gravity.END }
-            root.addView(header, 0, LinearLayout.LayoutParams(-1, dp(42)))
+            root.addView(header, FrameLayout.LayoutParams(-1, dp(42), Gravity.TOP or Gravity.CENTER_HORIZONTAL))
         }
         applyMinimalistSectionVisibility()
         dashboardPanelView?.visibility = View.VISIBLE
@@ -4503,7 +4507,7 @@ class MainActivity : Activity() {
             try {
                 val imageUrl = if (source == "art") {
                     val artIndex = prefs.getInt("wallpaper_art_index", 0)
-                    val searchUrl = "https://api.artic.edu/api/v1/artworks/search?q=painting&fields=id,title,image_id,artist_title,is_public_domain&limit=100
+                    val searchUrl = "https://api.artic.edu/api/v1/artworks/search?q=painting&fields=id,title,image_id,artist_title,is_public_domain&limit=100"
                     connection = URL(searchUrl).openConnection() as HttpURLConnection
                     connection.connectTimeout = 12000
                     connection.readTimeout = 15000
