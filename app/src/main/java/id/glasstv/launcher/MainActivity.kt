@@ -396,17 +396,21 @@ class MainActivity : Activity() {
     }
 
     private fun loadLiveTvChannelRows(): List<Pair<Long, String>> {
-        val inputId = liveTvBackgroundInputId ?: return emptyList()
         return try {
-            val rows = mutableListOf<Pair<Long, String>>()
+            data class StoredChannel(
+                val id: Long,
+                val inputId: String,
+                val serviceType: String,
+                val number: String,
+                val name: String
+            )
+            val allRows = mutableListOf<StoredChannel>()
             contentResolver.query(
                 TvContract.Channels.CONTENT_URI,
                 arrayOf(TvContract.Channels._ID, TvContract.Channels.COLUMN_INPUT_ID,
                     TvContract.Channels.COLUMN_SERVICE_TYPE, TvContract.Channels.COLUMN_DISPLAY_NUMBER,
                     TvContract.Channels.COLUMN_DISPLAY_NAME),
-                "${TvContract.Channels.COLUMN_INPUT_ID} = ?",
-                arrayOf(inputId),
-                TvContract.Channels.COLUMN_DISPLAY_NUMBER + " ASC"
+                null, null, TvContract.Channels.COLUMN_DISPLAY_NUMBER + " ASC"
             )?.use { cursor ->
                 val idIndex = cursor.getColumnIndex(TvContract.Channels._ID)
                 val inputIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_INPUT_ID)
@@ -414,25 +418,74 @@ class MainActivity : Activity() {
                 val numberIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NUMBER)
                 val nameIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NAME)
                 while (cursor.moveToNext()) {
-                    if (idIndex < 0 || inputIndex < 0 || typeIndex < 0) continue
-                    if (cursor.getString(inputIndex) != inputId ||
-                        cursor.getString(typeIndex) != TvContract.Channels.SERVICE_TYPE_AUDIO_VIDEO) continue
-                    val number = if (numberIndex >= 0) cursor.getString(numberIndex).orEmpty() else ""
-                    val name = if (nameIndex >= 0) cursor.getString(nameIndex).orEmpty() else ""
-                    rows.add(cursor.getLong(idIndex) to listOf(number, name).filter { it.isNotBlank() }.joinToString("  ·  "))
+                    if (idIndex < 0 || inputIndex < 0 || cursor.isNull(inputIndex)) continue
+                    val type = if (typeIndex >= 0) cursor.getString(typeIndex).orEmpty() else ""
+                    // Some TV vendors store broadcast channels with a vendor-specific service type.
+                    // Exclude audio-only entries, but don't discard all non-standard A/V rows.
+                    if (type == TvContract.Channels.SERVICE_TYPE_AUDIO) continue
+                    allRows.add(StoredChannel(
+                        cursor.getLong(idIndex),
+                        cursor.getString(inputIndex),
+                        type,
+                        if (numberIndex >= 0) cursor.getString(numberIndex).orEmpty() else "",
+                        if (nameIndex >= 0) cursor.getString(nameIndex).orEmpty() else ""
+                    ))
                 }
             }
-            rows.distinctBy { it.first }
+            if (allRows.isEmpty()) {
+                android.util.Log.w("GlassTVLiveTv", "CHANNEL_QUERY_EMPTY: Android TV returned no stored channel rows")
+                return emptyList()
+            }
+
+            val manager = getSystemService(TV_INPUT_SERVICE) as? TvInputManager
+            val tunerIds = manager?.tvInputList
+                ?.filter { it.type == TvInputInfo.TYPE_TUNER }
+                ?.map { it.id }
+                .orEmpty()
+            val grouped = allRows.filter { tunerIds.isEmpty() || it.inputId in tunerIds }
+                .groupBy { it.inputId }
+            val activeId = liveTvBackgroundInputId
+            val chosenInputId = when {
+                activeId != null && grouped[activeId].orEmpty().isNotEmpty() -> activeId
+                else -> grouped.entries.maxByOrNull { entry ->
+                    entry.value.count { it.serviceType == TvContract.Channels.SERVICE_TYPE_AUDIO_VIDEO } * 1000 +
+                        entry.value.size
+                }?.key
+            }
+            val chosenRows = grouped[chosenInputId].orEmpty()
+            if (chosenInputId != null && chosenInputId != liveTvBackgroundInputId) {
+                android.util.Log.w("GlassTVLiveTv", "CHANNEL_INPUT_FALLBACK old=$liveTvBackgroundInputId new=$chosenInputId count=${chosenRows.size}")
+                liveTvBackgroundInputId = chosenInputId
+                val savedId = getSharedPreferences("glass_tv", MODE_PRIVATE).getLong("live_tv_channel_id", -1L)
+                val selected = chosenRows.firstOrNull { it.id == savedId }
+                    ?: chosenRows.firstOrNull { it.serviceType == TvContract.Channels.SERVICE_TYPE_AUDIO_VIDEO }
+                    ?: chosenRows.firstOrNull()
+                if (selected != null) {
+                    val uri = TvContract.buildChannelUri(selected.id)
+                    liveTvBackgroundChannelUri = uri
+                    try { liveTvBackgroundView?.tune(chosenInputId, uri) }
+                    catch (error: Exception) {
+                        android.util.Log.e("GlassTVLiveTv", "Fallback tuner retune failed", error)
+                    }
+                }
+            }
+            chosenRows
+                .sortedWith(compareBy<StoredChannel>({ it.number }, { it.name }))
+                .distinctBy { it.id }
+                .map { row ->
+                    row.id to listOf(row.number, row.name).filter { it.isNotBlank() }
+                        .joinToString("  ·  ").ifBlank { "Kanal ${row.id}" }
+                }
         } catch (error: Exception) {
-            android.util.Log.e("GlassTVLiveTv", "Unable to load channel overlay list", error)
+            android.util.Log.e("GlassTVLiveTv", "Unable to load stored TV channels", error)
             emptyList()
         }
     }
 
     private fun promptNativeLiveTvScan() {
         AlertDialog.Builder(this)
-            .setTitle("PINDAI KANAL TV")
-            .setMessage("GlassTV belum menemukan daftar kanal digital. Buka Live TV bawaan Mi TV, jalankan Pencarian Kanal / Pemindaian Otomatis pada pengaturan antena, lalu kembali ke GlassTV. Setelah pemindaian selesai, tekan CH+ atau CH− lagi.")
+            .setTitle("DAFTAR KANAL BELUM TERBACA")
+            .setMessage("GlassTV belum berhasil membaca daftar kanal yang tersimpan. Kanal di TV tidak akan dihapus. Buka Live TV bawaan untuk memastikan siaran masih tersedia, lalu kembali ke GlassTV. Tidak perlu melakukan pemindaian ulang jika kanal masih tampil di Live TV.")
             .setPositiveButton("Buka Live TV") { _, _ ->
                 val launchIntent = packageManager.getLaunchIntentForPackage("com.mitv.livetv")
                 if (launchIntent == null) {
