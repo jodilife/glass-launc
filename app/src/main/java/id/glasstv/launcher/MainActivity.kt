@@ -188,6 +188,11 @@ class MainActivity : Activity() {
     private var liveTvBackgroundScrim: View? = null
     private var liveTvBackgroundInputId: String? = null
     private var liveTvBackgroundChannelUri: Uri? = null
+    private var liveTvChannelOverlay: View? = null
+    private var liveTvChannelRows: List<Pair<Long, String>> = emptyList()
+    private var liveTvChannelSelectedIndex = -1
+    private val liveTvChannelHandler = Handler(Looper.getMainLooper())
+    private val liveTvChannelCommit = Runnable { commitLiveTvChannelSelection() }
     private val tvListingsPermissionRequestCode = 8301
     private var lastFocusedTitle: String = "Live TV"
     private var refreshOnResume = false
@@ -336,21 +341,42 @@ class MainActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        // Intercept channel keys in both normal Home and minimalist mode.
         if (event.action == KeyEvent.ACTION_DOWN) {
+            if (liveTvChannelOverlay != null) {
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_PAGE_UP,
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        moveLiveTvChannelSelection(1)
+                        return true
+                    }
+                    KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_PAGE_DOWN,
+                    KeyEvent.KEYCODE_DPAD_UP -> {
+                        moveLiveTvChannelSelection(-1)
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+                    KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                        liveTvChannelHandler.removeCallbacks(liveTvChannelCommit)
+                        commitLiveTvChannelSelection()
+                        return true
+                    }
+                    KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
+                        closeLiveTvChannelOverlay()
+                        return true
+                    }
+                }
+            }
             when (event.keyCode) {
                 KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_PAGE_UP -> {
                     resetIdleTimer()
-                    android.util.Log.i("GlassTVLiveTv", "Remote CH+ key=" + event.keyCode + " repeat=" + event.repeatCount + " idle=" + idleMode)
-                    val changed = changeLiveTvChannel(1)
-                    if (!changed) android.util.Log.w("GlassTVLiveTv", "CH+ could not tune a channel")
+                    if (!idleMode) enterIdleMode()
+                    showLiveTvChannelOverlay(1)
                     return true
                 }
                 KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_PAGE_DOWN -> {
                     resetIdleTimer()
-                    android.util.Log.i("GlassTVLiveTv", "Remote CH- key=" + event.keyCode + " repeat=" + event.repeatCount + " idle=" + idleMode)
-                    val changed = changeLiveTvChannel(-1)
-                    if (!changed) android.util.Log.w("GlassTVLiveTv", "CH- could not tune a channel")
+                    if (!idleMode) enterIdleMode()
+                    showLiveTvChannelOverlay(-1)
                     return true
                 }
             }
@@ -368,22 +394,15 @@ class MainActivity : Activity() {
         return super.dispatchKeyEvent(event)
     }
 
-    private fun changeLiveTvChannel(direction: Int): Boolean {
-        val inputId = liveTvBackgroundInputId ?: return false
-        val tv = liveTvBackgroundView ?: return false
-        val currentId = liveTvBackgroundChannelUri?.lastPathSegment?.toLongOrNull()
-        fun forwardChannelKey(): Boolean {
-            val keyCode = if (direction > 0) KeyEvent.KEYCODE_CHANNEL_UP else KeyEvent.KEYCODE_CHANNEL_DOWN
-            val down = tv.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
-            tv.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
-            return down
-        }
+    private fun loadLiveTvChannelRows(): List<Pair<Long, String>> {
+        val inputId = liveTvBackgroundInputId ?: return emptyList()
         return try {
-            val channels = mutableListOf<Pair<Long, String>>()
+            val rows = mutableListOf<Pair<Long, String>>()
             contentResolver.query(
                 TvContract.Channels.CONTENT_URI,
                 arrayOf(TvContract.Channels._ID, TvContract.Channels.COLUMN_INPUT_ID,
-                    TvContract.Channels.COLUMN_SERVICE_TYPE, TvContract.Channels.COLUMN_DISPLAY_NUMBER),
+                    TvContract.Channels.COLUMN_SERVICE_TYPE, TvContract.Channels.COLUMN_DISPLAY_NUMBER,
+                    TvContract.Channels.COLUMN_DISPLAY_NAME),
                 "${TvContract.Channels.COLUMN_INPUT_ID} = ?",
                 arrayOf(inputId),
                 TvContract.Channels.COLUMN_DISPLAY_NUMBER + " ASC"
@@ -392,38 +411,134 @@ class MainActivity : Activity() {
                 val inputIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_INPUT_ID)
                 val typeIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_SERVICE_TYPE)
                 val numberIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NUMBER)
+                val nameIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NAME)
                 while (cursor.moveToNext()) {
                     if (idIndex < 0 || inputIndex < 0 || typeIndex < 0) continue
-                    if (cursor.getString(inputIndex) != inputId) continue
-                    if (cursor.getString(typeIndex) != TvContract.Channels.SERVICE_TYPE_AUDIO_VIDEO) continue
-                    channels.add(cursor.getLong(idIndex) to if (numberIndex >= 0) cursor.getString(numberIndex).orEmpty() else "")
+                    if (cursor.getString(inputIndex) != inputId ||
+                        cursor.getString(typeIndex) != TvContract.Channels.SERVICE_TYPE_AUDIO_VIDEO) continue
+                    val number = if (numberIndex >= 0) cursor.getString(numberIndex).orEmpty() else ""
+                    val name = if (nameIndex >= 0) cursor.getString(nameIndex).orEmpty() else ""
+                    rows.add(cursor.getLong(idIndex) to listOf(number, name).filter { it.isNotBlank() }.joinToString("  ·  "))
                 }
             }
-            if (channels.size < 2) {
-                android.util.Log.w("GlassTVLiveTv", "Channel provider returned ${channels.size} channels for $inputId; forwarding key to TvView")
-                if (forwardChannelKey()) return true
-                toast("Daftar kanal tidak tersedia. Coba pindai kanal melalui Live TV bawaan.")
-                return false
-            }
-            val currentIndex = channels.indexOfFirst { it.first == currentId }
-            if (currentIndex < 0) {
-                android.util.Log.w("GlassTVLiveTv", "Current channel $currentId is not in provider list; forwarding key to TvView")
-                if (forwardChannelKey()) return true
-            }
-            val nextIndex = if (currentIndex < 0) 0 else (currentIndex + direction + channels.size) % channels.size
-            val next = channels[nextIndex]
-            val uri = TvContract.buildChannelUri(next.first)
-            liveTvBackgroundView?.tune(inputId, uri) ?: return false
-            liveTvBackgroundChannelUri = uri
-            getSharedPreferences("glass_tv", MODE_PRIVATE).edit().putLong("live_tv_channel_id", next.first).apply()
-            android.util.Log.i("GlassTVLiveTv", "CHANNEL_CHANGED number=${next.second} id=${next.first}")
-            true
+            rows.distinctBy { it.first }
         } catch (error: Exception) {
-            android.util.Log.e("GlassTVLiveTv", "Channel change failed; forwarding key to TvView", error)
-            if (forwardChannelKey()) return true
-            toast("TV menolak perintah ganti kanal. Periksa hasil pemindaian tuner.")
-            false
+            android.util.Log.e("GlassTVLiveTv", "Unable to load channel overlay list", error)
+            emptyList()
         }
+    }
+
+    private fun showLiveTvChannelOverlay(direction: Int) {
+        if (!::wallpaperTarget.isInitialized || liveTvBackgroundView == null || liveTvBackgroundInputId == null) {
+            toast("Live TV belum siap. Tunggu tuner tersambung, lalu tekan CH lagi.")
+            return
+        }
+        liveTvChannelRows = loadLiveTvChannelRows()
+        if (liveTvChannelRows.isEmpty()) {
+            toast("Daftar kanal kosong. Pindai kanal melalui Live TV bawaan.")
+            return
+        }
+        val currentId = liveTvBackgroundChannelUri?.lastPathSegment?.toLongOrNull()
+        val currentIndex = liveTvChannelRows.indexOfFirst { it.first == currentId }
+        if (liveTvChannelOverlay == null) {
+            liveTvChannelSelectedIndex = currentIndex.coerceAtLeast(0)
+            buildLiveTvChannelOverlay()
+            android.util.Log.i("GlassTVLiveTv", "CHANNEL_OVERLAY_OPEN count=${liveTvChannelRows.size} current=$currentIndex")
+            return
+        }
+        if (currentIndex >= 0) liveTvChannelSelectedIndex = currentIndex
+        moveLiveTvChannelSelection(direction)
+    }
+
+    private fun buildLiveTvChannelOverlay() {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(16), dp(20), dp(16))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(18).toFloat()
+                setColor(Color.argb(232, 9, 15, 25))
+                setStroke(dp(1), accentAlpha(145))
+            }
+            elevation = dp(18).toFloat()
+        }
+        panel.addView(label("LIVE TV  /  PILIH KANAL", 10, accent, true))
+        val hint = label("CH pertama membuka daftar · CH berikutnya memilih", 10, Color.rgb(172, 188, 208), false)
+        hint.setPadding(0, dp(4), 0, dp(10))
+        panel.addView(hint)
+        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        panel.addView(rows)
+        val footer = label("OK  PILIH SEKARANG     •     DIAM 1,8 DETIK  OTOMATIS", 9,
+            Color.rgb(190, 204, 221), false)
+        footer.setPadding(0, dp(10), 0, 0)
+        panel.addView(footer)
+        val wrapper = FrameLayout(this).apply {
+            setBackgroundColor(Color.argb(36, 0, 0, 0))
+            isFocusable = false
+            addView(panel, FrameLayout.LayoutParams(dp(390), -2, Gravity.END or Gravity.CENTER_VERTICAL).apply {
+                rightMargin = dp(38)
+            })
+        }
+        wrapper.tag = rows
+        wallpaperTarget.addView(wrapper, FrameLayout.LayoutParams(-1, -1))
+        liveTvChannelOverlay = wrapper
+        renderLiveTvChannelOverlay()
+    }
+
+    private fun renderLiveTvChannelOverlay() {
+        val wrapper = liveTvChannelOverlay as? FrameLayout ?: return
+        val rows = wrapper.tag as? LinearLayout ?: return
+        rows.removeAllViews()
+        val first = (liveTvChannelSelectedIndex - 2).coerceAtLeast(0)
+        val last = (first + 5).coerceAtMost(liveTvChannelRows.lastIndex)
+        for (index in first..last) {
+            val (id, name) = liveTvChannelRows[index]
+            val selected = index == liveTvChannelSelectedIndex
+            val row = TextView(this).apply {
+                text = (if (selected) "●  " else "   ") + (name.ifBlank { "Kanal ${index + 1}" })
+                textSize = 13f
+                setTextColor(if (selected) Color.WHITE else Color.rgb(190, 202, 219))
+                setPadding(dp(12), dp(9), dp(12), dp(9))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(9).toFloat()
+                    setColor(if (selected) accentAlpha(70) else Color.TRANSPARENT)
+                    if (selected) setStroke(dp(1), accentAlpha(180))
+                }
+            }
+            rows.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(3) })
+        }
+    }
+
+    private fun moveLiveTvChannelSelection(direction: Int) {
+        if (liveTvChannelRows.isEmpty()) return
+        liveTvChannelSelectedIndex = (liveTvChannelSelectedIndex + direction + liveTvChannelRows.size) % liveTvChannelRows.size
+        renderLiveTvChannelOverlay()
+        liveTvChannelHandler.removeCallbacks(liveTvChannelCommit)
+        liveTvChannelHandler.postDelayed(liveTvChannelCommit, 1800L)
+        resetIdleTimer()
+    }
+
+    private fun commitLiveTvChannelSelection() {
+        val index = liveTvChannelSelectedIndex
+        val channel = liveTvChannelRows.getOrNull(index) ?: return
+        val inputId = liveTvBackgroundInputId ?: return
+        val uri = TvContract.buildChannelUri(channel.first)
+        val tuned = try { liveTvBackgroundView?.tune(inputId, uri) != null } catch (_: Exception) { false }
+        if (!tuned) {
+            android.util.Log.w("GlassTVLiveTv", "Channel selection tune request failed id=${channel.first}")
+            return
+        }
+        liveTvBackgroundChannelUri = uri
+        getSharedPreferences("glass_tv", MODE_PRIVATE).edit().putLong("live_tv_channel_id", channel.first).apply()
+        android.util.Log.i("GlassTVLiveTv", "CHANNEL_CHANGED number=${channel.second} id=${channel.first}")
+        closeLiveTvChannelOverlay()
+    }
+
+    private fun closeLiveTvChannelOverlay() {
+        liveTvChannelHandler.removeCallbacks(liveTvChannelCommit)
+        (liveTvChannelOverlay?.parent as? ViewGroup)?.removeView(liveTvChannelOverlay)
+        liveTvChannelOverlay = null
+        liveTvChannelRows = emptyList()
+        liveTvChannelSelectedIndex = -1
     }
 
     private fun showHome() {
