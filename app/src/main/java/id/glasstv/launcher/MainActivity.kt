@@ -391,7 +391,65 @@ class MainActivity : Activity() {
             File(cacheDir, "glasstv_wallpaper_day.jpg"),
             File(cacheDir, "glasstv_wallpaper_night.jpg")
         ).filter { it.exists() && it.length() > 10_000L }.forEach { sources.add(it.absolutePath) }
+        wallpapersCraftCacheDir().listFiles()?.filter {
+            it.isFile && it.length() > 20_000L && it.extension.lowercase(Locale.ROOT) in setOf("jpg", "jpeg", "png", "webp")
+        }?.sortedBy { it.name }?.forEach { sources.add(it.absolutePath) }
         return sources.toList()
+    }
+
+    private fun wallpapersCraftCacheDir(): File = File(cacheDir, "photomode_wallpaperscraft").apply { mkdirs() }
+
+    private fun showWallpapersCraftPhotoPicker() {
+        val categories = arrayOf("Nature", "Abstract", "Space", "City", "Animals", "Minimalism", "Art", "All")
+        val slugs = arrayOf("nature", "abstract", "space", "city", "animals", "minimalism", "art", "")
+        AlertDialog.Builder(this)
+            .setTitle("UNDUH FOTO WALLPAPERSCRAFT")
+            .setItems(categories) { _, which -> downloadWallpapersCraftPhotos(slugs[which], categories[which]) }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun downloadWallpapersCraftPhotos(category: String, label: String) {
+        val cache = wallpapersCraftCacheDir()
+        val existing = cache.listFiles()?.count { it.isFile && it.length() > 20_000L } ?: 0
+        val progress = ProgressBar(this).apply { isIndeterminate = true }
+        val message = TextView(this).apply {
+            text = "Mengambil daftar foto $label dari WallpapersCraft…"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            setPadding(dp(18), dp(14), dp(18), dp(14))
+        }
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(progress, LinearLayout.LayoutParams(-1, dp(38)))
+            addView(message)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+        val dialog = AlertDialog.Builder(this).setTitle("PHOTO MODE · WALLPAPERSCRAFT")
+            .setView(body).setNegativeButton("Tutup", null).create()
+        dialog.show()
+        Thread({
+            try {
+                val added = WallpapersCraftPhotoSource.downloadBatch(category, cache, 8) { status ->
+                    runOnUiThread { if (!isFinishing && dialog.isShowing) message.text = status }
+                }
+                runOnUiThread {
+                    if (dialog.isShowing) dialog.dismiss()
+                    if (added > 0) {
+                        toast("$added foto WallpapersCraft berhasil diunduh. Total cache: ${existing + added}.")
+                        if (idleMode && getSharedPreferences("glass_tv", MODE_PRIVATE).getString("idle_background_mode", "ambient") == "photo") {
+                            applyIdleBackgroundPriority()
+                        }
+                    } else toast("Belum ada foto baru yang berhasil diunduh. Coba kategori lain atau periksa koneksi.")
+                }
+            } catch (error: Exception) {
+                android.util.Log.e("GlassTVPhotoMode", "WallpapersCraft download failed", error)
+                runOnUiThread {
+                    if (dialog.isShowing) dialog.dismiss()
+                    toast("WallpapersCraft gagal: ${error.message ?: "sumber tidak tersedia"}")
+                }
+            }
+        }, "glasstv-wallpaperscraft-download").start()
     }
 
     private fun decodePhotoModeBitmap(source: String): Bitmap? {
@@ -3325,7 +3383,7 @@ class MainActivity : Activity() {
             "Redupkan wallpaper", "Pilih gambar sendiri", "Rotasi wallpaper", "Wallpaper berikutnya",
             "Wallpaper video", "Gunakan wallpaper foto", "Google Ambient / Art Gallery",
             "Cari video live wallpaper", "Live Wallpaper MotionBGS", "Live Wallpaper Lively",
-            "Foto Photo Mode", "Hapus foto Photo Mode", "Prioritas background tanpa Live TV",
+            "Foto Photo Mode", "Unduh foto WallpapersCraft", "Hapus foto Photo Mode", "Prioritas background tanpa Live TV",
             "Tampilan saat tidak digunakan", "Posisi panel Minimalis", "Edit nama sapaan" -> "Tampilan"
             "Lokasi cuaca & waktu salat", "Info GlassTV" -> "Cuaca & Waktu Salat"
             "Azan otomatis", "Uji suara azan" -> "Waktu Salat"
@@ -3556,6 +3614,11 @@ class MainActivity : Activity() {
             showWallpaperVideoSearchDialog("all")
         }
         val photoModeCount = prefs.getStringSet("photo_mode_uris", emptySet())?.size ?: 0
+        val wallpapersCraftCount = wallpapersCraftCacheDir().listFiles()?.count { it.isFile && it.length() > 20_000L } ?: 0
+        settingRow("Unduh foto WallpapersCraft", "Cari dan unduh foto HD/4K ke cache Photo Mode seperti Bing; foto tersedia offline", if (wallpapersCraftCount == 0) "BELUM ADA FOTO" else "$wallpapersCraftCount FOTO TERSIMPAN") {
+            dialog.dismiss()
+            showWallpapersCraftPhotoPicker()
+        }
         settingRow("Foto Photo Mode", "Tambah foto pribadi untuk slideshow ala Aura: gerak Ken Burns, transisi silang, dan foto Bing cadangan", if (photoModeCount == 0) "FOTO BING OTOMATIS" else "$photoModeCount FOTO") {
             dialog.dismiss()
             pickPhotoModeImages()
