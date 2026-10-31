@@ -5472,8 +5472,7 @@ class MainActivity : Activity() {
         catalogLink("Katalog Lively", "https://livelywallpaper.app/live-wallpapers/")
         content.addView(catalogLinks)
 
-        lateinit var dialog: AlertDialog
-        renderResults = {
+        renderResults = render@{
             results.removeAllViews()
             val query = searchInput.text?.toString().orEmpty()
             val matches = WallpaperVideoCatalog.search(query, selectedFilter)
@@ -5483,7 +5482,7 @@ class MainActivity : Activity() {
                     Color.rgb(190, 203, 220), false).apply {
                     setPadding(dp(12), dp(18), dp(12), dp(18))
                 })
-                return
+                return@render
             }
 
             matches.forEach { item ->
