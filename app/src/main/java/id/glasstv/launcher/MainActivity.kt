@@ -5531,9 +5531,10 @@ class MainActivity : Activity() {
             val player = ExoPlayer.Builder(this).build()
             player.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
+                    val format = player.videoFormat
                     android.util.Log.d(
                         "GlassTVWallpaper",
-                        "Video wallpaper state=$playbackState source=$source uri=$rawUri"
+                        "Video wallpaper state=$playbackState source=$source uri=$rawUri format=${format?.sampleMimeType} ${format?.width}x${format?.height}"
                     )
                 }
 
