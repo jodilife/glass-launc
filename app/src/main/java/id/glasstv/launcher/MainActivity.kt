@@ -392,14 +392,28 @@ class MainActivity : Activity() {
             File(cacheDir, "glasstv_wallpaper_night.jpg")
         ).filter { it.exists() && it.length() > 10_000L }.forEach { sources.add(it.absolutePath) }
         listOf("wallpaperscraft", "hdwallpapers", "alphacoders").forEach { provider ->
-            File(cacheDir, "photomode_$provider").listFiles()?.filter {
+            photoProviderCacheDir(provider).listFiles()?.filter {
                 it.isFile && it.length() > 20_000L && it.extension.lowercase(Locale.ROOT) in setOf("jpg", "jpeg", "png", "webp")
             }?.sortedBy { it.name }?.forEach { sources.add(it.absolutePath) }
         }
         return sources.toList()
     }
 
-    private fun photoProviderCacheDir(provider: String): File = File(cacheDir, "photomode_$provider").apply { mkdirs() }
+    private fun photoProviderCacheDir(provider: String): File {
+        // Keep downloaded photos outside cacheDir so Android/cache cleanup cannot erase
+        // the user's Photo Mode library. Migrate earlier builds' cache files once.
+        val durable = File(filesDir, "photomode_$provider").apply { mkdirs() }
+        val legacy = File(cacheDir, "photomode_$provider")
+        if (legacy.exists()) {
+            legacy.listFiles()?.filter { it.isFile && it.length() > 20_000L }?.forEach { old ->
+                val target = File(durable, old.name)
+                if (!target.exists()) {
+                    try { old.copyTo(target, overwrite = false) } catch (_: Exception) { }
+                }
+            }
+        }
+        return durable
+    }
     private fun wallpapersCraftCacheDir(): File = photoProviderCacheDir("wallpaperscraft")
 
     private fun showWallpapersCraftPhotoPicker() {
@@ -3626,17 +3640,20 @@ class MainActivity : Activity() {
         }
         val photoModeCount = prefs.getStringSet("photo_mode_uris", emptySet())?.size ?: 0
         val wallpapersCraftCount = wallpapersCraftCacheDir().listFiles()?.count { it.isFile && it.length() > 20_000L } ?: 0
-        settingRow("Unduh foto WallpapersCraft", "Cari dan unduh foto HD/4K ke cache Photo Mode seperti Bing; foto tersedia offline", if (wallpapersCraftCount == 0) "BELUM ADA FOTO" else "$wallpapersCraftCount FOTO TERSIMPAN") {
+        val hdWallpapersCount = photoProviderCacheDir("hdwallpapers").listFiles()?.count { it.isFile && it.length() > 20_000L } ?: 0
+        val alphaCodersCount = photoProviderCacheDir("alphacoders").listFiles()?.count { it.isFile && it.length() > 20_000L } ?: 0
+        val downloadedPhotoCount = wallpapersCraftCount + hdWallpapersCount + alphaCodersCount
+        settingRow("Unduh foto WallpapersCraft", "Cari dan unduh foto HD/4K ke pustaka Photo Mode; otomatis ikut slideshow", if (wallpapersCraftCount == 0) "BELUM ADA FOTO" else "$wallpapersCraftCount FOTO TERSIMPAN") {
             dialog.dismiss()
             showWallpapersCraftPhotoPicker()
         }
-        settingRow("Unduh foto HDwallpapers.net", "Unduh wallpaper HD/4K ke cache lokal Photo Mode", "HD / 4K") {
+        settingRow("Unduh foto HDwallpapers.net", "Unduh wallpaper HD/4K; otomatis masuk slideshow Photo Mode", if (hdWallpapersCount == 0) "BELUM ADA FOTO" else "$hdWallpapersCount FOTO") {
             dialog.dismiss(); showHdWallpapersPhotoPicker()
         }
-        settingRow("Unduh foto Alpha Coders", "Unduh wallpaper ke cache lokal untuk penggunaan pribadi Photo Mode", "PERSONAL") {
+        settingRow("Unduh foto Alpha Coders", "Unduh wallpaper; otomatis masuk slideshow Photo Mode (penggunaan pribadi)", if (alphaCodersCount == 0) "BELUM ADA FOTO" else "$alphaCodersCount FOTO") {
             dialog.dismiss(); showAlphaCodersPhotoPicker()
         }
-        settingRow("Foto Photo Mode", "Tambah foto pribadi untuk slideshow ala Aura: gerak Ken Burns, transisi silang, dan foto Bing cadangan", if (photoModeCount == 0) "FOTO BING OTOMATIS" else "$photoModeCount FOTO") {
+        settingRow("Foto Photo Mode", "Foto lokal + Bing + semua foto unduhan WallpapersCraft, HDwallpapers.net, dan Alpha Coders otomatis digabung dalam slideshow", "${photoModeCount + downloadedPhotoCount} FOTO LOKAL") {
             dialog.dismiss()
             pickPhotoModeImages()
         }
@@ -5458,7 +5475,9 @@ class MainActivity : Activity() {
                     )
                     runOnUiThread {
                         if (videoWallpaperPlayer === player && !isFinishing) {
-                            toast("Video wallpaper gagal diputar. Periksa log GlassTVWallpaper.")
+                            val sourceLabel = getSharedPreferences("glass_tv", MODE_PRIVATE)
+                                .getString("wallpaper_catalog_video_source", source ?: "video")
+                            toast("Video wallpaper $sourceLabel tidak kompatibel atau gagal dibaca. Pilih video lain; wallpaper foto tetap tersedia.")
                         }
                     }
                 }
@@ -5754,12 +5773,17 @@ class MainActivity : Activity() {
         val scroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = true
             isSmoothScrollingEnabled = true
+            isFillViewport = false
+            isFocusable = false
+            isFocusableInTouchMode = false
             descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
             overScrollMode = View.OVER_SCROLL_NEVER
             addView(results, FrameLayout.LayoutParams(-1, -2))
         }
         resultScroll = scroll
-        content.addView(scroll, LinearLayout.LayoutParams(-1, dp(340)))
+        // Let the results list use the dialog's remaining height. Fixed dp heights
+        // clipped the lower cards on some Android TV display densities.
+        content.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
         val catalogLinks = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -5868,13 +5892,13 @@ class MainActivity : Activity() {
                             playNavigationSound()
                             view.post {
                                 val container = resultScroll ?: return@post
-                                val top = view.top
-                                val bottom = view.bottom
+                                val rect = android.graphics.Rect(0, 0, view.width, view.height)
+                                container.offsetDescendantRectToMyCoords(view, rect)
                                 val viewportTop = container.scrollY
                                 val viewportBottom = viewportTop + container.height
                                 when {
-                                    top < viewportTop -> container.scrollTo(0, top)
-                                    bottom > viewportBottom -> container.scrollTo(0, bottom - container.height)
+                                    rect.top < viewportTop -> container.smoothScrollTo(0, (rect.top - dp(12)).coerceAtLeast(0))
+                                    rect.bottom > viewportBottom -> container.smoothScrollTo(0, (rect.bottom - container.height + dp(16)).coerceAtLeast(0))
                                 }
                             }
                         }
@@ -5992,8 +6016,10 @@ class MainActivity : Activity() {
                 connection.connectTimeout = 15000
                 connection.readTimeout = 45000
                 connection.instanceFollowRedirects = true
-                connection.setRequestProperty("User-Agent", "GlassTV Android TV Wallpaper")
+                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 11; MiTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                connection.setRequestProperty("Referer", item.pageUrl)
                 connection.setRequestProperty("Accept", "video/mp4,application/octet-stream;q=0.9,*/*;q=0.5")
+                connection.setRequestProperty("Accept-Encoding", "identity")
                 val response = connection.responseCode
                 if (response !in 200..299) throw IllegalStateException("Server HTTP " + response)
                 val contentType = connection.contentType.orEmpty().lowercase(Locale.ROOT)
