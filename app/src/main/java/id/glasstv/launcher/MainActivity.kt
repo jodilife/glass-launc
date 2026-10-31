@@ -1719,7 +1719,7 @@ class MainActivity : Activity() {
         } else null
         header.setPadding(if (centered) dp(20) else 0, if (centered) dp(12) else 0,
             if (centered) dp(20) else 0, if (centered) dp(12) else 0)
-        headerSpacerView?.visibility = if (centered) View.GONE else View.VISIBLE
+        headerSpacerView?.visibility = if (centered || fullWidth) View.GONE else View.VISIBLE
         headerRightView?.let { right ->
             right.orientation = if (fullWidth) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
             right.gravity = when {
