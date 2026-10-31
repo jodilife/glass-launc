@@ -23,23 +23,38 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Restore shared debug keystore (when configured)
+      # A stable shared key is restored from Actions Secrets when available.
+      # On the first build only, generate one and export it as a setup artifact.
+      - name: Prepare stable debug keystore
+        id: prepare_debug_keystore
         env:
           GLASSTV_DEBUG_KEYSTORE_BASE64: ${{ secrets.GLASSTV_DEBUG_KEYSTORE_BASE64 }}
           GLASSTV_DEBUG_STORE_PASSWORD: ${{ secrets.GLASSTV_DEBUG_STORE_PASSWORD }}
           GLASSTV_DEBUG_KEY_ALIAS: ${{ secrets.GLASSTV_DEBUG_KEY_ALIAS }}
           GLASSTV_DEBUG_KEY_PASSWORD: ${{ secrets.GLASSTV_DEBUG_KEY_PASSWORD }}
         run: |
-          if [ -z "$GLASSTV_DEBUG_KEYSTORE_BASE64" ]; then
-            echo "Shared debug keystore is not configured; using the standard Gradle debug key for this build."
-            exit 0
+          mkdir -p app
+          if [ -n "$GLASSTV_DEBUG_KEYSTORE_BASE64" ]; then
+            printf '%s' "$GLASSTV_DEBUG_KEYSTORE_BASE64" | base64 --decode > app/debug.keystore
+            echo "bootstrap=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "No shared key was configured. Generating the one-time GlassTV debug key."
+            keytool -genkeypair -noprompt -v \
+              -keystore app/debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=GlassTV Debug,O=GlassTV,C=ID"
+            echo "bootstrap=true" >> "$GITHUB_OUTPUT"
           fi
-
-          printf '%s' "$GLASSTV_DEBUG_KEYSTORE_BASE64" | base64 --decode > app/debug.keystore
           chmod 600 app/debug.keystore
           echo "GLASSTV_DEBUG_STORE_PASSWORD=${GLASSTV_DEBUG_STORE_PASSWORD:-android}" >> "$GITHUB_ENV"
           echo "GLASSTV_DEBUG_KEY_ALIAS=${GLASSTV_DEBUG_KEY_ALIAS:-androiddebugkey}" >> "$GITHUB_ENV"
           echo "GLASSTV_DEBUG_KEY_PASSWORD=${GLASSTV_DEBUG_KEY_PASSWORD:-android}" >> "$GITHUB_ENV"
+          keytool -list -keystore app/debug.keystore \
+            -storepass "${GLASSTV_DEBUG_STORE_PASSWORD:-android}" \
+            -alias "${GLASSTV_DEBUG_KEY_ALIAS:-androiddebugkey}"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -49,23 +64,15 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon assembleDebug
 
-      # On the first run, export the exact default debug key used to sign this APK.
-      # Save it as GLASSTV_DEBUG_KEYSTORE_BASE64 so later GitHub builds use one stable signature.
       - name: Export one-time debug keystore setup
-        if: ${{ hashFiles('app/debug.keystore') == '' }}
+        if: ${{ steps.prepare_debug_keystore.outputs.bootstrap == 'true' }}
         run: |
-          KEY_PATH="$HOME/.android/debug.keystore"
-          if [ ! -s "$KEY_PATH" ]; then
-            echo "Gradle debug keystore was not found at $KEY_PATH"
-            exit 1
-          fi
           mkdir -p app/build/keystore-setup
-          cp "$KEY_PATH" app/build/keystore-setup/glasstv-debug.keystore
+          cp app/debug.keystore app/build/keystore-setup/glasstv-debug.keystore
           chmod 600 app/build/keystore-setup/glasstv-debug.keystore
-          keytool -list -keystore "$KEY_PATH" -storepass android -alias androiddebugkey
 
       - name: Upload one-time debug keystore setup
-        if: ${{ hashFiles('app/debug.keystore') == '' }}
+        if: ${{ steps.prepare_debug_keystore.outputs.bootstrap == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: GlassTV-Debug-Keystore-Setup
