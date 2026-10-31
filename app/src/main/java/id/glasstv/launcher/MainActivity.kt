@@ -5346,7 +5346,6 @@ class MainActivity : Activity() {
                 setUseTextureView(true)
                 setShutterBackgroundColor(Color.rgb(5, 8, 14))
                 setBackgroundColor(Color.rgb(5, 8, 14))
-                keepContentOnPlayerReset = true
                 alpha = 1f
                 isFocusable = false
                 isClickable = false
