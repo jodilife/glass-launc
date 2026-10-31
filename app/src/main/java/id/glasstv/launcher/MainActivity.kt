@@ -357,7 +357,7 @@ class MainActivity : Activity() {
             shadePaint.shader = null
             captionPaint.alpha = 145
             canvas.drawText("PHOTO MODE", dp(30).toFloat(), h - dp(92), captionPaint)
-            if (running) postInvalidateDelayed(80L)
+            if (running) postInvalidateDelayed(if (current == null) 1000L else 80L)
         }
 
         private fun drawPhoto(canvas: Canvas, bitmap: Bitmap, started: Long, alpha: Int, now: Long) {
@@ -5506,6 +5506,7 @@ class MainActivity : Activity() {
 
     private fun showWallpaperVideoSearchDialog(initialFilter: String = "all") {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        prefs.edit().putString("wallpaper_catalog_source_filter", initialFilter).apply()
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(12), dp(18), dp(8))
@@ -5922,21 +5923,22 @@ class MainActivity : Activity() {
         val current = values.indexOf(prefs.getString("wallpaper_source", "photos")).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("SUMBER WALLPAPER")
             .setSingleChoiceItems(labels, current) { picker, which ->
-                prefs.edit().putString("wallpaper_source", values[which]).apply()
-                if (values[which] == "bing") prefs.edit().remove("wallpaper_video_uri").putBoolean("wallpaper_auto", true).apply()
                 picker.dismiss()
-                releaseVideoWallpaperPlayer()
-                if (values[which] == "custom" && prefs.getString("wallpaper_custom_uri", null) == null) {
-                    pickCustomWallpaper()
-                } else if (values[which] == "catalog_video") {
+                if (values[which] == "catalog_video") {
                     showWallpaperVideoSearchDialog("all")
                 } else {
+                    prefs.edit().putString("wallpaper_source", values[which]).apply()
                     if (values[which] == "bing") {
                         prefs.edit().remove("wallpaper_video_uri").putBoolean("wallpaper_auto", true).apply()
                     }
-                    applyWallpaper(wallpaperTarget, forceRefresh = true)
-                    scheduleWallpaperRotation()
-                    showSettings()
+                    releaseVideoWallpaperPlayer()
+                    if (values[which] == "custom" && prefs.getString("wallpaper_custom_uri", null) == null) {
+                        pickCustomWallpaper()
+                    } else {
+                        applyWallpaper(wallpaperTarget, forceRefresh = true)
+                        scheduleWallpaperRotation()
+                        showSettings()
+                    }
                 }
             }.setNegativeButton("Batal", null).show()
     }
