@@ -2986,9 +2986,7 @@ class MainActivity : Activity() {
         fun minimalistToggle(key: String, title: String, detail: String) {
             val enabled = prefs.getBoolean(key, true)
             settingRow(title, detail, if (enabled) "TAMPIL" else "SEMBUNYI") {
-                prefs.edit().putBoolean(key, !enabled)
-                    .putBoolean("minimalist_show_explore_user_set", key == "minimalist_show_explore" || prefs.getBoolean("minimalist_show_explore_user_set", false))
-                    .apply()
+                prefs.edit().putBoolean(key, !enabled).apply()
                 applyMinimalistSectionVisibility()
                 reopen(title + if (!enabled) " ditampilkan pada mode minimalis" else " disembunyikan pada mode minimalis")
             }
