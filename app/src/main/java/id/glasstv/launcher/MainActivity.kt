@@ -103,6 +103,7 @@ class MainActivity : Activity() {
     private val idleHandler = Handler(Looper.getMainLooper())
     private var idleMode = false
     private var homeHeaderView: View? = null
+    private var fixedWallpaperBrandView: View? = null
     private var idlePreviewSpacer: View? = null
     private var headerBrandView: View? = null
     private var headerTimeLabel: TextView? = null
@@ -929,6 +930,7 @@ class MainActivity : Activity() {
         prayerItemViews.clear()
         prayerNameLabels.clear()
         homeHeaderView = null
+        fixedWallpaperBrandView = null
         continueWatchingSectionView = null
         cctvPreviewSectionView = null
         musicDockView = null
@@ -996,6 +998,7 @@ class MainActivity : Activity() {
             addView(label("GLASS", 19, Color.WHITE, true))
             addView(label("TV", 19, accent, true))
         }
+        fixedWallpaperBrandView = fixedBrand
         wallpaperTarget.addView(fixedBrand, FrameLayout.LayoutParams(-2, dp(30), Gravity.TOP or Gravity.START).apply {
             leftMargin = dp(32)
             topMargin = dp(16)
@@ -5063,6 +5066,7 @@ class MainActivity : Activity() {
     private fun exitIdleMode() {
         if (!idleMode) return
         idleMode = false
+        setPhotoModeChromeHidden(false)
         homeHeaderView?.let { headerView ->
             val header = headerView as? LinearLayout ?: return@let
             root.removeView(header)
@@ -5272,7 +5276,15 @@ class MainActivity : Activity() {
     private fun applyIdleBackgroundPriority() {
         if (!idleMode || isFinishing || !::wallpaperTarget.isInitialized) return
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        if (prefs.getBoolean("live_tv_idle_background", false)) {
+        val liveTvPriority = prefs.getBoolean("live_tv_idle_background", false)
+        val selectedMode = prefs.getString("idle_background_mode", "ambient")
+        val fullScreenPhotoMode = !liveTvPriority && selectedMode == "photo"
+
+        // Photo Mode is a true full-screen screensaver: hide the complete Home surface,
+        // including the fixed GlassTV wordmark, while the photo slideshow is active.
+        setPhotoModeChromeHidden(fullScreenPhotoMode)
+
+        if (liveTvPriority) {
             releaseLiveAmbientWallpaper()
             releasePhotoModeWallpaper()
             releaseVideoWallpaperPlayer()
@@ -5281,7 +5293,7 @@ class MainActivity : Activity() {
         }
 
         stopLiveTvBackground()
-        when (prefs.getString("idle_background_mode", "ambient")) {
+        when (selectedMode) {
             "ambient" -> {
                 releasePhotoModeWallpaper()
                 releaseVideoWallpaperPlayer()
@@ -5295,6 +5307,13 @@ class MainActivity : Activity() {
                 setupVideoWallpaper(wallpaperTarget)
             }
         }
+    }
+
+    private fun setPhotoModeChromeHidden(hidden: Boolean) {
+        if (::root.isInitialized) {
+            root.visibility = if (hidden) View.GONE else View.VISIBLE
+        }
+        fixedWallpaperBrandView?.visibility = if (hidden) View.GONE else View.VISIBLE
     }
 
     private fun setupVideoWallpaper(target: FrameLayout) {
@@ -5324,6 +5343,7 @@ class MainActivity : Activity() {
             val view = PlayerView(this).apply {
                 useController = false
                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                setUseTextureView(true)
                 setShutterBackgroundColor(Color.rgb(5, 8, 14))
                 setBackgroundColor(Color.rgb(5, 8, 14))
                 keepContentOnPlayerReset = true
