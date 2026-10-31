@@ -868,7 +868,7 @@ class MainActivity : Activity() {
                 prayerText.setSpan(ForegroundColorSpan(accent), offset, offset + item.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 prayerText.setSpan(StyleSpan(Typeface.BOLD), offset, offset + item.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
-            offset += item.length + if (position < prayerIndices.lastIndex) 5 else 0
+            offset += item.length + if (position < prayerIndices.lastIndex) 7 else 0
         }
         headerNextPrayerLabel?.text = prayerText
     }
