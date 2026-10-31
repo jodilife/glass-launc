@@ -277,6 +277,20 @@ class MainActivity : Activity() {
                 .putBoolean("minimalist_home_defaults_v1", true)
                 .apply()
         }
+
+        // v2 defaults: keep the information dock at the bottom and enable tuner wallpaper
+        // on first install/update only. Respect an explicit user choice to disable Live TV.
+        if (!idlePrefs.getBoolean("minimalist_home_defaults_v2", false)) {
+            val migration = idlePrefs.edit()
+            val savedPosition = idlePrefs.getString("minimalist_panel_position", null)
+            if (savedPosition == null || savedPosition == "top_right") {
+                migration.putString("minimalist_panel_position", "bottom_full")
+            }
+            if (!idlePrefs.contains("live_tv_idle_background")) {
+                migration.putBoolean("live_tv_idle_background", true)
+            }
+            migration.putBoolean("minimalist_home_defaults_v2", true).apply()
+        }
         UiSoundEffects.initialize(this)
         window.statusBarColor = bg
         window.navigationBarColor = bg
@@ -1714,7 +1728,7 @@ class MainActivity : Activity() {
     }
 
     private fun minimalistPanelPositionLabel(): String =
-        when (getSharedPreferences("glass_tv", MODE_PRIVATE).getString("minimalist_panel_position", "top_right")) {
+        when (getSharedPreferences("glass_tv", MODE_PRIVATE).getString("minimalist_panel_position", "bottom_full")) {
             "bottom_right" -> "Bawah · pojok kanan"
             "bottom_center" -> "Bawah · panel vertikal tengah"
             "bottom_full" -> "Bawah · satu baris melebar"
@@ -1725,7 +1739,7 @@ class MainActivity : Activity() {
         val values = arrayOf("top_right", "bottom_right", "bottom_center", "bottom_full")
         val labels = arrayOf("Atas · pojok kanan", "Bawah · pojok kanan", "Bawah · panel vertikal tengah", "Bawah · satu baris melebar")
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        val current = values.indexOf(prefs.getString("minimalist_panel_position", "top_right")).coerceAtLeast(0)
+        val current = values.indexOf(prefs.getString("minimalist_panel_position", "bottom_full")).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("POSISI PANEL MINIMALIS")
             .setSingleChoiceItems(labels, current) { picker, which ->
                 prefs.edit().putString("minimalist_panel_position", values[which]).apply()
@@ -1739,7 +1753,7 @@ class MainActivity : Activity() {
         if (!idleMode || !::root.isInitialized) return
         val header = homeHeaderView as? LinearLayout ?: return
         val position = getSharedPreferences("glass_tv", MODE_PRIVATE)
-            .getString("minimalist_panel_position", "top_right") ?: "top_right"
+            .getString("minimalist_panel_position", "bottom_full") ?: "top_right"
         val centered = position == "bottom_center"
         val fullWidth = position == "bottom_full"
         val atTop = position == "top_right"
@@ -4336,7 +4350,7 @@ class MainActivity : Activity() {
         headerNextPrayerLabel?.visibility = View.VISIBLE
         homeHeaderView?.let { view ->
             val position = getSharedPreferences("glass_tv", MODE_PRIVATE)
-                .getString("minimalist_panel_position", "top_right")
+                .getString("minimalist_panel_position", "bottom_full")
             view.layoutParams = view.layoutParams.apply {
                 height = dp(if (position == "bottom_center") 132 else if (position == "bottom_full") 66 else 104)
             }
