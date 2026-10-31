@@ -23,6 +23,20 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Restore shared debug keystore
+        if: ${{ secrets.GLASSTV_DEBUG_KEYSTORE_BASE64 != '' }}
+        env:
+          GLASSTV_DEBUG_KEYSTORE_BASE64: ${{ secrets.GLASSTV_DEBUG_KEYSTORE_BASE64 }}
+          GLASSTV_DEBUG_STORE_PASSWORD: ${{ secrets.GLASSTV_DEBUG_STORE_PASSWORD }}
+          GLASSTV_DEBUG_KEY_ALIAS: ${{ secrets.GLASSTV_DEBUG_KEY_ALIAS }}
+          GLASSTV_DEBUG_KEY_PASSWORD: ${{ secrets.GLASSTV_DEBUG_KEY_PASSWORD }}
+        run: |
+          printf '%s' "$GLASSTV_DEBUG_KEYSTORE_BASE64" | base64 --decode > app/debug.keystore
+          chmod 600 app/debug.keystore
+          echo "GLASSTV_DEBUG_STORE_PASSWORD=${GLASSTV_DEBUG_STORE_PASSWORD:-android}" >> "$GITHUB_ENV"
+          echo "GLASSTV_DEBUG_KEY_ALIAS=${GLASSTV_DEBUG_KEY_ALIAS:-androiddebugkey}" >> "$GITHUB_ENV"
+          echo "GLASSTV_DEBUG_KEY_PASSWORD=${GLASSTV_DEBUG_KEY_PASSWORD:-android}" >> "$GITHUB_ENV"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
