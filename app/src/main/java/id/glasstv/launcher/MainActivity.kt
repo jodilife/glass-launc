@@ -3382,7 +3382,9 @@ class MainActivity : Activity() {
             catch (_: Exception) { toast("Pemilih video tidak tersedia di TV ini.") }
         }
         settingRow("Gunakan wallpaper foto", "Kembali ke wallpaper foto otomatis") {
-            getSharedPreferences("glass_tv", MODE_PRIVATE).edit().remove("wallpaper_video_uri").apply()
+            val edit = getSharedPreferences("glass_tv", MODE_PRIVATE).edit().remove("wallpaper_video_uri")
+            if (prefs.getString("wallpaper_source", "bing") == "pixabay_video") edit.putString("wallpaper_source", "bing")
+            edit.apply()
             releaseVideoWallpaperPlayer()
             applyWallpaper(wallpaperTarget)
             scheduleWallpaperRotation()
@@ -4947,6 +4949,7 @@ class MainActivity : Activity() {
         } catch (_: Exception) { }
         getSharedPreferences("glass_tv", MODE_PRIVATE).edit()
             .putString("wallpaper_video_uri", uri.toString())
+            .putString("wallpaper_source", "bing")
             .putBoolean("wallpaper_auto", false)
             .apply()
         showHome()
@@ -5279,8 +5282,13 @@ class MainActivity : Activity() {
                 val query = input.text.toString().trim().take(100).ifBlank { "night" }
                 prefs.edit().putString("pixabay_video_query", query).apply()
                 prefs.edit().putString("wallpaper_source", "pixabay_video").putBoolean("wallpaper_auto", true).apply()
-                downloadPixabayNightVideo(force = true)
-                showSettings("Tampilan")
+                if (prefs.getString("pixabay_api_key", "").orEmpty().isBlank()) {
+                    showSettings("Tampilan")
+                    showPixabayApiKeyEditor()
+                } else {
+                    downloadPixabayNightVideo(force = true)
+                    showSettings("Tampilan")
+                }
             }
             .setNegativeButton("Batal", null)
             .show()
@@ -5292,10 +5300,10 @@ class MainActivity : Activity() {
         val page = prefs.getString("wallpaper_pixabay_page_url", "").orEmpty()
         val query = prefs.getString("pixabay_video_query", "night") ?: "night"
         val message = buildString {
-            append("Sumber: Pixabay Video API\\n")
-            append("Kata kunci: ").append(query).append("\\n")
-            append("Kreator: ").append(creator).append("\\n")
-            append("Halaman video: ").append(if (page.isBlank()) "Belum tersedia" else page).append("\\n\\n")
+            append("Sumber: Pixabay Video API\n")
+            append("Kata kunci: ").append(query).append("\n")
+            append("Kreator: ").append(creator).append("\n")
+            append("Halaman video: ").append(if (page.isBlank()) "Belum tersedia" else page).append("\n\n")
             append("Video diunduh satu per satu dan disimpan di cache lokal. Kredit kreator ditampilkan sebagai informasi sumber.")
         }
         AlertDialog.Builder(this)
@@ -5474,12 +5482,12 @@ class MainActivity : Activity() {
                     pickCustomWallpaper()
                 } else {
                     applyWallpaper(wallpaperTarget, forceRefresh = true)
-                    if (values[which] == "pixabay_video") {
-                        setupVideoWallpaper(wallpaperTarget)
-                        if (prefs.getString("pixabay_api_key", "").orEmpty().isBlank()) showPixabayApiKeyEditor()
-                    }
+                    val needsPixabayKey = values[which] == "pixabay_video" &&
+                        prefs.getString("pixabay_api_key", "").orEmpty().isBlank()
+                    if (values[which] == "pixabay_video") setupVideoWallpaper(wallpaperTarget)
                     scheduleWallpaperRotation()
                     showSettings()
+                    if (needsPixabayKey) showPixabayApiKeyEditor()
                 }
             }.setNegativeButton("Batal", null).show()
     }
