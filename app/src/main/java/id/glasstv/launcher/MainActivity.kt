@@ -177,7 +177,7 @@ class MainActivity : Activity() {
                 val twinkle = (0.45 + 0.55 * kotlin.math.sin(phase * (0.35 + (i % 4) * 0.12) + i)).toFloat()
                     .coerceIn(0.08f, 1f)
                 paint.color = Color.argb((65 + twinkle * 150).toInt(), 218, 231, 245)
-                canvas.drawCircle(x, y, if (i % 5 == 0) dp(1.7).toFloat() else dp(1).toFloat(), paint)
+                canvas.drawCircle(x, y, if (i % 5 == 0) dp(2).toFloat() else dp(1).toFloat(), paint)
             }
 
             // Crescent moon.
@@ -5356,7 +5356,7 @@ class MainActivity : Activity() {
             }
             // With no manual image selected, download two independent Bing images and cache
             // them locally for offline use: today's image for daytime, yesterday's for night.
-            loadAutomaticDayNightWallpaper(nightSlot, display)
+            loadAutomaticDayNightWallpaper(nightSlot, ::display)
             loadAutomaticDayNightWallpaper(!nightSlot, null)
             return
         }
