@@ -2716,7 +2716,8 @@ class MainActivity : Activity() {
             "Tampilan saat tidak digunakan", "Posisi panel Minimalis", "Edit nama sapaan" -> "Tampilan"
             "Lokasi cuaca & waktu salat", "Info GlassTV" -> "Cuaca & Waktu Salat"
             "Azan otomatis", "Uji suara azan" -> "Waktu Salat"
-            "Live TV sebagai background", "Sumber input Live TV", "Pilih kanal Live TV" -> "Live TV"
+            "Live TV sebagai background", "Pilih kanal Live TV" -> "Live TV"
+            "Input TV (HDMI / AV)" -> "Perangkat & Input"
             "Tata letak CCTV" -> "Kamera CCTV"
             "Aplikasi Entertainment", "Rekomendasi & riwayat Android TV", "Atur rekomendasi & riwayat",
             "Urutan rekomendasi & riwayat", "Dock aplikasi favorit", "Dock pemutar musik",
@@ -2953,7 +2954,7 @@ class MainActivity : Activity() {
             if (!liveTvBackgroundEnabled && idleMode) startLiveTvBackground() else stopLiveTvBackground()
             reopen("Live TV background ${if (!liveTvBackgroundEnabled) "diaktifkan" else "dimatikan"}")
         }
-        settingRow("Sumber input Live TV", "Pilih tuner antena atau input HDMI untuk background", selectedLiveTvInputLabel()) {
+        settingRow("Input TV (HDMI / AV)", "Pilih TV Digital / Antena, HDMI 1, HDMI 2, atau AV", selectedLiveTvInputLabel()) {
             dialog.dismiss()
             showLiveTvInputPicker()
         }
@@ -2969,7 +2970,7 @@ class MainActivity : Activity() {
             dialog.dismiss()
             showMinimalistPanelPositionPicker()
         }
-        settingRow("Sumber wallpaper", "Bing, lukisan klasik, Gradient, cuaca, atau gambar sendiri", wallpaperSourceLabel()) {
+        settingRow("Sumber wallpaper", "Foto harian Bing, Gradient, atau gambar sendiri", wallpaperSourceLabel()) {
             dialog.dismiss()
             showWallpaperSourcePicker()
         }
@@ -4484,7 +4485,7 @@ class MainActivity : Activity() {
     }
 
     private fun wallpaperSourceLabel(): String = when (
-        getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_source", "photos")
+        getSharedPreferences("glass_tv", MODE_PRIVATE).getString("wallpaper_source", "bing")
     ) {
         "bing" -> "Photo of the Day · Bing"
         "gradient" -> "Gradient"
