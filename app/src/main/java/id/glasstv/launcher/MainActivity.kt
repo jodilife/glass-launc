@@ -1613,13 +1613,14 @@ class MainActivity : Activity() {
     private fun minimalistPanelPositionLabel(): String =
         when (getSharedPreferences("glass_tv", MODE_PRIVATE).getString("minimalist_panel_position", "top_right")) {
             "bottom_right" -> "Bawah · pojok kanan"
-            "bottom_center" -> "Bawah · memanjang di tengah"
+            "bottom_center" -> "Bawah · panel vertikal tengah"
+            "bottom_full" -> "Bawah · satu baris melebar"
             else -> "Atas · pojok kanan"
         }
 
     private fun showMinimalistPanelPositionPicker() {
-        val values = arrayOf("top_right", "bottom_right", "bottom_center")
-        val labels = arrayOf("Atas · pojok kanan", "Bawah · pojok kanan", "Bawah · memanjang di tengah")
+        val values = arrayOf("top_right", "bottom_right", "bottom_center", "bottom_full")
+        val labels = arrayOf("Atas · pojok kanan", "Bawah · pojok kanan", "Bawah · panel vertikal tengah", "Bawah · satu baris melebar")
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val current = values.indexOf(prefs.getString("minimalist_panel_position", "top_right")).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("POSISI PANEL MINIMALIS")
@@ -1637,6 +1638,7 @@ class MainActivity : Activity() {
         val position = getSharedPreferences("glass_tv", MODE_PRIVATE)
             .getString("minimalist_panel_position", "top_right") ?: "top_right"
         val centered = position == "bottom_center"
+        val fullWidth = position == "bottom_full"
         val atTop = position == "top_right"
 
         // root is a vertical LinearLayout inside the Home ScrollView. FrameLayout.LayoutParams
@@ -1647,22 +1649,45 @@ class MainActivity : Activity() {
 
         header.orientation = if (centered) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         header.gravity = if (centered) Gravity.CENTER else Gravity.CENTER_VERTICAL
-        header.background = if (centered) GradientDrawable().apply {
-            cornerRadius = dp(18).toFloat()
-            setColor(Color.argb(168, 10, 17, 29))
-            setStroke(dp(1), accentAlpha(100))
+        header.background = if (centered || fullWidth) GradientDrawable().apply {
+            cornerRadius = dp(if (fullWidth) 16 else 18).toFloat()
+            setColor(Color.argb(if (fullWidth) 148 else 168, 10, 17, 29))
+            setStroke(dp(1), accentAlpha(if (fullWidth) 72 else 100))
         } else null
-        header.setPadding(if (centered) dp(20) else 0, if (centered) dp(12) else 0,
-            if (centered) dp(20) else 0, if (centered) dp(12) else 0)
-        headerSpacerView?.visibility = if (centered) View.GONE else View.VISIBLE
+        header.setPadding(
+            if (centered) dp(20) else if (fullWidth) dp(22) else 0,
+            if (centered) dp(12) else if (fullWidth) dp(8) else 0,
+            if (centered) dp(20) else if (fullWidth) dp(22) else 0,
+            if (centered) dp(12) else if (fullWidth) dp(8) else 0
+        )
+        headerSpacerView?.visibility = if (centered || fullWidth) View.GONE else View.VISIBLE
         headerRightView?.let { right ->
-            right.gravity = if (centered) Gravity.CENTER else Gravity.END or Gravity.CENTER_VERTICAL
-            right.layoutParams = LinearLayout.LayoutParams(if (centered) dp(760) else dp(440), -2)
+            right.orientation = if (fullWidth) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+            right.gravity = when {
+                centered -> Gravity.CENTER
+                fullWidth -> Gravity.CENTER_VERTICAL
+                else -> Gravity.END or Gravity.CENTER_VERTICAL
+            }
+            right.layoutParams = LinearLayout.LayoutParams(
+                when { centered -> dp(760); fullWidth -> -1; else -> dp(440) }, -2
+            )
             listOf(headerTimeLabel, headerClockLabel, headerWeatherLabel, headerPrayerMetaLabel, headerNextPrayerLabel)
-                .forEach { it?.gravity = if (centered) Gravity.CENTER else Gravity.END }
+                .forEach { text ->
+                    text?.gravity = when {
+                        centered -> Gravity.CENTER
+                        fullWidth -> Gravity.CENTER_VERTICAL
+                        else -> Gravity.END
+                    }
+                    if (fullWidth && text != null) {
+                        (text.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
+                            lp.rightMargin = dp(if (text === headerClockLabel) 22 else 14)
+                            text.layoutParams = lp
+                        }
+                    }
+                }
         }
 
-        val height = if (centered) dp(132) else dp(104)
+        val height = when { centered -> dp(132); fullWidth -> dp(78); else -> dp(104) }
         if (atTop) {
             root.addView(header, 0, LinearLayout.LayoutParams(-1, height))
         } else {
@@ -4368,7 +4393,7 @@ class MainActivity : Activity() {
     ) {
         "art" -> "Lukisan klasik · Art Institute of Chicago"
         "gradient" -> "Gradient"
-        "weather_motionbgs" -> "Cuaca otomatis · MotionBGS"
+        "weather_motionbgs" -> "Photo of the day (Bing)"
         "custom" -> "Gambar sendiri"
         else -> "Bing Photo of the Day"
     }
@@ -4382,8 +4407,8 @@ class MainActivity : Activity() {
     }
 
     private fun showWallpaperSourcePicker() {
-        val values = arrayOf("bing", "art", "gradient", "weather_motionbgs", "custom")
-        val labels = arrayOf("Photo of the day (Bing)", "Lukisan klasik · Art Institute of Chicago", "Gradient", "Cuaca otomatis · MotionBGS", "Gambar sendiri")
+        val values = arrayOf("bing", "art", "gradient", "custom")
+        val labels = arrayOf("Photo of the day (Bing)", "Lukisan klasik · Art Institute of Chicago", "Gradient", "Gambar sendiri (termasuk foto Pexels yang diunduh manual)")
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val current = values.indexOf(prefs.getString("wallpaper_source", "bing")).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle("SUMBER WALLPAPER")
@@ -4451,7 +4476,12 @@ class MainActivity : Activity() {
 
     private fun applyWallpaper(target: FrameLayout, forceRefresh: Boolean = false) {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        val source = prefs.getString("wallpaper_source", "bing") ?: "bing"
+        var source = prefs.getString("wallpaper_source", "bing") ?: "bing"
+        if (source == "weather_motionbgs") {
+            // MotionBGS is retired from the source picker; migrate old selections to Bing.
+            prefs.edit().putString("wallpaper_source", "bing").remove("wallpaper_weather_video_path").apply()
+            source = "bing"
+        }
         if (source == "weather_motionbgs") {
             target.setBackgroundColor(Color.rgb(5, 8, 14))
             val cachedPath = prefs.getString("wallpaper_weather_video_path", null)
