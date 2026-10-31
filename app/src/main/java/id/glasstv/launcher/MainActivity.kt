@@ -1568,7 +1568,7 @@ class MainActivity : Activity() {
             val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             val previousButton = mediaControlButton("⏮", "Sebelumnya $title") { sendMediaCommand(pkg, "previous") }
             val playButton = mediaControlButton("▶Ⅱ", "Putar atau jeda $title") {
-                sendMediaCommand(pkg, if (isPlaying) "pause" else "play")
+                sendMediaCommand(pkg, "toggle")
             }.apply { textSize = 17f; contentDescription = "Putar atau jeda $title" }
             val nextButton = mediaControlButton("⏭", "Berikutnya $title") { sendMediaCommand(pkg, "next") }
             previousButton.id = View.generateViewId()
