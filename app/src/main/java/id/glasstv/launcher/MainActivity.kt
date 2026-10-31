@@ -103,6 +103,7 @@ class MainActivity : Activity() {
     private var headerClockLabel: TextView? = null
     private var headerWeatherLabel: TextView? = null
     private var headerPrayerMetaLabel: TextView? = null
+    private var headerHijriLabel: TextView? = null
     private var headerNextPrayerLabel: TextView? = null
     private var headerSpacerView: View? = null
     private var headerRightView: LinearLayout? = null
@@ -475,12 +476,17 @@ class MainActivity : Activity() {
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
-        headerPrayerMetaLabel = label("Waktu Sholat · Kalender Hijriyah", 10, Color.rgb(185, 199, 219), false).apply {
+        headerPrayerMetaLabel = label("Pondok Kelapa", 11, Color.rgb(205, 216, 232), true).apply {
             gravity = Gravity.END
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         }
-        headerNextPrayerLabel = label("Salat berikutnya · --:--", 12, accent, true).apply {
+        headerHijriLabel = label("Kalender Hijriyah", 10, Color.rgb(185, 199, 219), false).apply {
+            gravity = Gravity.END
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
+        headerNextPrayerLabel = label("Subuh --:-- · Zuhur --:-- · Asar --:-- · Maghrib --:-- · Isya --:--", 10, accent, true).apply {
             gravity = Gravity.END
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -488,11 +494,13 @@ class MainActivity : Activity() {
         headerClockLabel?.visibility = View.GONE
         headerWeatherLabel?.visibility = View.GONE
         headerPrayerMetaLabel?.visibility = View.GONE
+        headerHijriLabel?.visibility = View.GONE
         headerNextPrayerLabel?.visibility = View.GONE
         headerRight.addView(headerTimeLabel)
         headerRight.addView(headerClockLabel)
         headerRight.addView(headerWeatherLabel)
         headerRight.addView(headerPrayerMetaLabel)
+        headerRight.addView(headerHijriLabel)
         headerRight.addView(headerNextPrayerLabel)
         headerRightView = headerRight
         header.addView(headerRight, LinearLayout.LayoutParams(dp(440), -2))
@@ -835,14 +843,16 @@ class MainActivity : Activity() {
         val selected = DashboardServices.selectedCity(this)
         val city = dashboardSnapshot?.city ?: selected.name
         val zone = dashboardSnapshot?.timeZone ?: selected.timeZone
-        headerPrayerMetaLabel?.text = "Waktu Sholat $city - ${hijriDate(Date(), zone)}"
+        headerPrayerMetaLabel?.text = city
+        headerHijriLabel?.text = hijriDate(Date(), zone)
         val snapshot = dashboardSnapshot
         if (snapshot == null) {
-            headerNextPrayerLabel?.text = "Salat berikutnya · --:--"
+            headerNextPrayerLabel?.text = "Subuh --:--   ·   Zuhur --:--   ·   Asar --:--   ·   Maghrib --:--   ·   Isya --:--"
             return
         }
-        val next = DashboardServices.nextPrayer(snapshot)
-        headerNextPrayerLabel?.text = "${next.first} · ${next.second}"
+        headerNextPrayerLabel?.text = snapshot.prayerNames.mapIndexedNotNull { index, name ->
+            if (index == 1) null else "$name ${snapshot.prayerTimes.getOrNull(index) ?: "--:--"}"
+        }.joinToString("   ·   ")
     }
 
     private fun renderDashboardSnapshot(snapshot: DashboardServices.Snapshot?, error: String?) {
@@ -1701,18 +1711,15 @@ class MainActivity : Activity() {
 
         header.orientation = if (centered) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         header.gravity = if (centered) Gravity.CENTER else Gravity.CENTER_VERTICAL
-        header.background = if (centered || fullWidth) GradientDrawable().apply {
-            cornerRadius = dp(if (fullWidth) 16 else 18).toFloat()
-            setColor(Color.argb(if (fullWidth) 148 else 168, 10, 17, 29))
-            setStroke(dp(1), accentAlpha(if (fullWidth) 72 else 100))
+        // The full-width mode is a transparent text strip, not a row of cards.
+        header.background = if (centered) GradientDrawable().apply {
+            cornerRadius = dp(18).toFloat()
+            setColor(Color.argb(168, 10, 17, 29))
+            setStroke(dp(1), accentAlpha(100))
         } else null
-        header.setPadding(
-            if (centered) dp(20) else if (fullWidth) dp(22) else 0,
-            if (centered) dp(12) else if (fullWidth) dp(8) else 0,
-            if (centered) dp(20) else if (fullWidth) dp(22) else 0,
-            if (centered) dp(12) else if (fullWidth) dp(8) else 0
-        )
-        headerSpacerView?.visibility = if (centered || fullWidth) View.GONE else View.VISIBLE
+        header.setPadding(if (centered) dp(20) else 0, if (centered) dp(12) else 0,
+            if (centered) dp(20) else 0, if (centered) dp(12) else 0)
+        headerSpacerView?.visibility = if (centered) View.GONE else View.VISIBLE
         headerRightView?.let { right ->
             right.orientation = if (fullWidth) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
             right.gravity = when {
@@ -1723,23 +1730,25 @@ class MainActivity : Activity() {
             right.layoutParams = LinearLayout.LayoutParams(
                 when { centered -> dp(760); fullWidth -> -1; else -> dp(440) }, -2
             )
-            listOf(headerTimeLabel, headerClockLabel, headerWeatherLabel, headerPrayerMetaLabel, headerNextPrayerLabel)
-                .forEach { text ->
-                    text?.gravity = when {
-                        centered -> Gravity.CENTER
-                        fullWidth -> Gravity.CENTER_VERTICAL
-                        else -> Gravity.END
-                    }
-                    if (fullWidth && text != null) {
-                        (text.layoutParams as? LinearLayout.LayoutParams)?.let { lp ->
-                            lp.rightMargin = dp(if (text === headerClockLabel) 22 else 14)
-                            text.layoutParams = lp
-                        }
-                    }
+            val stripItems = listOf(headerTimeLabel, headerClockLabel, headerWeatherLabel,
+                headerPrayerMetaLabel, headerHijriLabel, headerNextPrayerLabel)
+            stripItems.forEachIndexed { index, text ->
+                text?.gravity = when {
+                    centered -> Gravity.CENTER
+                    fullWidth -> Gravity.CENTER_VERTICAL
+                    else -> Gravity.END
                 }
+                if (fullWidth && text != null) {
+                    text.textSize = if (text === headerClockLabel) 22f else if (text === headerNextPrayerLabel) 9f else 10f
+                    text.maxLines = 1
+                    text.setPadding(dp(7), 0, dp(7), 0)
+                    text.layoutParams = LinearLayout.LayoutParams(0, -2,
+                        floatArrayOf(1.15f, 0.95f, 1.2f, 0.95f, 1.25f, 3.5f)[index])
+                }
+            }
         }
 
-        val height = when { centered -> dp(132); fullWidth -> dp(78); else -> dp(104) }
+        val height = when { centered -> dp(132); fullWidth -> dp(66); else -> dp(104) }
         if (atTop) {
             root.addView(header, 0, LinearLayout.LayoutParams(-1, height))
         } else {
@@ -4269,11 +4278,14 @@ class MainActivity : Activity() {
         dashboardHandler.post(headerClockBlink)
         headerWeatherLabel?.visibility = View.VISIBLE
         headerPrayerMetaLabel?.visibility = View.VISIBLE
+        headerHijriLabel?.visibility = View.VISIBLE
         headerNextPrayerLabel?.visibility = View.VISIBLE
         homeHeaderView?.let { view ->
-            val centered = getSharedPreferences("glass_tv", MODE_PRIVATE)
-                .getString("minimalist_panel_position", "top_right") == "bottom_center"
-            view.layoutParams = view.layoutParams.apply { height = dp(if (centered) 132 else 104) }
+            val position = getSharedPreferences("glass_tv", MODE_PRIVATE)
+                .getString("minimalist_panel_position", "top_right")
+            view.layoutParams = view.layoutParams.apply {
+                height = dp(if (position == "bottom_center") 132 else if (position == "bottom_full") 66 else 104)
+            }
             view.requestLayout()
         }
         // The native tuner must own the video plane while idle mode is active.
@@ -4300,7 +4312,13 @@ class MainActivity : Activity() {
             header.setPadding(0, 0, 0, 0)
             headerSpacerView?.visibility = View.VISIBLE
             headerRightView?.let { right -> right.gravity = Gravity.END or Gravity.CENTER_VERTICAL; right.layoutParams = LinearLayout.LayoutParams(dp(440), -2) }
-            listOf(headerTimeLabel, headerClockLabel, headerWeatherLabel, headerPrayerMetaLabel, headerNextPrayerLabel).forEach { it?.gravity = Gravity.END }
+            listOf(headerTimeLabel, headerClockLabel, headerWeatherLabel, headerPrayerMetaLabel, headerHijriLabel, headerNextPrayerLabel).forEach {
+                it?.gravity = Gravity.END
+                if (it != null) {
+                    it.textSize = when (it) { headerClockLabel -> 30f; headerNextPrayerLabel -> 12f; else -> 10f }
+                    it.setPadding(0, 0, 0, 0)
+                }
+            }
             minimalistBottomSpacer?.let { root.removeView(it) }
             minimalistBottomSpacer = null
             root.addView(header, 0, LinearLayout.LayoutParams(-1, dp(42)))
@@ -4314,6 +4332,7 @@ class MainActivity : Activity() {
         headerClockLabel?.visibility = View.GONE
         headerWeatherLabel?.visibility = View.GONE
         headerPrayerMetaLabel?.visibility = View.GONE
+        headerHijriLabel?.visibility = View.GONE
         headerNextPrayerLabel?.visibility = View.GONE
         homeHeaderView?.let { view ->
             view.layoutParams = view.layoutParams.apply { height = dp(42) }
