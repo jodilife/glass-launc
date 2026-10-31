@@ -15,6 +15,7 @@ import android.graphics.Typeface
 import android.text.style.StyleSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.ForegroundColorSpan
+import android.text.style.BackgroundColorSpan
 import android.text.Spanned
 import android.text.SpannableString
 import android.graphics.drawable.GradientDrawable
@@ -331,13 +332,19 @@ class MainActivity : Activity() {
                     resetIdleTimer()
                     return super.dispatchKeyEvent(event)
                 }
-                KeyEvent.KEYCODE_CHANNEL_UP -> {
+                KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_PAGE_UP -> {
                     resetIdleTimer()
-                    return changeLiveTvChannel(1) || super.dispatchKeyEvent(event)
+                    val changed = changeLiveTvChannel(1)
+                    if (changed) return true
+                    android.util.Log.w("GlassTVLiveTv", "CH+ received but no next channel was tuned")
+                    return true
                 }
-                KeyEvent.KEYCODE_CHANNEL_DOWN -> {
+                KeyEvent.KEYCODE_CHANNEL_DOWN, KeyEvent.KEYCODE_PAGE_DOWN -> {
                     resetIdleTimer()
-                    return changeLiveTvChannel(-1) || super.dispatchKeyEvent(event)
+                    val changed = changeLiveTvChannel(-1)
+                    if (changed) return true
+                    android.util.Log.w("GlassTVLiveTv", "CH- received but no previous channel was tuned")
+                    return true
                 }
                 else -> exitIdleMode()
             }
@@ -474,6 +481,21 @@ class MainActivity : Activity() {
         }
         homeScroll.addView(root, FrameLayout.LayoutParams(-1, -1))
         wallpaperTarget.addView(homeScroll, FrameLayout.LayoutParams(-1, -1))
+        // Keep the launcher identity pinned to the viewport instead of letting it scroll
+        // away with the rows when the user navigates vertically with the remote.
+        val fixedBrand = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            isFocusable = false
+            isClickable = false
+            addView(label("GLASS", 19, Color.WHITE, true))
+            addView(label("TV", 19, accent, true))
+        }
+        brand.visibility = View.GONE
+        wallpaperTarget.addView(fixedBrand, FrameLayout.LayoutParams(-2, dp(30), Gravity.TOP or Gravity.START).apply {
+            leftMargin = dp(32)
+            topMargin = dp(16)
+        })
         createLiveTvBackgroundLayer(wallpaperTarget)
         applyWallpaper(wallpaperTarget)
         scheduleWallpaperRotation()
@@ -886,28 +908,58 @@ class MainActivity : Activity() {
         headerHijriLabel?.text = hijriDate(Date(), zone)
         val snapshot = dashboardSnapshot
         if (snapshot == null) {
-            headerNextPrayerLabel?.text = "Subuh --:--   ·   Zuhur --:--   ·   Asar --:--   ·   Maghrib --:--   ·   Isya --:--"
+            headerNextPrayerLabel?.text = "JADWAL SALAT  ·  Subuh --:--  ·  Zuhur --:--  ·  Asar --:--  ·  Maghrib --:--  ·  Isya --:--"
             return
         }
         val prayerIndices = listOf(0, 2, 3, 4, 5)
-        val now = Calendar.getInstance(java.util.TimeZone.getTimeZone(zone))
-        val nextPrayerName = DashboardServices.nextPrayer(snapshot, now).first
+        val nextPrayerName = DashboardServices.nextPrayer(
+            snapshot, Calendar.getInstance(java.util.TimeZone.getTimeZone(zone))
+        ).first
         val activePrayerIndex = prayerIndices.firstOrNull { index ->
             snapshot.prayerNames.getOrNull(index) == nextPrayerName
         } ?: prayerIndices.first()
-        val prayerText = SpannableString(prayerIndices.joinToString("   ·   ") { index ->
+        val items = prayerIndices.map { index ->
             "${snapshot.prayerNames.getOrNull(index) ?: "Salat"} ${snapshot.prayerTimes.getOrNull(index) ?: "--:--"}"
-        })
-        var offset = 0
+        }
+        val prefix = "BERIKUTNYA  "
+        val body = items.joinToString("   ·   ")
+        val prayerText = SpannableString(prefix + body)
+        prayerText.setSpan(
+            ForegroundColorSpan(accent),
+            0, prefix.length,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+        prayerText.setSpan(
+            StyleSpan(Typeface.BOLD),
+            0, prefix.length,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+        var offset = prefix.length
         prayerIndices.forEachIndexed { position, index ->
-            val item = "${snapshot.prayerNames[index]} ${snapshot.prayerTimes.getOrNull(index) ?: "--:--"}"
+            val item = items[position]
             if (index == activePrayerIndex) {
-                prayerText.setSpan(ForegroundColorSpan(accent), offset, offset + item.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                prayerText.setSpan(StyleSpan(Typeface.BOLD), offset, offset + item.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                prayerText.setSpan(
+                    BackgroundColorSpan(accentAlpha(92)),
+                    offset, offset + item.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                prayerText.setSpan(
+                    ForegroundColorSpan(Color.WHITE),
+                    offset, offset + item.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+                prayerText.setSpan(
+                    StyleSpan(Typeface.BOLD),
+                    offset, offset + item.length,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
             }
             offset += item.length + if (position < prayerIndices.lastIndex) 7 else 0
         }
-        headerNextPrayerLabel?.text = prayerText
+        headerNextPrayerLabel?.apply {
+            text = prayerText
+            setPadding(dp(5), dp(3), dp(5), dp(3))
+        }
     }
 
     private fun renderDashboardSnapshot(snapshot: DashboardServices.Snapshot?, error: String?) {
@@ -4076,54 +4128,124 @@ class MainActivity : Activity() {
             return
         }
         val manager = getSystemService(TV_INPUT_SERVICE) as? TvInputManager
-        val tunerIds = manager?.tvInputList?.filter { it.type == TvInputInfo.TYPE_TUNER }?.map { it.id }?.toSet().orEmpty()
-        val selectedInput = getSharedPreferences("glass_tv", MODE_PRIVATE).getString("live_tv_input_id", "auto") ?: "auto"
-        if (selectedInput != "auto" && manager?.tvInputList?.firstOrNull { it.id == selectedInput }?.isPassthroughInput == true) {
-            toast("Input HDMI tidak memiliki daftar kanal. Pilih kanal hanya untuk tuner TV digital.")
-            return
-        }
-        val channels = try {
-            contentResolver.query(
-                TvContract.Channels.CONTENT_URI,
-                arrayOf(TvContract.Channels._ID, TvContract.Channels.COLUMN_INPUT_ID,
-                    TvContract.Channels.COLUMN_DISPLAY_NAME, TvContract.Channels.COLUMN_DISPLAY_NUMBER),
-                null, null, TvContract.Channels.COLUMN_DISPLAY_NUMBER + " ASC"
-            )?.use { cursor ->
-                val result = mutableListOf<Triple<Long, String, String>>()
-                while (cursor.moveToNext()) {
-                    val idIndex = cursor.getColumnIndex(TvContract.Channels._ID)
-                    val inputIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_INPUT_ID)
-                    if (idIndex < 0 || inputIndex < 0 || cursor.isNull(inputIndex)) continue
-                    val inputId = cursor.getString(inputIndex)
-                    if (selectedInput != "auto" && inputId != selectedInput) continue
-                    if (selectedInput == "auto" && inputId !in tunerIds) continue
-                    val numberIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NUMBER)
-                    val nameIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NAME)
-                    val number = if (numberIndex >= 0) cursor.getString(numberIndex).orEmpty() else ""
-                    val name = if (nameIndex >= 0) cursor.getString(nameIndex).orEmpty() else ""
-                    result.add(Triple(cursor.getLong(idIndex), inputId, listOf(number, name).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Kanal TV" }))
-                }
-                result
-            }.orEmpty()
-        } catch (_: Exception) { emptyList() }
-        if (channels.isEmpty()) {
-            toast("Belum ada kanal dari input ini. Buka Live TV bawaan, pindai kanal, lalu coba lagi.")
+        if (manager == null) {
+            toast("Layanan input TV tidak tersedia.")
             return
         }
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        val currentId = prefs.getLong("live_tv_channel_id", -1L)
-        val labels = listOf("Otomatis (kanal pertama)") + channels.map { it.third }
+        val selectedInput = prefs.getString("live_tv_input_id", "auto") ?: "auto"
+        val selectedChannelId = prefs.getLong("live_tv_channel_id", -1L)
+
+        data class ChannelRow(
+            val id: Long,
+            val inputId: String,
+            val number: String,
+            val name: String,
+            val serviceType: String
+        )
+        val allChannels = try {
+            contentResolver.query(
+                TvContract.Channels.CONTENT_URI,
+                arrayOf(
+                    TvContract.Channels._ID,
+                    TvContract.Channels.COLUMN_INPUT_ID,
+                    TvContract.Channels.COLUMN_DISPLAY_NAME,
+                    TvContract.Channels.COLUMN_DISPLAY_NUMBER,
+                    TvContract.Channels.COLUMN_SERVICE_TYPE
+                ),
+                null, null, TvContract.Channels.COLUMN_DISPLAY_NUMBER + " ASC"
+            )?.use { cursor ->
+                val rows = mutableListOf<ChannelRow>()
+                val idIndex = cursor.getColumnIndex(TvContract.Channels._ID)
+                val inputIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_INPUT_ID)
+                val nameIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NAME)
+                val numberIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_DISPLAY_NUMBER)
+                val typeIndex = cursor.getColumnIndex(TvContract.Channels.COLUMN_SERVICE_TYPE)
+                while (cursor.moveToNext()) {
+                    if (idIndex < 0 || inputIndex < 0 || cursor.isNull(inputIndex)) continue
+                    val service = if (typeIndex >= 0) cursor.getString(typeIndex).orEmpty() else ""
+                    if (service != TvContract.Channels.SERVICE_TYPE_AUDIO_VIDEO) continue
+                    rows.add(
+                        ChannelRow(
+                            cursor.getLong(idIndex),
+                            cursor.getString(inputIndex),
+                            if (numberIndex >= 0) cursor.getString(numberIndex).orEmpty() else "",
+                            if (nameIndex >= 0) cursor.getString(nameIndex).orEmpty() else "",
+                            service
+                        )
+                    )
+                }
+                rows
+            }.orEmpty()
+        } catch (_: Exception) { emptyList() }
+
+        val tunerInfos = manager.tvInputList.filter { it.type == TvInputInfo.TYPE_TUNER }
+        val activeInputId = when {
+            selectedInput != "auto" -> {
+                val info = manager.tvInputList.firstOrNull { it.id == selectedInput }
+                if (info?.isPassthroughInput == true) {
+                    toast("HDMI / AV tidak memiliki daftar kanal tuner.")
+                    return
+                }
+                info?.id
+            }
+            else -> {
+                val savedOwner = allChannels.firstOrNull { it.id == selectedChannelId }?.inputId
+                val ordered = tunerInfos.sortedBy { info ->
+                    val pkg = info.serviceInfo.packageName.lowercase(Locale.ROOT)
+                    when {
+                        pkg.contains("tuner") -> 0
+                        pkg.contains("dtv") -> 1
+                        pkg.contains("mitv") || pkg.contains("livetv") -> 2
+                        else -> 3
+                    }
+                }
+                ordered.firstOrNull { it.id == savedOwner }?.id
+                    ?: ordered.firstOrNull { info ->
+                        allChannels.any { it.inputId == info.id }
+                    }?.id
+            }
+        }
+        if (activeInputId == null) {
+            toast("Tidak ditemukan input tuner dengan daftar siaran.")
+            return
+        }
+        val channels = allChannels
+            .filter { it.inputId == activeInputId }
+            .distinctBy {
+                val number = it.number.trim().lowercase(Locale.ROOT)
+                val name = it.name.trim().lowercase(Locale.ROOT)
+                if (number.isNotBlank()) number else name
+            }
+            .sortedWith(compareBy<ChannelRow>({ it.number }, { it.name }))
+        if (channels.isEmpty()) {
+            toast("Belum ada kanal TV digital. Buka Live TV bawaan dan pindai kanal terlebih dahulu.")
+            return
+        }
+        val labels = listOf("Otomatis (kanal pertama)") + channels.map { row ->
+            listOf(row.number, row.name).filter { it.isNotBlank() }.joinToString(" · ")
+                .ifBlank { "Kanal TV" }
+        }
+        val selectedIndex = channels.indexOfFirst { it.id == selectedChannelId }
+            .let { if (it < 0) 0 else it + 1 }
         AlertDialog.Builder(this)
             .setTitle("PILIH KANAL LIVE TV")
-            .setSingleChoiceItems(labels.toTypedArray(), channels.indexOfFirst { it.first == currentId }.let { if (it < 0) 0 else it + 1 }) { picker, which ->
-                prefs.edit().putLong("live_tv_channel_id", if (which == 0) -1L else channels[which - 1].first).apply()
+            .setMessage("Sumber tuner: " + (manager.tvInputList.firstOrNull { it.id == activeInputId }?.let {
+                try { it.loadLabel(this).toString() } catch (_: Exception) { it.id }
+            } ?: activeInputId))
+            .setSingleChoiceItems(labels.toTypedArray(), selectedIndex) { picker, which ->
+                val selectedId = if (which == 0) -1L else channels[which - 1].id
+                prefs.edit()
+                    .putString("live_tv_input_id", activeInputId)
+                    .putLong("live_tv_channel_id", selectedId)
+                    .apply()
                 picker.dismiss()
                 if (idleMode) {
                     stopLiveTvBackground()
                     startLiveTvBackground()
                 }
-                showSettings()
-                toast(if (which == 0) "Kanal otomatis dipilih" else "Kanal: ${channels[which - 1].third}")
+                showSettings("Live TV")
+                toast(if (which == 0) "Kanal otomatis dipilih" else "Kanal: ${labels[which]}")
             }
             .setNegativeButton("Batal", null)
             .show()
