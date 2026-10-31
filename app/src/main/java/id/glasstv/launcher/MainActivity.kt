@@ -433,8 +433,8 @@ class MainActivity : Activity() {
     }
 
     private fun showAlphaCodersPhotoPicker() {
-        val categories = arrayOf("Nature", "Landscape", "Space", "Abstract", "Architecture", "City", "All")
-        val slugs = arrayOf("is-nature", "is-landscape", "is-space", "is-abstract", "is-architecture", "is-city", "")
+        val categories = arrayOf("Nature", "Abstract", "City", "Animals", "Anime", "Space", "Video Game", "All")
+        val slugs = arrayOf("nature", "abstract", "city", "animal", "anime", "space", "video-game", "")
         showPhotoProviderPicker("Alpha Coders", categories) { index, label ->
             downloadPhotoProvider("alphacoders", label) { dir, progress -> AlphaCodersPhotoSource.downloadBatch(slugs[index], dir, 8, progress) }
         }
