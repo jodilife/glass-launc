@@ -321,7 +321,14 @@ class MainActivity : Activity() {
 
     private fun changeLiveTvChannel(direction: Int): Boolean {
         val inputId = liveTvBackgroundInputId ?: return false
-        val currentId = liveTvBackgroundChannelUri?.lastPathSegment?.toLongOrNull() ?: return false
+        val tv = liveTvBackgroundView ?: return false
+        val currentId = liveTvBackgroundChannelUri?.lastPathSegment?.toLongOrNull()
+        fun forwardChannelKey(): Boolean {
+            val keyCode = if (direction > 0) KeyEvent.KEYCODE_CHANNEL_UP else KeyEvent.KEYCODE_CHANNEL_DOWN
+            val down = tv.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+            tv.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+            return down
+        }
         return try {
             val channels = mutableListOf<Pair<Long, String>>()
             contentResolver.query(
@@ -344,10 +351,16 @@ class MainActivity : Activity() {
                 }
             }
             if (channels.size < 2) {
-                toast("Kanal TV belum cukup. Pindai kanal melalui Live TV bawaan.")
+                android.util.Log.w("GlassTVLiveTv", "Channel provider returned ${channels.size} channels for $inputId; forwarding key to TvView")
+                if (forwardChannelKey()) return true
+                toast("Daftar kanal tidak tersedia. Coba pindai kanal melalui Live TV bawaan.")
                 return false
             }
             val currentIndex = channels.indexOfFirst { it.first == currentId }
+            if (currentIndex < 0) {
+                android.util.Log.w("GlassTVLiveTv", "Current channel $currentId is not in provider list; forwarding key to TvView")
+                if (forwardChannelKey()) return true
+            }
             val nextIndex = if (currentIndex < 0) 0 else (currentIndex + direction + channels.size) % channels.size
             val next = channels[nextIndex]
             val uri = TvContract.buildChannelUri(next.first)
@@ -357,8 +370,9 @@ class MainActivity : Activity() {
             android.util.Log.i("GlassTVLiveTv", "CHANNEL_CHANGED number=${next.second} id=${next.first}")
             true
         } catch (error: Exception) {
-            android.util.Log.e("GlassTVLiveTv", "Channel change failed", error)
-            toast("Tidak dapat mengganti kanal dari panel minimalis.")
+            android.util.Log.e("GlassTVLiveTv", "Channel change failed; forwarding key to TvView", error)
+            if (forwardChannelKey()) return true
+            toast("TV menolak perintah ganti kanal. Periksa hasil pemindaian tuner.")
             false
         }
     }
