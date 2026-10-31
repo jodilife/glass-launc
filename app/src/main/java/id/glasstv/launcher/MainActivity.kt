@@ -5368,6 +5368,13 @@ class MainActivity : Activity() {
         })
         content.addView(searchRow)
 
+        val results = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
+            clipToPadding = false
+        }
+        var searchDialog: AlertDialog? = null
+        var renderResults: () -> Unit = {}
         var selectedFilter = "all"
         val filterRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -5419,16 +5426,9 @@ class MainActivity : Activity() {
             10, Color.rgb(165, 184, 207), false
         ).apply { setPadding(0, 0, 0, dp(8)) })
 
-        val results = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            clipChildren = false
-            clipToPadding = false
-        }
-        var searchDialog: AlertDialog? = null
-        var renderResults: () -> Unit = {}
         val scroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
-            addView(results, ScrollView.LayoutParams(-1, -2))
+            addView(results, FrameLayout.LayoutParams(-1, -2))
         }
         content.addView(scroll, LinearLayout.LayoutParams(-1, dp(340)))
 
