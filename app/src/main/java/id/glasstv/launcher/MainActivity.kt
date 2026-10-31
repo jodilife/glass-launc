@@ -107,6 +107,8 @@ class MainActivity : Activity() {
     private var headerSpacerView: View? = null
     private var headerRightView: LinearLayout? = null
     private var musicDockParent: LinearLayout? = null
+    private var musicPlayButtonView: View? = null
+    private var minimalistBottomSpacer: View? = null
     private val musicPrefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key?.startsWith("audio_") == true || key?.startsWith("watch_artwork_") == true) runOnUiThread { refreshMusicDock() }
     }
@@ -330,6 +332,8 @@ class MainActivity : Activity() {
         headerSpacerView = null
         headerRightView = null
         musicDockParent = null
+        musicPlayButtonView = null
+        minimalistBottomSpacer = null
         homeExploreHeaderView = null
         homeMediaRowView = null
         dashboardPanelView = null
@@ -1562,13 +1566,42 @@ class MainActivity : Activity() {
                 .apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
             row.addView(textCol, LinearLayout.LayoutParams(0, -2, 1f))
             val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            controls.addView(mediaControlButton("▶Ⅱ", "Putar atau jeda $title") { sendMediaCommand(pkg, "toggle") },
-                LinearLayout.LayoutParams(dp(38), dp(30)).apply { rightMargin = dp(6) })
-            controls.addView(mediaControlButton("⏮", "Sebelumnya $title") { sendMediaCommand(pkg, "previous") },
-                LinearLayout.LayoutParams(dp(38), dp(30)).apply { rightMargin = dp(6) })
-            controls.addView(mediaControlButton("⏭", "Berikutnya $title") { sendMediaCommand(pkg, "next") },
-                LinearLayout.LayoutParams(dp(38), dp(30)))
+            val previousButton = mediaControlButton("⏮", "Sebelumnya $title") { sendMediaCommand(pkg, "previous") }
+            val playButton = mediaControlButton("▶Ⅱ", "Putar atau jeda $title")
+                .apply { textSize = 17f; contentDescription = "Putar atau jeda $title" }
+            val nextButton = mediaControlButton("⏭", "Berikutnya $title")
+            previousButton.id = View.generateViewId()
+            playButton.id = View.generateViewId()
+            nextButton.id = View.generateViewId()
+            previousButton.nextFocusRightId = playButton.id
+            playButton.nextFocusLeftId = previousButton.id
+            playButton.nextFocusRightId = nextButton.id
+            nextButton.nextFocusLeftId = playButton.id
+            listOf(previousButton, playButton, nextButton).forEach { button ->
+                button.setOnKeyListener { _, keyCode, event ->
+                    if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                    when (keyCode) {
+                        KeyEvent.KEYCODE_DPAD_UP -> {
+                            val target = favoriteDockTiles.lastOrNull() ?: continueWatchingCard
+                            if (target != null) { target.requestFocus(); true } else false
+                        }
+                        KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            val target = actions.firstOrNull()
+                            if (target != null) { target.requestFocus(); true } else false
+                        }
+                        else -> false
+                    }
+                }
+            }
+            controls.addView(previousButton, LinearLayout.LayoutParams(dp(42), dp(38)).apply { rightMargin = dp(8) })
+            controls.addView(playButton, LinearLayout.LayoutParams(dp(48), dp(42)).apply { rightMargin = dp(8) })
+            controls.addView(nextButton, LinearLayout.LayoutParams(dp(42), dp(38)))
+            musicPlayButtonView = playButton
             row.addView(controls)
+            row.isFocusable = false
+            row.isFocusableInTouchMode = false
+            row.isClickable = false
+            row.setOnClickListener(null)
             backgroundAudioRowView = row
             section.addView(row, LinearLayout.LayoutParams(-1, dp(72)))
         }
@@ -1604,7 +1637,13 @@ class MainActivity : Activity() {
             .getString("minimalist_panel_position", "top_right") ?: "top_right"
         val centered = position == "bottom_center"
         val atTop = position == "top_right"
+
+        // root is a vertical LinearLayout inside the Home ScrollView. FrameLayout.LayoutParams
+        // are ignored there, so use a weighted spacer to anchor bottom positions to the viewport.
         root.removeView(header)
+        minimalistBottomSpacer?.let { root.removeView(it) }
+        minimalistBottomSpacer = null
+
         header.orientation = if (centered) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
         header.gravity = if (centered) Gravity.CENTER else Gravity.CENTER_VERTICAL
         header.background = if (centered) GradientDrawable().apply {
@@ -1621,14 +1660,17 @@ class MainActivity : Activity() {
             listOf(headerTimeLabel, headerClockLabel, headerWeatherLabel, headerPrayerMetaLabel, headerNextPrayerLabel)
                 .forEach { it?.gravity = if (centered) Gravity.CENTER else Gravity.END }
         }
+
         val height = if (centered) dp(132) else dp(104)
-        val width = if (centered) dp(800) else dp(440)
-        val headerGravity = when {
-            atTop -> Gravity.TOP or Gravity.END
-            centered -> Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            else -> Gravity.BOTTOM or Gravity.END
+        if (atTop) {
+            root.addView(header, 0, LinearLayout.LayoutParams(-1, height))
+        } else {
+            val spacer = View(this).apply { isFocusable = false }
+            minimalistBottomSpacer = spacer
+            root.addView(spacer, LinearLayout.LayoutParams(-1, 0, 1f))
+            // Header spans the row so its internal spacer can align the compact panel to the right.
+            root.addView(header, LinearLayout.LayoutParams(-1, height))
         }
-        root.addView(header, FrameLayout.LayoutParams(width, height, headerGravity))
         header.requestLayout()
     }
 
@@ -2937,7 +2979,7 @@ class MainActivity : Activity() {
                             true
                         }
                         KeyEvent.KEYCODE_DPAD_DOWN -> {
-                            val target = backgroundAudioRowView?.takeIf { it.isFocusable }
+                            val target = musicPlayButtonView?.takeIf { it.isFocusable }
                                 ?: actions.firstOrNull()
                                 ?: return@setOnKeyListener false
                             target.requestFocus()
@@ -4134,10 +4176,6 @@ class MainActivity : Activity() {
         if (idleMode || isFinishing || !::root.isInitialized || !hasWindowFocus()) return
         idleMode = true
         applyMinimalistSectionVisibility()
-        homeHeaderView?.let { header ->
-            root.removeView(header)
-            root.addView(header, LinearLayout.LayoutParams(-1, dp(104)))
-        }
         applyMinimalistHeaderPosition()
         // A true minimalist home: only manually retained recommendation rows and the compact
         // clock/weather/prayer stack remain visible. Hide the full dashboard and media/CCTV row.
@@ -4185,7 +4223,9 @@ class MainActivity : Activity() {
             headerSpacerView?.visibility = View.VISIBLE
             headerRightView?.let { right -> right.gravity = Gravity.END or Gravity.CENTER_VERTICAL; right.layoutParams = LinearLayout.LayoutParams(dp(440), -2) }
             listOf(headerTimeLabel, headerClockLabel, headerWeatherLabel, headerPrayerMetaLabel, headerNextPrayerLabel).forEach { it?.gravity = Gravity.END }
-            root.addView(header, FrameLayout.LayoutParams(-1, dp(42), Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+            minimalistBottomSpacer?.let { root.removeView(it) }
+            minimalistBottomSpacer = null
+            root.addView(header, 0, LinearLayout.LayoutParams(-1, dp(42)))
         }
         applyMinimalistSectionVisibility()
         dashboardPanelView?.visibility = View.VISIBLE
