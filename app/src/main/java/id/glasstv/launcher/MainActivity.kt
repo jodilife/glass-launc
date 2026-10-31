@@ -1744,6 +1744,10 @@ class MainActivity : Activity() {
                     text.setPadding(dp(7), 0, dp(7), 0)
                     text.layoutParams = LinearLayout.LayoutParams(0, -2,
                         floatArrayOf(1.15f, 0.95f, 1.2f, 0.95f, 1.25f, 3.5f)[index])
+                } else if (text != null) {
+                    text.textSize = when (text) { headerClockLabel -> 30f; headerNextPrayerLabel -> 12f; else -> 10f }
+                    text.setPadding(0, 0, 0, 0)
+                    text.layoutParams = LinearLayout.LayoutParams(-2, -2)
                 }
             }
         }
