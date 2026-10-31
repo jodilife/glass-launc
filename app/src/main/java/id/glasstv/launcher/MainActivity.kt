@@ -984,10 +984,6 @@ class MainActivity : Activity() {
         val wallpaperPrefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val videoUri = wallpaperPrefs.getString("wallpaper_video_uri", null)
         val savedWallpaperSource = wallpaperPrefs.getString("wallpaper_source", "bing")
-        if (videoUri != null || savedWallpaperSource == "catalog_video") {
-            wallpaperTarget.setBackgroundColor(Color.rgb(5, 8, 14))
-            setupVideoWallpaper(wallpaperTarget)
-        }
         homeScroll.addView(root, FrameLayout.LayoutParams(-1, -1))
         wallpaperTarget.addView(homeScroll, FrameLayout.LayoutParams(-1, -1))
         // Keep the launcher identity pinned to the viewport instead of letting it scroll
@@ -1004,7 +1000,9 @@ class MainActivity : Activity() {
             leftMargin = dp(32)
             topMargin = dp(16)
         })
-        createLiveTvBackgroundLayer(wallpaperTarget)
+        // Live TV's TvView is created lazily only when idle mode selects the tuner.
+        // Creating an untuned TvView during normal Home can place a blank TV surface
+        // above and hide a perfectly valid video wallpaper.
         applyWallpaper(wallpaperTarget)
         scheduleWallpaperRotation()
 
@@ -1125,6 +1123,13 @@ class MainActivity : Activity() {
         root.addView(row, LinearLayout.LayoutParams(-1, dp(76)))
         applyMinimalistSectionVisibility()
         setContentView(wallpaperTarget)
+        if (videoUri != null || savedWallpaperSource == "catalog_video") {
+            wallpaperTarget.post {
+                if (!isFinishing && wallpaperTarget.isAttachedToWindow) {
+                    setupVideoWallpaper(wallpaperTarget)
+                }
+            }
+        }
         root.post {
             if (!isFinishing && hasWindowFocus()) {
                 enterIdleMode()
@@ -5307,10 +5312,13 @@ class MainActivity : Activity() {
             if (catalogMode) {
                 val id = prefs.getString("wallpaper_catalog_video_id", null)
                 WallpaperVideoCatalog.items.firstOrNull { it.id == id }?.let { downloadWallpaperCatalogVideo(it) }
+            } else {
+                android.util.Log.w("GlassTVWallpaper", "No playable video URI for source=$source")
             }
             return
         }
         if (videoWallpaperPlayer != null && videoWallpaperView?.parent === target) return
+
         releaseVideoWallpaperPlayer()
         try {
             val view = PlayerView(this).apply {
@@ -5318,25 +5326,52 @@ class MainActivity : Activity() {
                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                 setShutterBackgroundColor(Color.rgb(5, 8, 14))
                 setBackgroundColor(Color.rgb(5, 8, 14))
-                alpha = 0.92f
+                keepContentOnPlayerReset = true
+                alpha = 1f
                 isFocusable = false
                 isClickable = false
             }
-            val player = ExoPlayer.Builder(this).build().apply {
-                volume = 0f
-                repeatMode = Player.REPEAT_MODE_ONE
-                setMediaItem(MediaItem.fromUri(rawUri))
-                prepare()
-                playWhenReady = true
-            }
-            view.player = player
+
+            // Attach the view before preparing the player. This ensures the video surface
+            // exists on Android TV before ExoPlayer starts rendering its first frame.
             target.addView(view, 0, FrameLayout.LayoutParams(-1, -1))
             videoWallpaperView = view
-            videoWallpaperPlayer = player
             target.setBackgroundColor(Color.rgb(5, 8, 14))
-        } catch (_: Exception) {
+
+            val player = ExoPlayer.Builder(this).build()
+            player.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    android.util.Log.d(
+                        "GlassTVWallpaper",
+                        "Video wallpaper state=$playbackState source=$source uri=$rawUri"
+                    )
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    android.util.Log.e(
+                        "GlassTVWallpaper",
+                        "Video wallpaper playback failed source=$source uri=$rawUri",
+                        error
+                    )
+                    runOnUiThread {
+                        if (videoWallpaperPlayer === player && !isFinishing) {
+                            toast("Video wallpaper gagal diputar. Periksa log GlassTVWallpaper.")
+                        }
+                    }
+                }
+            })
+            player.volume = 0f
+            player.repeatMode = Player.REPEAT_MODE_ONE
+            view.player = player
+            videoWallpaperPlayer = player
+            player.setMediaItem(MediaItem.fromUri(rawUri))
+            player.prepare()
+            player.playWhenReady = true
+            android.util.Log.i("GlassTVWallpaper", "Video wallpaper attached source=$source uri=$rawUri")
+        } catch (error: Exception) {
+            android.util.Log.e("GlassTVWallpaper", "Unable to attach video wallpaper source=$source uri=$rawUri", error)
             releaseVideoWallpaperPlayer()
-            toast("Video wallpaper tidak dapat dibuka. Pilih video MP4 lain.")
+            toast("Video wallpaper tidak dapat dibuka: " + (error.message ?: "format tidak didukung"))
         }
     }
 
