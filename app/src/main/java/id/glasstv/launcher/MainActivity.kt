@@ -5397,7 +5397,7 @@ class MainActivity : Activity() {
                 setOnClickListener {
                     selectedFilter = key
                     renderFilters()
-                    renderResults()
+                    renderResults.invoke()
                 }
                 setOnFocusChangeListener { view, focused ->
                     if (focused) playNavigationSound()
@@ -5424,6 +5424,8 @@ class MainActivity : Activity() {
             clipChildren = false
             clipToPadding = false
         }
+        var searchDialog: AlertDialog? = null
+        var renderResults: () -> Unit = {}
         val scroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
             addView(results, ScrollView.LayoutParams(-1, -2))
@@ -5471,7 +5473,7 @@ class MainActivity : Activity() {
         content.addView(catalogLinks)
 
         lateinit var dialog: AlertDialog
-        fun renderResults() {
+        renderResults = {
             results.removeAllViews()
             val query = searchInput.text?.toString().orEmpty()
             val matches = WallpaperVideoCatalog.search(query, selectedFilter)
@@ -5497,7 +5499,9 @@ class MainActivity : Activity() {
                     isFocusable = true
                     isClickable = true
                     setOnClickListener {
-                        showWallpaperVideoConfirmDialog(item, dialog)
+                        searchDialog?.let { activeDialog ->
+                            showWallpaperVideoConfirmDialog(item, activeDialog)
+                        }
                     }
                     setOnFocusChangeListener { view, focused ->
                         view.background = GradientDrawable().apply {
@@ -5534,17 +5538,18 @@ class MainActivity : Activity() {
 
         searchInput.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderResults() }
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { renderResults.invoke() }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
         renderFilters()
-        renderResults()
+        renderResults.invoke()
 
-        dialog = AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle("CARI VIDEO LIVE WALLPAPER")
             .setView(content)
             .setNegativeButton("Tutup", null)
             .create()
+        searchDialog = dialog
         dialog.setOnShowListener {
             dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
             dialog.window?.setLayout(safeDialogWidth(780),
