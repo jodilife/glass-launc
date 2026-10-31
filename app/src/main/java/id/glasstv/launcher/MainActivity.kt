@@ -467,7 +467,14 @@ class MainActivity : Activity() {
                     if (dialog.isShowing) dialog.dismiss()
                     if (added > 0) {
                         toast("$added foto $provider diunduh. Total cache: ${existing + added}.")
-                        if (idleMode && getSharedPreferences("glass_tv", MODE_PRIVATE).getString("idle_background_mode", "ambient") == "photo") applyIdleBackgroundPriority()
+                        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+                        if (idleMode && !prefs.getBoolean("live_tv_idle_background", false) &&
+                            prefs.getString("idle_background_mode", "ambient") == "photo") {
+                            // Rebuild the slideshow immediately so the new downloads are
+                            // picked up without waiting for the next timer cycle.
+                            releasePhotoModeWallpaper()
+                            applyIdleBackgroundPriority()
+                        }
                     } else toast("Tidak ada foto baru yang berhasil diunduh dari $provider.")
                 }
             } catch (error: Exception) {
