@@ -500,7 +500,6 @@ class MainActivity : Activity() {
             addView(label("GLASS", 19, Color.WHITE, true))
             addView(label("TV", 19, accent, true))
         }
-        brand.visibility = View.GONE
         wallpaperTarget.addView(fixedBrand, FrameLayout.LayoutParams(-2, dp(30), Gravity.TOP or Gravity.START).apply {
             leftMargin = dp(32)
             topMargin = dp(16)
@@ -520,6 +519,7 @@ class MainActivity : Activity() {
         brand.addView(label("GLASS", 25, Color.WHITE, true))
         brand.addView(label("TV", 25, accent, true))
         headerBrandView = brand
+        brand.visibility = View.GONE
 
         header.addView(brand)
         headerSpacerView = View(this)
