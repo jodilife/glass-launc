@@ -46,12 +46,15 @@ object HdWallpapersPhotoSource {
     }
 
     private fun extractImage(html: String): String? {
-        val candidates = listOf(
-            Regex("<meta[^>]+property=[\\\"']og:image[\\\"'][^>]+content=[\\\"']([^\\\"']+)", RegexOption.IGNORE_CASE),
-            Regex("<meta[^>]+content=[\\\"']([^\\\"']+)[\\\"'][^>]+property=[\\\"']og:image", RegexOption.IGNORE_CASE),
-            Regex("(?:https?:)?//(?:static\\d?\\.)?hdwallpapers\\.net/[^\\\"'<> ]+\\.(?:jpg|jpeg|png|webp)", RegexOption.IGNORE_CASE)
+        val metaPatterns = listOf(
+            Regex("<meta\\b[^>]*property=[\\\"']og:image[\\\"'][^>]*content=[\\\"']([^\\\"']+)", RegexOption.IGNORE_CASE),
+            Regex("<meta\\b[^>]*content=[\\\"']([^\\\"']+)[\\\"'][^>]*property=[\\\"']og:image[\\\"']", RegexOption.IGNORE_CASE),
+            Regex("<meta\\b[^>]*name=[\\\"']twitter:image[\\\"'][^>]*content=[\\\"']([^\\\"']+)", RegexOption.IGNORE_CASE)
         )
-        return candidates.firstNotNullOfOrNull { it.find(html)?.groupValues?.get(1) }?.let(::absolute)
+        val metaImage = metaPatterns.firstNotNullOfOrNull { it.find(html)?.groupValues?.getOrNull(1) }
+        val staticImage = Regex("((?:https?:)?//(?:static\\d*\\.)?hdwallpapers\\.net/[^\\\"'<> ]+\\.(?:jpg|jpeg|png|webp))", RegexOption.IGNORE_CASE)
+            .find(html)?.groupValues?.getOrNull(1)
+        return (metaImage ?: staticImage)?.let(::absolute)
     }
 
     private fun saveImage(address: String, output: File, referer: String): Boolean {
@@ -99,14 +102,16 @@ object AlphaCodersPhotoSource {
 
     fun downloadBatch(category: String, destination: File, limit: Int = 8, onProgress: (String) -> Unit = {}): Int {
         destination.mkdirs()
-        val listing = if (category.isBlank()) "$BASE/" else "$BASE/tag/$category"
+        // Alpha Coders' current public taxonomy uses /nature-wallpapers,
+        // not the retired /tag/is-nature route (which returns HTTP 404).
+        val listing = if (category.isBlank()) "$BASE/" else "$BASE/$category-wallpapers"
         onProgress("Membaca katalog Alpha Coders…")
         val html = fetchText(listing, BASE)
-        val detailUrls = Regex("href=[\\\"']([^\\\"']*(?:big\\.php\\?i=|wallpaper/)[^\\\"']*)[\\\"']", RegexOption.IGNORE_CASE)
+        val detailUrls = Regex("href=[\\\"']([^\\\"']*(?:big\\.php\\?i=|/wallpaper/|wallpaper-)[^\\\"']*)[\\\"']", RegexOption.IGNORE_CASE)
             .findAll(html).map { it.groupValues[1].replace("&amp;", "&") }
             .map { if (it.startsWith("http")) it else WALL + if (it.startsWith("/")) it else "/$it" }
             .filter { it.startsWith(WALL) }.distinct().take(limit * 5).toList()
-        val directImages = Regex("(?:https?:)?//images\\d?\\.alphacoders\\.com/[^\\\"'<> ]+\\.(?:jpg|jpeg|png|webp)", RegexOption.IGNORE_CASE)
+        val directImages = Regex("(?:https?:)?//images\\d*\\.alphacoders\\.com/[^\\\"'<> ]+\\.(?:jpg|jpeg|png|webp)", RegexOption.IGNORE_CASE)
             .findAll(html).map { if (it.value.startsWith("//")) "https:${it.value}" else it.value }.distinct().toList()
         var saved = 0
         val candidates = (directImages + detailUrls).distinct()
@@ -117,7 +122,7 @@ object AlphaCodersPhotoSource {
                 onProgress("Mengambil gambar Alpha Coders ${index + 1}/${candidates.size}…")
                 val imageUrl = if (candidate.contains("alphacoders.com") && !candidate.contains("images")) {
                     val page = fetchText(candidate, listing)
-                    Regex("(?:https?:)?//images\\d?\\.alphacoders\\.com/[^\\\"'<> ]+\\.(?:jpg|jpeg|png|webp)", RegexOption.IGNORE_CASE)
+                    Regex("(?:https?:)?//images\\d*\\.alphacoders\\.com/[^\\\"'<> ]+\\.(?:jpg|jpeg|png|webp)", RegexOption.IGNORE_CASE)
                         .find(page)?.value?.let { if (it.startsWith("//")) "https:$it" else it } ?: continue
                 } else candidate
                 val id = imageUrl.substringAfterLast('/').substringBefore('?').replace(Regex("[^A-Za-z0-9_-]"), "").take(80)
