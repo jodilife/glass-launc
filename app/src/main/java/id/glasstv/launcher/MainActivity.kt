@@ -403,8 +403,10 @@ class MainActivity : Activity() {
     private fun wallpapersCraftCacheDir(): File = photoProviderCacheDir("wallpaperscraft")
 
     private fun showWallpapersCraftPhotoPicker() {
-        showPhotoProviderPicker("WallpapersCraft", arrayOf("Nature", "Abstract", "Space", "City", "Animals", "Minimalism", "Art", "All")) { category, label ->
-            downloadPhotoProvider("wallpaperscraft", label) { dir, progress -> WallpapersCraftPhotoSource.downloadBatch(category, dir, 8, progress) }
+        val categories = arrayOf("Nature", "Abstract", "Space", "City", "Animals", "Minimalism", "Art", "All")
+        val slugs = arrayOf("nature", "abstract", "space", "city", "animals", "minimalism", "art", "")
+        showPhotoProviderPicker("WallpapersCraft", categories) { index, label ->
+            downloadPhotoProvider("wallpaperscraft", label) { dir, progress -> WallpapersCraftPhotoSource.downloadBatch(slugs[index], dir, 8, progress) }
         }
     }
 
