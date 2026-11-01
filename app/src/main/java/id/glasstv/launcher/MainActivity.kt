@@ -395,7 +395,10 @@ class MainActivity : Activity() {
             } else {
                 "Memuat waktu salat…"
             }
-            canvas.drawText(prayerText, left + dp(2), top + dp(69), prayerTitlePaint)
+            val clockWidth = clockPaint.measureText(clock)
+            val prayerWidth = prayerTitlePaint.measureText(prayerText)
+            val prayerLeft = left + (clockWidth - prayerWidth) / 2f
+            canvas.drawText(prayerText, prayerLeft, top + dp(69), prayerTitlePaint)
         }
         private fun drawPhoto(canvas: Canvas, bitmap: Bitmap, started: Long, alpha: Int, now: Long) {
             if (alpha <= 0) return
@@ -5775,9 +5778,51 @@ class MainActivity : Activity() {
         }
         addFilter("Semua sumber", "all")
         addFilter("Koleksi Lively", "lively")
-        addFilter("Lively", "lively")
         content.addView(filterRow)
         filterButtons.firstOrNull { it.first == selectedFilter }?.second?.isSelected = true
+
+        // Provider shortcuts stay visible above the results list so they are easy
+        // to discover with the TV remote (not hidden below a long catalogue).
+        val providerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(2), 0, dp(8))
+        }
+        fun addProviderButton(title: String, url: String) {
+            val provider = TextView(this).apply {
+                text = title
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                setPadding(dp(8), dp(9), dp(8), dp(9))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(9).toFloat()
+                    setColor(Color.argb(90, 40, 70, 106))
+                    setStroke(dp(1), accentAlpha(100))
+                }
+                isFocusable = true
+                isClickable = true
+                setOnClickListener {
+                    try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                    catch (_: Exception) { toast("Katalog $title tidak dapat dibuka.") }
+                }
+                setOnFocusChangeListener { view, focused ->
+                    view.background = GradientDrawable().apply {
+                        cornerRadius = dp(9).toFloat()
+                        setColor(if (focused) accentAlpha(150) else Color.argb(90, 40, 70, 106))
+                        setStroke(dp(1), if (focused) Color.WHITE else accentAlpha(100))
+                    }
+                    if (focused) playNavigationSound()
+                }
+            }
+            providerRow.addView(provider, LinearLayout.LayoutParams(0, dp(38), 1f).apply {
+                rightMargin = dp(6)
+            })
+        }
+        addProviderButton("Mixkit", "https://mixkit.co/free-stock-video/")
+        addProviderButton("Pexels", "https://www.pexels.com/videos/")
+        addProviderButton("Pixabay", "https://pixabay.com/videos/")
+        content.addView(providerRow)
 
         content.addView(label(
             "Pilih video untuk mengganti wallpaper aktif. Video lama tetap dipakai sampai unduhan baru selesai.",
