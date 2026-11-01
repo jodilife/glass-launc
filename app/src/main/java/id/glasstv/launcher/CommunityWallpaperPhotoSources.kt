@@ -71,7 +71,7 @@ object HdWallpapersPhotoSource {
             }
 
             try {
-                onProgress("HDwallpapers.net · memeriksa $examined/\${detailUrls.size}…")
+                onProgress("HDwallpapers.net · memeriksa $examined/${detailUrls.size}…")
                 val detailHtml = fetchText(detailUrl, listing)
                 val resolutionUrl = Regex(
                     """href\s*=\s*["']([^"']*(?:3840x2160|2560x1440|1920x1080)[^"']*)["']""",
@@ -98,7 +98,7 @@ object HdWallpapersPhotoSource {
                 if (bytes == null) {
                     skipped++
                     lastReason = if (lastReason.isBlank()) "tautan gambar resolusi desktop tidak ditemukan" else lastReason
-                    onProgress("HDwallpapers.net · gambar \${index + 1} dilewati")
+                    onProgress("HDwallpapers.net · gambar ${index + 1} dilewati")
                     continue
                 }
 
@@ -137,7 +137,7 @@ object HdWallpapersPhotoSource {
                 skipped++
                 lastReason = error.message ?: "halaman wallpaper tidak dapat diproses"
                 Log.w("GlassTVPhotoMode", "HDwallpapers item failed: $detailUrl", error)
-                onProgress("HDwallpapers.net · item \${index + 1} dilewati")
+                onProgress("HDwallpapers.net · item ${index + 1} dilewati")
             }
         }
 
@@ -176,7 +176,7 @@ object HdWallpapersPhotoSource {
     private fun extractImageCandidates(html: String, baseUrl: String): List<String> {
         val raw = mutableListOf<String>()
         raw.addAll(extractAttributeUrls(html))
-        Regex("""(?:https?:)?//[^"'<>\\s]+""", RegexOption.IGNORE_CASE)
+        Regex("""(?:https?:)?//[^"'<>\s]+""", RegexOption.IGNORE_CASE)
             .findAll(html).forEach { raw.add(it.value) }
         Regex("""url\(\s*["']?([^)"']+)""", RegexOption.IGNORE_CASE)
             .findAll(html).forEach { raw.add(it.groupValues[1]) }
