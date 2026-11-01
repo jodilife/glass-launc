@@ -260,7 +260,13 @@ object AlphaCodersPhotoSource {
     private const val WALL = "https://wall.alphacoders.com"
     private const val MAX_BYTES = 18L * 1024L * 1024L
 
-    fun downloadBatch(category: String, destination: File, limit: Int = 8, onProgress: (String) -> Unit = {}): Int {
+    fun downloadBatch(
+        category: String,
+        destination: File,
+        limit: Int = 20,
+        onProgress: (String) -> Unit = {},
+        canStore: (File, Long) -> Boolean = { _, _ -> true }
+    ): Int {
         destination.mkdirs()
         // Alpha Coders' current public taxonomy uses /nature-wallpapers,
         // not the retired /tag/is-nature route (which returns HTTP 404).
@@ -292,6 +298,10 @@ object AlphaCodersPhotoSource {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
                 if (bounds.outWidth < 1280 || bounds.outHeight < 720) continue
+                if (!canStore(output, bytes.size.toLong())) {
+                    onProgress("Koleksi foto penuh: maksimal 100 MB / 20 foto.")
+                    break
+                }
                 val temp = File(destination, output.name + ".part"); temp.writeBytes(bytes)
                 if (!temp.renameTo(output)) { temp.copyTo(output, true); temp.delete() }
                 saved++; onProgress("Alpha Coders: $saved/$limit foto tersimpan")
