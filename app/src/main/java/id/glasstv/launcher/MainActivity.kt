@@ -3816,6 +3816,17 @@ class MainActivity : Activity() {
         settingRow("Wallpaper berikutnya", "Pindah ke gambar lain dari sumber terpilih") {
             val source = prefs.getString("wallpaper_source", "bing")
             when (source) {
+                "catalog_video" -> {
+                    val currentId = prefs.getString("wallpaper_catalog_video_id", "")
+                    val items = WallpaperVideoCatalog.items
+                    val currentIndex = items.indexOfFirst { it.id == currentId }
+                    val next = items.getOrNull((currentIndex + 1).mod(items.size))
+                    if (next != null) {
+                        dialog.dismiss()
+                        downloadWallpaperCatalogVideo(next)
+                        return@settingRow
+                    }
+                }
                 "art" -> prefs.edit().putInt("wallpaper_art_index", prefs.getInt("wallpaper_art_index", 0) + 1).apply()
                 "bing" -> prefs.edit().putInt("wallpaper_bing_index", prefs.getInt("wallpaper_bing_index", 0) + 1).apply()
                 "gradient" -> prefs.edit().putInt("wallpaper_index", prefs.getInt("wallpaper_index", 0) + 1).apply()
@@ -6043,6 +6054,29 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun makeRoomForWallpaperVideo(folder: File, incomingBytes: Long, destination: File, activePath: String?): Boolean {
+        val maxTotal = 100L * 1024L * 1024L
+        val maxCount = 10
+        if (incomingBytes <= 0L || incomingBytes > 20L * 1024L * 1024L) return false
+        val files = folder.listFiles()?.filter {
+            it.isFile && it.extension.equals("mp4", true) && it.name.startsWith("wallpaper_")
+        }?.toMutableList() ?: mutableListOf()
+        var total = files.filter { it.absolutePath != destination.absolutePath }.sumOf { it.length() }
+        var count = files.count { it.absolutePath != destination.absolutePath }
+        val protected = activePath?.let { File(it).absolutePath }
+        val removable = files.filter {
+            it.absolutePath != destination.absolutePath && it.absolutePath != protected
+        }.sortedBy { it.lastModified() }
+        for (file in removable) {
+            if (count + 1 <= maxCount && total + incomingBytes <= maxTotal) break
+            if (file.delete()) {
+                total -= file.length()
+                count--
+            }
+        }
+        return count + 1 <= maxCount && total + incomingBytes <= maxTotal
+    }
+
     private fun downloadWallpaperCatalogVideo(item: WallpaperVideoItem, automatic: Boolean = false) {
         if (wallpaperCatalogDownloadInProgress) {
             toast("Unduhan video lain masih berlangsung.")
@@ -6130,6 +6164,9 @@ class MainActivity : Activity() {
                         releaseVideoWallpaperPlayer()
                     }
                     try {
+                        if (!makeRoomForWallpaperVideo(folder, total, destination, oldPath)) {
+                            throw IllegalStateException("Koleksi penuh (maksimal 100 MB / 10 video). Video aktif tetap dilindungi.")
+                        }
                         if (destination.exists() && !destination.delete()) {
                             throw IllegalStateException("Video lama tidak dapat diganti.")
                         }
