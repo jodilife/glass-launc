@@ -3453,12 +3453,13 @@ class MainActivity : Activity() {
             }
             .create()
         fun settingCategory(title: String): String = when (title) {
-            "Warna aksen", "Sumber wallpaper", "Ganti gambar setiap",
-            "Redupkan wallpaper", "Pilih gambar sendiri", "Rotasi wallpaper", "Wallpaper berikutnya",
-            "Wallpaper video", "Gunakan wallpaper foto", "Google Ambient / Art Gallery",
-            "Cari video live wallpaper", "Live Wallpaper Lively",
-            "Foto Photo Mode", "Unduh foto WallpapersCraft", "Unduh foto HDwallpapers.net", "Unduh foto Alpha Coders", "Hapus foto Photo Mode", "Prioritas background tanpa Live TV",
-            "Tampilan saat tidak digunakan", "Posisi panel Minimalis", "Edit nama sapaan" -> "Tampilan"
+            "Warna aksen", "Tampilan saat tidak digunakan", "Posisi panel Minimalis", "Edit nama sapaan" -> "Tampilan"
+            "Sumber wallpaper", "Ganti gambar setiap", "Redupkan wallpaper", "Pilih gambar sendiri",
+            "Rotasi wallpaper", "Wallpaper berikutnya", "Wallpaper video", "Gunakan wallpaper foto",
+            "Google Ambient / Art Gallery", "Cari video live wallpaper", "Live Wallpaper Lively",
+            "Foto Photo Mode", "Unduh foto WallpapersCraft", "Unduh foto HDwallpapers.net",
+            "Unduh foto Alpha Coders", "Hapus foto Photo Mode", "Wallpaper siang", "Wallpaper malam" -> "Wallpaper"
+            "Prioritas background tanpa Live TV" -> "Tampilan"
             "Lokasi cuaca & waktu salat", "Info GlassTV" -> "Cuaca & Waktu Salat"
             "Azan otomatis", "Uji suara azan" -> "Waktu Salat"
             "Live TV sebagai background", "Pilih kanal Live TV" -> "Live TV"
