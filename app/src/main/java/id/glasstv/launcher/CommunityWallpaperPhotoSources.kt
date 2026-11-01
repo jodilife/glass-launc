@@ -260,7 +260,7 @@ object HdWallpapersPhotoSource {
 object AlphaCodersPhotoSource {
     private const val BASE = "https://alphacoders.com"
     private const val WALL = "https://wall.alphacoders.com"
-    private const val MAX_BYTES = 18L * 1024L * 1024L
+    private const val MAX_BYTES = 20L * 1024L * 1024L
 
     fun downloadBatch(
         category: String,
