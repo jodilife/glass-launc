@@ -6069,8 +6069,9 @@ class MainActivity : Activity() {
         }.sortedBy { it.lastModified() }
         for (file in removable) {
             if (count + 1 <= maxCount && total + incomingBytes <= maxTotal) break
+            val fileBytes = file.length()
             if (file.delete()) {
-                total -= file.length()
+                total -= fileBytes
                 count--
             }
         }
