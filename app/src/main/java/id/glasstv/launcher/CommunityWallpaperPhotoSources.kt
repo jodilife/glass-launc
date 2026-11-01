@@ -73,13 +73,24 @@ object HdWallpapersPhotoSource {
             try {
                 onProgress("HDwallpapers.net · memeriksa $examined/${detailUrls.size}…")
                 val detailHtml = fetchText(detailUrl, listing)
-                val resolutionUrl = Regex(
+                val resolutionUrls = Regex(
                     """href\s*=\s*["']([^"']*(?:3840x2160|2560x1440|1920x1080)[^"']*)["']""",
                     RegexOption.IGNORE_CASE
-                ).find(detailHtml)?.groupValues?.get(1)?.let { absolute(it, detailUrl) }
+                ).findAll(detailHtml)
+                    .mapNotNull { absolute(it.groupValues[1], detailUrl) }
+                    .distinct()
+                    .sortedBy { url ->
+                        when {
+                            url.contains("1920x1080", ignoreCase = true) -> 0
+                            url.contains("2560x1440", ignoreCase = true) -> 1
+                            url.contains("3840x2160", ignoreCase = true) -> 2
+                            else -> 3
+                        }
+                    }
+                    .toList()
 
                 val candidates = mutableListOf<String>()
-                if (resolutionUrl != null) candidates.add(resolutionUrl)
+                candidates.addAll(resolutionUrls)
                 candidates.addAll(extractImageCandidates(detailHtml, detailUrl))
                 val uniqueCandidates = candidates.distinct().filter { seenImages.add(it) }
 
@@ -196,7 +207,7 @@ object HdWallpapersPhotoSource {
 
     private fun extractAttributeUrls(html: String): List<String> {
         val attributes = Regex(
-            """(?:href|src|data-src|data-original|content)\s*=\s*["']([^"']+)["']""",
+            """(?:href|src|data-src|data-original|data-url|data-href|data-download|content)\s*=\s*["']([^"']+)["']""",
             RegexOption.IGNORE_CASE
         )
         return attributes.findAll(html).map { it.groupValues[1] }.toList()
