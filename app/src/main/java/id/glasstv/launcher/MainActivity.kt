@@ -250,7 +250,7 @@ class MainActivity : Activity() {
             color = Color.argb(55, 230, 240, 255); style = Paint.Style.STROKE; strokeWidth = dp(1).toFloat()
         }
         private val clockPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE; textSize = dp(58).toFloat()
+            color = Color.WHITE; textSize = dp(42).toFloat()
             typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
             setShadowLayer(dp(5).toFloat(), 0f, dp(2).toFloat(), Color.BLACK)
         }
@@ -260,7 +260,7 @@ class MainActivity : Activity() {
             setShadowLayer(dp(3).toFloat(), 0f, dp(1).toFloat(), Color.BLACK)
         }
         private val prayerTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(190, 202, 218, 238); textSize = dp(11).toFloat()
+            color = Color.argb(235, 245, 248, 252); textSize = dp(14).toFloat()
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         }
         private val prayerMainPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -384,42 +384,19 @@ class MainActivity : Activity() {
         private fun drawPhotoModeInformation(canvas: Canvas, w: Float, h: Float) {
             val snapshot = dashboardSnapshot ?: DashboardServices.cached(this@MainActivity)
             val selectedCity = DashboardServices.selectedCity(this@MainActivity)
-            val city = snapshot?.city ?: selectedCity.name
             val zone = java.util.TimeZone.getTimeZone(snapshot?.timeZone ?: selectedCity.timeZone)
-            val now = Date()
-            val clock = SimpleDateFormat("HH:mm", Locale("id", "ID")).apply { timeZone = zone }.format(now)
-            val date = SimpleDateFormat("EEEE, d MMMM yyyy", Locale("id", "ID")).apply { timeZone = zone }.format(now)
+            val clock = SimpleDateFormat("HH:mm", Locale("id", "ID")).apply { timeZone = zone }.format(Date())
             val left = dp(44).toFloat()
-            val top = dp(58).toFloat()
-            canvas.drawText(clock, left, top + dp(58), clockPaint)
-            canvas.drawText("$date  ·  $city", left + dp(3), top + dp(86), datePaint)
-
-            val panelMargin = dp(38).toFloat()
-            val panelHeight = dp(112).toFloat()
-            val panel = android.graphics.RectF(panelMargin, h - panelHeight - panelMargin, w - panelMargin, h - panelMargin)
-            canvas.drawRoundRect(panel, dp(18).toFloat(), dp(18).toFloat(), infoPanelPaint)
-            canvas.drawRoundRect(panel, dp(18).toFloat(), dp(18).toFloat(), infoBorderPaint)
-            val textLeft = panel.left + dp(24)
-            val titleY = panel.top + dp(28)
-            canvas.drawText("WAKTU SHOLAT  ·  $city", textLeft, titleY, prayerTitlePaint)
-            if (snapshot == null || snapshot.prayerTimes.size < 6) {
-                canvas.drawText("Memuat jadwal Subuh–Isya…", textLeft, titleY + dp(34), prayerMainPaint)
-            } else {
+            val top = dp(48).toFloat()
+            canvas.drawText(clock, left, top + dp(43), clockPaint)
+            val prayerText = if (snapshot != null && snapshot.prayerTimes.size >= 6) {
                 val next = DashboardServices.nextPrayer(snapshot, Calendar.getInstance(zone))
-                canvas.drawText("BERIKUTNYA  ${next.first}  ${next.second}", textLeft, titleY + dp(34), prayerMainPaint)
-                val indices = listOf(0, 2, 3, 4, 5)
-                val schedule = indices.joinToString("     ·     ") { index ->
-                    "${snapshot.prayerNames.getOrNull(index)?.uppercase(Locale("id", "ID")) ?: "SALAT"}  ${snapshot.prayerTimes.getOrNull(index) ?: "--:--"}"
-                }
-                canvas.drawText(schedule, textLeft, titleY + dp(60), prayerListPaint)
+                "${next.first}  ${next.second}"
+            } else {
+                "Memuat waktu salat…"
             }
-            val photoLabel = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.argb(135, 245, 248, 252); textSize = dp(10).toFloat()
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            }
-            canvas.drawText("GLASSTV  ·  PHOTO MODE", panel.right - dp(178), panel.top - dp(10), photoLabel)
+            canvas.drawText(prayerText, left + dp(2), top + dp(69), prayerTitlePaint)
         }
-
         private fun drawPhoto(canvas: Canvas, bitmap: Bitmap, started: Long, alpha: Int, now: Long) {
             if (alpha <= 0) return
             val w = width.toFloat()
@@ -3477,7 +3454,7 @@ class MainActivity : Activity() {
             "Warna aksen", "Sumber wallpaper", "Ganti gambar setiap",
             "Redupkan wallpaper", "Pilih gambar sendiri", "Rotasi wallpaper", "Wallpaper berikutnya",
             "Wallpaper video", "Gunakan wallpaper foto", "Google Ambient / Art Gallery",
-            "Cari video live wallpaper", "Live Wallpaper MotionBGS", "Live Wallpaper Lively",
+            "Cari video live wallpaper", "Live Wallpaper Lively",
             "Foto Photo Mode", "Unduh foto WallpapersCraft", "Unduh foto HDwallpapers.net", "Unduh foto Alpha Coders", "Hapus foto Photo Mode", "Prioritas background tanpa Live TV",
             "Tampilan saat tidak digunakan", "Posisi panel Minimalis", "Edit nama sapaan" -> "Tampilan"
             "Lokasi cuaca & waktu salat", "Info GlassTV" -> "Cuaca & Waktu Salat"
@@ -3696,15 +3673,11 @@ class MainActivity : Activity() {
             dialog.dismiss()
             showAppMaintenanceDialog()
         }
-        settingRow("Live Wallpaper MotionBGS", "Pilih dan ganti video dari koleksi MotionBGS", currentCatalogWallpaperLabel("MotionBGS")) {
-            dialog.dismiss()
-            showWallpaperVideoSearchDialog("motionbgs")
-        }
         settingRow("Live Wallpaper Lively", "Pilih dan ganti video dari koleksi Lively", currentCatalogWallpaperLabel("Lively")) {
             dialog.dismiss()
             showWallpaperVideoSearchDialog("lively")
         }
-        settingRow("Cari video live wallpaper", "Cari gabungan koleksi MotionBGS dan Lively dengan kata kunci", currentCatalogWallpaperLabel()) {
+        settingRow("Cari video live wallpaper", "Pilih video dari katalog Lively; sumber MP4 lain tersedia lewat tautan katalog", currentCatalogWallpaperLabel()) {
             dialog.dismiss()
             showWallpaperVideoSearchDialog("all")
         }
@@ -3792,7 +3765,7 @@ class MainActivity : Activity() {
             dialog.dismiss()
             showMinimalistPanelPositionPicker()
         }
-        settingRow("Sumber wallpaper", "Bing, foto siang/malam, MotionBGS, Lively, atau gambar sendiri", wallpaperSourceLabel()) {
+        settingRow("Sumber wallpaper", "Bing, foto siang/malam, video Lively, atau gambar sendiri", wallpaperSourceLabel()) {
             dialog.dismiss()
             showWallpaperSourcePicker()
         }
@@ -5839,7 +5812,7 @@ class MainActivity : Activity() {
             })
         }
         addFilter("Semua sumber", "all")
-        addFilter("MotionBGS", "motionbgs")
+        addFilter("Koleksi Lively", "lively")
         addFilter("Lively", "lively")
         content.addView(filterRow)
         filterButtons.firstOrNull { it.first == selectedFilter }?.second?.isSelected = true
@@ -5906,8 +5879,10 @@ class MainActivity : Activity() {
                 rightMargin = dp(8)
             })
         }
-        catalogLink("Katalog MotionBGS", "https://motionbgs.com/tag:landscape/")
-        catalogLink("Katalog Lively", "https://livelywallpaper.app/live-wallpapers/")
+        catalogLink("Lively", "https://livelywallpaper.app/live-wallpapers/")
+        catalogLink("Mixkit MP4", "https://mixkit.co/free-video-backgrounds/")
+        catalogLink("Pexels", "https://www.pexels.com/videos/")
+        catalogLink("Pixabay", "https://pixabay.com/videos/")
         content.addView(catalogLinks)
 
         renderResults = render@{
@@ -6220,7 +6195,7 @@ class MainActivity : Activity() {
             "Gradient · tanpa internet",
             "Gambar sendiri (termasuk foto Pexels)",
             "Otomatis Siang / Malam · unduh foto Bing dan simpan offline",
-            "Live Wallpaper · MotionBGS / Lively (pilih video)"
+            "Live Wallpaper · Lively (pilih video)"
         )
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val current = values.indexOf(prefs.getString("wallpaper_source", "photos")).coerceAtLeast(0)
