@@ -273,6 +273,9 @@ class MainActivity : Activity() {
         }
         private var current: Bitmap? = null
         private var incoming: Bitmap? = null
+        private var currentSource: String? = null
+        private var incomingSource: String? = null
+        private var decodedSource: String? = null
         private var currentStarted = 0L
         private var fadeStarted = 0L
         private var nextIndex = 0
@@ -297,6 +300,21 @@ class MainActivity : Activity() {
             incoming?.recycle()
             current = null
             incoming = null
+            currentSource = null
+            incomingSource = null
+            getSharedPreferences("glass_tv", MODE_PRIVATE).edit()
+                .remove("wallpaper_photo_current_path")
+                .remove("wallpaper_photo_incoming_path")
+                .apply()
+        }
+
+        private fun persistProtectedPhotoPaths() {
+            val edit = getSharedPreferences("glass_tv", MODE_PRIVATE).edit()
+            if (!currentSource.isNullOrBlank()) edit.putString("wallpaper_photo_current_path", currentSource)
+            else edit.remove("wallpaper_photo_current_path")
+            if (!incomingSource.isNullOrBlank()) edit.putString("wallpaper_photo_incoming_path", incomingSource)
+            else edit.remove("wallpaper_photo_incoming_path")
+            edit.apply()
         }
 
         private fun loadFirst() {
@@ -306,6 +324,9 @@ class MainActivity : Activity() {
                     return@loadPhoto
                 }
                 current = bitmap
+                currentSource = decodedSource
+                incomingSource = null
+                persistProtectedPhotoPaths()
                 currentStarted = android.os.SystemClock.uptimeMillis()
                 postInvalidateOnAnimation()
                 postDelayed(advance, 25_000L)
@@ -319,6 +340,8 @@ class MainActivity : Activity() {
                     return@loadPhoto
                 }
                 incoming = bitmap
+                incomingSource = decodedSource
+                persistProtectedPhotoPaths()
                 fadeStarted = android.os.SystemClock.uptimeMillis()
                 postInvalidateOnAnimation()
             }
@@ -340,6 +363,7 @@ class MainActivity : Activity() {
                         bitmap?.recycle()
                         return@post
                     }
+                    decodedSource = source
                     done(bitmap)
                 }
             }, "glasstv-photo-mode-decode").start()
@@ -363,6 +387,9 @@ class MainActivity : Activity() {
                     current?.recycle()
                     current = next
                     incoming = null
+                    currentSource = incomingSource
+                    incomingSource = null
+                    persistProtectedPhotoPaths()
                     currentStarted = fadeStarted
                     fadeStarted = 0L
                     removeCallbacks(advance)
@@ -453,13 +480,89 @@ class MainActivity : Activity() {
         }
         return durable
     }
+
+    /**
+     * Shared budget for app-downloaded wallpaper assets only.
+     * Personal photos selected through SAF are URI references and are never candidates
+     * for cleanup. The currently displayed video/photo and the incoming Photo Mode
+     * frame are protected while inactive downloaded files are evicted oldest-first.
+     */
+    private fun makeRoomForDownloadedWallpaperAsset(
+        incomingBytes: Long,
+        destination: File,
+        incomingVideo: Boolean
+    ): Boolean {
+        val maxTotalBytes = 100L * 1024L * 1024L
+        val maxPhotoFiles = 20
+        val maxVideoFiles = 10
+        val maxFileBytes = 20L * 1024L * 1024L
+        if (incomingBytes <= 0L || incomingBytes > maxFileBytes) return false
+
+        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
+        val protectedPaths = setOf(
+            prefs.getString("wallpaper_catalog_video_path", null),
+            prefs.getString("wallpaper_photo_current_path", null),
+            prefs.getString("wallpaper_photo_incoming_path", null)
+        ).filterNotNull().mapNotNull {
+            try { File(it).canonicalPath } catch (_: Exception) { null }
+        }.toSet()
+        val destinationPath = try { destination.canonicalPath } catch (_: Exception) { destination.absolutePath }
+
+        val photoFiles = filesDir.listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith("photomode_") }
+            ?.flatMap { folder ->
+                folder.listFiles()?.filter { file ->
+                    file.isFile && file.extension.lowercase(Locale.ROOT) in setOf("jpg", "jpeg", "png", "webp", "avif")
+                } ?: emptyList()
+            }?.toMutableList() ?: mutableListOf()
+        val videoFolder = File(filesDir, "wallpapers")
+        val videoFiles = videoFolder.listFiles()?.filter {
+            it.isFile && it.name.startsWith("wallpaper_") && it.extension.equals("mp4", true)
+        }?.toMutableList() ?: mutableListOf()
+
+        val photos = photoFiles.filter { it.absolutePath != destinationPath }.toMutableList()
+        val videos = videoFiles.filter { it.absolutePath != destinationPath }.toMutableList()
+        var totalBytes = (photos + videos).sumOf { it.length() }
+        var photoCount = photos.size
+        var videoCount = videos.size
+        val addPhoto = if (incomingVideo) 0 else 1
+        val addVideo = if (incomingVideo) 1 else 0
+
+        fun withinLimits(): Boolean =
+            totalBytes + incomingBytes <= maxTotalBytes &&
+                photoCount + addPhoto <= maxPhotoFiles &&
+                videoCount + addVideo <= maxVideoFiles
+
+        while (!withinLimits()) {
+            val needsPhotoSlot = photoCount + addPhoto > maxPhotoFiles
+            val needsVideoSlot = videoCount + addVideo > maxVideoFiles
+            val candidates = when {
+                needsPhotoSlot -> photos
+                needsVideoSlot -> videos
+                else -> photos + videos
+            }.filter { file ->
+                val path = try { file.canonicalPath } catch (_: Exception) { file.absolutePath }
+                path !in protectedPaths
+            }.sortedBy { it.lastModified() }
+            val oldest = candidates.firstOrNull() ?: return false
+            val bytes = oldest.length()
+            if (!oldest.delete()) return false
+            totalBytes = (totalBytes - bytes).coerceAtLeast(0L)
+            if (photos.remove(oldest)) photoCount--
+            else if (videos.remove(oldest)) videoCount--
+        }
+        return true
+    }
+
     private fun wallpapersCraftCacheDir(): File = photoProviderCacheDir("wallpaperscraft")
 
     private fun showWallpapersCraftPhotoPicker() {
         val categories = arrayOf("Nature", "Abstract", "Space", "City", "Animals", "Minimalism", "Art", "All")
         val slugs = arrayOf("nature", "abstract", "space", "city", "animals", "minimalism", "art", "")
         showPhotoProviderPicker("WallpapersCraft", categories) { index, label ->
-            downloadPhotoProvider("wallpaperscraft", label) { dir, progress -> WallpapersCraftPhotoSource.downloadBatch(slugs[index], dir, 8, progress) }
+            downloadPhotoProvider("wallpaperscraft", label) { dir, progress, canStore ->
+                WallpapersCraftPhotoSource.downloadBatch(slugs[index], dir, 20, progress, canStore)
+            }
         }
     }
 
@@ -467,7 +570,9 @@ class MainActivity : Activity() {
         val categories = arrayOf("Nature", "Abstract", "Space", "Animals", "City & Architecture", "Digital Art", "Games", "All")
         val slugs = arrayOf("nature", "abstract", "space", "animals", "city-architecture", "digital-art", "games", "")
         showPhotoProviderPicker("HDwallpapers.net", categories) { index, label ->
-            downloadPhotoProvider("hdwallpapers", label) { dir, progress -> HdWallpapersPhotoSource.downloadBatch(slugs[index], dir, 8, progress) }
+            downloadPhotoProvider("hdwallpapers", label) { dir, progress, canStore ->
+                HdWallpapersPhotoSource.downloadBatch(slugs[index], dir, 20, progress, canStore)
+            }
         }
     }
 
@@ -475,7 +580,9 @@ class MainActivity : Activity() {
         val categories = arrayOf("Nature", "Abstract", "City", "Animals", "Anime", "Space", "Video Game", "All")
         val slugs = arrayOf("nature", "abstract", "city", "animal", "anime", "space", "video-game", "")
         showPhotoProviderPicker("Alpha Coders", categories) { index, label ->
-            downloadPhotoProvider("alphacoders", label) { dir, progress -> AlphaCodersPhotoSource.downloadBatch(slugs[index], dir, 8, progress) }
+            downloadPhotoProvider("alphacoders", label) { dir, progress, canStore ->
+                AlphaCodersPhotoSource.downloadBatch(slugs[index], dir, 20, progress, canStore)
+            }
         }
     }
 
@@ -485,7 +592,11 @@ class MainActivity : Activity() {
             .setNegativeButton("Batal", null).show()
     }
 
-    private fun downloadPhotoProvider(provider: String, label: String, task: (File, (String) -> Unit) -> Int) {
+    private fun downloadPhotoProvider(
+        provider: String,
+        label: String,
+        task: (File, (String) -> Unit, (File, Long) -> Boolean) -> Int
+    ) {
         val cache = photoProviderCacheDir(provider)
         val existing = cache.listFiles()?.count { it.isFile && it.length() > 20_000L } ?: 0
         val message = TextView(this).apply {
@@ -501,11 +612,19 @@ class MainActivity : Activity() {
         dialog.show()
         Thread({
             try {
-                val added = task(cache) { status -> runOnUiThread { if (!isFinishing && dialog.isShowing) message.text = status } }
+                var finalStatus = ""
+                val added = task(
+                    cache,
+                    { status ->
+                        finalStatus = status
+                        runOnUiThread { if (!isFinishing && dialog.isShowing) message.text = status }
+                    },
+                    { output, size -> makeRoomForDownloadedWallpaperAsset(size, output, incomingVideo = false) }
+                )
                 runOnUiThread {
                     if (dialog.isShowing) dialog.dismiss()
                     if (added > 0) {
-                        toast("$added foto $provider diunduh. Total cache: ${existing + added}.")
+                        toast("$added foto $provider diunduh. Batas koleksi foto 20 file.")
                         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
                         if (idleMode && !prefs.getBoolean("live_tv_idle_background", false) &&
                             prefs.getString("idle_background_mode", "ambient") == "photo") {
@@ -514,7 +633,10 @@ class MainActivity : Activity() {
                             releasePhotoModeWallpaper()
                             applyIdleBackgroundPriority()
                         }
-                    } else toast("Tidak ada foto baru yang berhasil diunduh dari $provider.")
+                    } else toast(
+                        "$provider: tidak ada foto baru tersimpan." +
+                            if (finalStatus.isNotBlank()) " $finalStatus" else " Periksa koneksi atau katalog sumber."
+                    )
                 }
             } catch (error: Exception) {
                 android.util.Log.e("GlassTVPhotoMode", "$provider download failed", error)
@@ -6055,27 +6177,9 @@ class MainActivity : Activity() {
     }
 
     private fun makeRoomForWallpaperVideo(folder: File, incomingBytes: Long, destination: File, activePath: String?): Boolean {
-        val maxTotal = 100L * 1024L * 1024L
-        val maxCount = 10
-        if (incomingBytes <= 0L || incomingBytes > 20L * 1024L * 1024L) return false
-        val files = folder.listFiles()?.filter {
-            it.isFile && it.extension.equals("mp4", true) && it.name.startsWith("wallpaper_")
-        }?.toMutableList() ?: mutableListOf()
-        var total = files.filter { it.absolutePath != destination.absolutePath }.sumOf { it.length() }
-        var count = files.count { it.absolutePath != destination.absolutePath }
-        val protected = activePath?.let { File(it).absolutePath }
-        val removable = files.filter {
-            it.absolutePath != destination.absolutePath && it.absolutePath != protected
-        }.sortedBy { it.lastModified() }
-        for (file in removable) {
-            if (count + 1 <= maxCount && total + incomingBytes <= maxTotal) break
-            val fileBytes = file.length()
-            if (file.delete()) {
-                total -= fileBytes
-                count--
-            }
-        }
-        return count + 1 <= maxCount && total + incomingBytes <= maxTotal
+        // Keep the existing signature for the Lively downloader. The common manager
+        // also counts downloaded Photo Mode files against the same 100 MB total budget.
+        return makeRoomForDownloadedWallpaperAsset(incomingBytes, destination, incomingVideo = true)
     }
 
     private fun downloadWallpaperCatalogVideo(item: WallpaperVideoItem, automatic: Boolean = false) {
