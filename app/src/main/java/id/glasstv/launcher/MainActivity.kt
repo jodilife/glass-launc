@@ -623,8 +623,20 @@ class MainActivity : Activity() {
             val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
             if (!prefs.getBoolean("wallpaper_auto", true)) return
             val source = prefs.getString("wallpaper_source", "bing")
-            if (prefs.getString("wallpaper_video_uri", null) != null ||
-                prefs.getString("wallpaper_source", "bing") == "catalog_video") return
+            if (source == "catalog_video") {
+                val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+                if (prefs.getString("wallpaper_catalog_last_daily_date", "") != today) {
+                    val currentId = prefs.getString("wallpaper_catalog_video_id", "")
+                    val next = WallpaperVideoCatalog.items.firstOrNull { it.id != currentId }
+                    if (next != null) {
+                        prefs.edit().putString("wallpaper_catalog_last_daily_date", today).apply()
+                        downloadWallpaperCatalogVideo(next, automatic = true)
+                    }
+                }
+                wallpaperHandler.postDelayed(this, 24L * 60L * 60L * 1000L)
+                return
+            }
+            if (prefs.getString("wallpaper_video_uri", null) != null) return
             val edit = prefs.edit().putLong("wallpaper_last_refresh", System.currentTimeMillis())
             if (source == "bing") edit.putInt("wallpaper_bing_index", (prefs.getInt("wallpaper_bing_index", 0) + 1).mod(8))
             if (source == "gradient") edit.putInt("wallpaper_index", prefs.getInt("wallpaper_index", 0) + 1)
@@ -6031,7 +6043,7 @@ class MainActivity : Activity() {
             .show()
     }
 
-    private fun downloadWallpaperCatalogVideo(item: WallpaperVideoItem) {
+    private fun downloadWallpaperCatalogVideo(item: WallpaperVideoItem, automatic: Boolean = false) {
         if (wallpaperCatalogDownloadInProgress) {
             toast("Unduhan video lain masih berlangsung.")
             return
@@ -6085,8 +6097,8 @@ class MainActivity : Activity() {
                 val contentType = connection.contentType.orEmpty().lowercase(Locale.ROOT)
                 if (contentType.contains("text/html")) throw IllegalStateException("Sumber mengirim halaman web, bukan file video.")
                 val contentLength = connection.contentLengthLong
-                val maxBytes = 32L * 1024L * 1024L
-                if (contentLength > maxBytes) throw IllegalStateException("Video lebih besar dari batas 32 MB.")
+                val maxBytes = 20L * 1024L * 1024L
+                if (contentLength > maxBytes) throw IllegalStateException("Video lebih besar dari batas 20 MB.")
 
                 pending.delete()
                 var total = 0L
@@ -6097,7 +6109,7 @@ class MainActivity : Activity() {
                             val count = input.read(buffer)
                             if (count < 0) break
                             total += count
-                            if (total > maxBytes) throw IllegalStateException("Unduhan melebihi batas 32 MB.")
+                            if (total > maxBytes) throw IllegalStateException("Unduhan melebihi batas 20 MB.")
                             output.write(buffer, 0, count)
                         }
                     }
@@ -6134,7 +6146,7 @@ class MainActivity : Activity() {
                             .putString("wallpaper_catalog_video_path", destination.absolutePath)
                             .putLong("wallpaper_catalog_video_downloaded_at", System.currentTimeMillis())
                             .remove("wallpaper_video_uri")
-                            .putBoolean("wallpaper_auto", false)
+                            .putBoolean("wallpaper_auto", automatic)
                             .apply()
 
                         if (shouldDisplay && ::wallpaperTarget.isInitialized && !isFinishing) {
@@ -6290,8 +6302,12 @@ class MainActivity : Activity() {
             wallpaperHandler.postDelayed(dayNightSwitch, (next.timeInMillis - now.timeInMillis).coerceAtLeast(1000L))
             return
         }
+        if (prefs.getString("wallpaper_source", "bing") == "catalog_video" &&
+            prefs.getBoolean("wallpaper_auto", true)) {
+            wallpaperHandler.postDelayed(wallpaperCycle, 24L * 60L * 60L * 1000L)
+            return
+        }
         if (prefs.getString("wallpaper_video_uri", null) == null &&
-            prefs.getString("wallpaper_source", "bing") != "catalog_video" &&
             prefs.getBoolean("wallpaper_auto", true) &&
             prefs.getString("wallpaper_source", "bing") != "custom") {
             val hours = prefs.getInt("wallpaper_interval_hours", 3).coerceIn(1, 24)
