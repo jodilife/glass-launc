@@ -178,6 +178,8 @@ object HdWallpapersPhotoSource {
         raw.addAll(extractAttributeUrls(html))
         Regex("""(?:https?:)?//[^"'<>\s]+""", RegexOption.IGNORE_CASE)
             .findAll(html).forEach { raw.add(it.value) }
+        Regex("""["']((?:/|https?://)[^"']*(?:\.jpe?g|\.png|\.webp|/download/)[^"']*)["']""", RegexOption.IGNORE_CASE)
+            .findAll(html).forEach { raw.add(it.groupValues[1]) }
         Regex("""url\(\s*["']?([^)"']+)""", RegexOption.IGNORE_CASE)
             .findAll(html).forEach { raw.add(it.groupValues[1]) }
 
