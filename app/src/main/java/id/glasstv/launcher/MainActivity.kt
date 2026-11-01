@@ -3476,7 +3476,8 @@ class MainActivity : Activity() {
         }
         if (category == null) {
             val categories = listOf(
-                Triple("Tampilan", "Wallpaper, warna aksen, mode minimalis, dan layar istirahat", "palette"),
+                Triple("Tampilan", "Mode minimalis, posisi panel, dan layar istirahat", "palette"),
+                Triple("Wallpaper", "Foto, video Lively, rotasi, dan penyimpanan", "image"),
                 Triple("Cuaca & Waktu Salat", "Lokasi, kondisi cuaca, jam, dan sumber informasi", "cloud-sun"),
                 Triple("Waktu Salat", "Jadwal salat dan pengaturan suara azan", "moon-star"),
                 Triple("Live TV", "Background siaran, antena, HDMI, AV, dan kanal", "tv"),
@@ -3564,9 +3565,9 @@ class MainActivity : Activity() {
                 }
             }
             val textColumn = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            textColumn.addView(label(title, 14, Color.WHITE, true))
-            textColumn.addView(label(detail, 10, Color.rgb(170, 189, 213), false).apply {
-                maxLines = 2
+            textColumn.addView(label(title, if (category == "Wallpaper") 13 else 14, Color.WHITE, true))
+            textColumn.addView(label(detail, if (category == "Wallpaper") 9 else 10, Color.rgb(170, 189, 213), false).apply {
+                maxLines = if (category == "Wallpaper") 1 else 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding(0, dp(3), 0, 0)
             })
@@ -3581,7 +3582,9 @@ class MainActivity : Activity() {
                     }
                 })
             } else row.addView(label("›", 23, accent, false))
-            panel.addView(row, LinearLayout.LayoutParams(-1, dp(58)).apply { bottomMargin = dp(7) })
+            panel.addView(row, LinearLayout.LayoutParams(-1, dp(if (category == "Wallpaper") 46 else 58)).apply {
+                bottomMargin = dp(if (category == "Wallpaper") 4 else 7)
+            })
         }
         fun reopen(message: String) {
             dialog.dismiss()
@@ -3680,7 +3683,7 @@ class MainActivity : Activity() {
             dialog.dismiss()
             showWallpaperVideoSearchDialog("lively")
         }
-        settingRow("Cari video live wallpaper", "Pilih video dari katalog Lively; sumber MP4 lain tersedia lewat tautan katalog", currentCatalogWallpaperLabel()) {
+        settingRow("Cari video live wallpaper", "Koleksi video Lively dibatasi agar penyimpanan TV tetap hemat", currentCatalogWallpaperLabel()) {
             dialog.dismiss()
             showWallpaperVideoSearchDialog("all")
         }
@@ -5820,9 +5823,7 @@ class MainActivity : Activity() {
                 rightMargin = dp(6)
             })
         }
-        addProviderButton("Mixkit", "https://mixkit.co/free-stock-video/")
-        addProviderButton("Pexels", "https://www.pexels.com/videos/")
-        addProviderButton("Pixabay", "https://pixabay.com/videos/")
+        addProviderButton("Lively", "https://livelywallpaper.app/live-wallpapers/")
         content.addView(providerRow)
 
         content.addView(label(
@@ -5887,10 +5888,7 @@ class MainActivity : Activity() {
                 rightMargin = dp(8)
             })
         }
-        catalogLink("Lively", "https://livelywallpaper.app/live-wallpapers/")
-        catalogLink("Mixkit MP4", "https://mixkit.co/free-video-backgrounds/")
-        catalogLink("Pexels", "https://www.pexels.com/videos/")
-        catalogLink("Pixabay", "https://pixabay.com/videos/")
+        catalogLink("Katalog Lively", "https://livelywallpaper.app/live-wallpapers/")
         content.addView(catalogLinks)
 
         renderResults = render@{
