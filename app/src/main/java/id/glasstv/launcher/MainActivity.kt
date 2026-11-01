@@ -1635,7 +1635,6 @@ class MainActivity : Activity() {
             prayerTimeLabels.getOrNull(index)?.setTextColor(if (active) Color.WHITE else Color.rgb(225, 232, 242))
         }
         updateHeaderPrayerInfo()
-        refreshWeatherWallpaper(snapshot)
     }
 
     private fun safeDialogWidth(maxWidthDp: Int): Int {
@@ -5459,11 +5458,9 @@ class MainActivity : Activity() {
     private fun setupVideoWallpaper(target: FrameLayout) {
         val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
         val source = prefs.getString("wallpaper_source", "bing")
-        val weatherMode = source == "weather_motionbgs"
         val catalogMode = source == "catalog_video"
         val catalogFile = prefs.getString("wallpaper_catalog_video_path", null)?.let { File(it) }
         val rawUri = when {
-            weatherMode -> prefs.getString("wallpaper_weather_video_path", null)?.let { Uri.fromFile(File(it)) }
             catalogMode -> catalogFile?.takeIf { it.exists() && it.length() > 100_000L }?.let { Uri.fromFile(it) }
             else -> prefs.getString("wallpaper_video_uri", null)?.let { Uri.parse(it) }
         }
@@ -5555,41 +5552,6 @@ class MainActivity : Activity() {
         videoWallpaperPlayer = null
         (videoWallpaperView?.parent as? ViewGroup)?.removeView(videoWallpaperView)
         videoWallpaperView = null
-    }
-
-    private fun refreshWeatherWallpaper(snapshot: DashboardServices.Snapshot, force: Boolean = false) {
-        val prefs = getSharedPreferences("glass_tv", MODE_PRIVATE)
-        if (prefs.getString("wallpaper_source", "bing") != "weather_motionbgs") return
-        val hour = Calendar.getInstance(java.util.TimeZone.getTimeZone(snapshot.timeZone)).get(Calendar.HOUR_OF_DAY)
-        val category = MotionBgsWeatherWallpaper.categoryFor(snapshot.condition, hour)
-        val file = File(cacheDir, "glasstv_motionbgs_weather.mp4")
-        val savedCategory = prefs.getString("wallpaper_weather_category", "")
-        val lastRefresh = prefs.getLong("wallpaper_weather_refresh", 0L)
-        if (!force && file.exists() && file.length() > 100_000L && savedCategory == category &&
-            System.currentTimeMillis() - lastRefresh < 6L * 60L * 60L * 1000L) {
-            if (!idleMode && videoWallpaperPlayer == null && ::wallpaperTarget.isInitialized) setupVideoWallpaper(wallpaperTarget)
-            return
-        }
-        if (weatherWallpaperLoading) return
-        weatherWallpaperLoading = true
-        MotionBgsWeatherWallpaper.download(this, category) { result, error ->
-            weatherWallpaperLoading = false
-            if (result == null) {
-                android.util.Log.w("GlassTVWallpaper", "MotionBGS download failed: " + error)
-                toast("MotionBGS gagal dimuat: ${error ?: "sumber tidak merespons"}")
-                return@download
-            }
-            prefs.edit().putString("wallpaper_weather_video_path", result.file.absolutePath)
-                .putString("wallpaper_weather_category", result.category)
-                .putLong("wallpaper_weather_refresh", System.currentTimeMillis()).apply()
-            android.util.Log.i("GlassTVWallpaper", "Weather wallpaper loaded: " + result.title + " [" + result.category + "]")
-            if (!isFinishing && !idleMode && ::wallpaperTarget.isInitialized &&
-                prefs.getString("wallpaper_source", "bing") == "weather_motionbgs") {
-                releaseVideoWallpaperPlayer()
-                setupVideoWallpaper(wallpaperTarget)
-                toast("Wallpaper cuaca diperbarui: " + result.title)
-            }
-        }
     }
 
     private fun loadAutomaticDayNightWallpaper(nightSlot: Boolean, display: ((Bitmap) -> Unit)?) {
