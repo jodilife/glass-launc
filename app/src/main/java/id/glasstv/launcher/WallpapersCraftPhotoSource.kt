@@ -17,13 +17,14 @@ object WallpapersCraftPhotoSource {
     private const val BASE = "https://wallpaperscraft.com"
     private const val USER_AGENT =
         "Mozilla/5.0 (Linux; Android 11; GlassTV) AppleWebKit/537.36 Chrome/120 Safari/537.36"
-    private const val MAX_IMAGE_BYTES = 18L * 1024L * 1024L
+    private const val MAX_IMAGE_BYTES = 20L * 1024L * 1024L
 
     fun downloadBatch(
         category: String,
         destination: File,
-        limit: Int = 8,
-        onProgress: (String) -> Unit = {}
+        limit: Int = 20,
+        onProgress: (String) -> Unit = {},
+        canStore: (File, Long) -> Boolean = { _, _ -> true }
     ): Int {
         destination.mkdirs()
         val catalogueUrl = if (category.isBlank()) BASE else "$BASE/catalog/$category"
@@ -61,6 +62,10 @@ object WallpapersCraftPhotoSource {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
                 if (bounds.outWidth < 1280 || bounds.outHeight < 720) continue
+                if (!canStore(output, bytes.size.toLong())) {
+                    onProgress("Koleksi foto penuh: maksimal 100 MB / 20 foto.")
+                    break
+                }
                 val temp = File(destination, "${output.name}.part")
                 temp.writeBytes(bytes)
                 if (output.exists()) output.delete()
