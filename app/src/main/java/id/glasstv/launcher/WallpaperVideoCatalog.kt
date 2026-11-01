@@ -27,66 +27,6 @@ data class WallpaperVideoItem(
 object WallpaperVideoCatalog {
     val items = listOf(
         WallpaperVideoItem(
-            id = "motionbgs-fog-bound-mountains",
-            title = "Fog Bound Mountains",
-            source = "MotionBGS",
-            pageUrl = "https://motionbgs.com/fog-bound-mountains",
-            videoUrl = "https://motionbgs.com/dl/hd/5131",
-            sizeLabel = "1080p · 3.9 MB",
-            description = "Pegunungan berkabut dengan suasana tenang dan gelap.",
-            keywords = setOf("fog", "mountain", "mountains", "mist", "forest", "night", "kabut", "gunung", "alam")
-        ),
-        WallpaperVideoItem(
-            id = "motionbgs-rainy-valley",
-            title = "Rainy Valley",
-            source = "MotionBGS",
-            pageUrl = "https://motionbgs.com/rainy-valley",
-            videoUrl = "https://motionbgs.com/dl/hd/9907",
-            sizeLabel = "1080p · 10.6 MB",
-            description = "Lembah hijau dengan hujan dan kabut.",
-            keywords = setOf("rain", "valley", "green", "mist", "nature", "hujan", "lembah", "alam")
-        ),
-        WallpaperVideoItem(
-            id = "motionbgs-sea-of-silence",
-            title = "Sea of Silence",
-            source = "MotionBGS",
-            pageUrl = "https://motionbgs.com/sea-of-silence",
-            videoUrl = "https://motionbgs.com/dl/hd/9866",
-            sizeLabel = "1080p · 22.8 MB",
-            description = "Pemandangan laut yang tenang dan minimalis.",
-            keywords = setOf("sea", "ocean", "water", "beach", "calm", "laut", "samudra", "pantai", "tenang")
-        ),
-        WallpaperVideoItem(
-            id = "motionbgs-green-fields-and-peaks",
-            title = "Green Fields and Peaks",
-            source = "MotionBGS",
-            pageUrl = "https://motionbgs.com/green-fields-and-peaks",
-            videoUrl = "https://motionbgs.com/dl/hd/7368",
-            sizeLabel = "1080p · 8.3 MB",
-            description = "Padang rumput dan puncak pegunungan hijau.",
-            keywords = setOf("green", "field", "fields", "peak", "peaks", "mountain", "landscape", "rumput", "gunung", "pemandangan")
-        ),
-        WallpaperVideoItem(
-            id = "motionbgs-aurora-lake",
-            title = "Aurora Lake",
-            source = "MotionBGS",
-            pageUrl = "https://motionbgs.com/aurora-lake",
-            videoUrl = "https://motionbgs.com/dl/hd/7365",
-            sizeLabel = "1080p · 2.7 MB",
-            description = "Danau malam dengan cahaya aurora.",
-            keywords = setOf("aurora", "lake", "night", "sky", "stars", "danau", "malam", "langit", "bintang")
-        ),
-        WallpaperVideoItem(
-            id = "motionbgs-st-michaels-mount",
-            title = "St Michael's Mount",
-            source = "MotionBGS",
-            pageUrl = "https://motionbgs.com/st-michaels-mount",
-            videoUrl = "https://motionbgs.com/dl/hd/9295",
-            sizeLabel = "1080p · 11.1 MB",
-            description = "Pulau berbukit dan kastil di tepi laut.",
-            keywords = setOf("mount", "mountain", "castle", "island", "sea", "coast", "bukit", "laut", "istana", "pantai")
-        ),
-        WallpaperVideoItem(
             id = "lively-aurora-forest-night",
             title = "Aurora Forest Night",
             source = "Lively catalogue",
@@ -131,7 +71,6 @@ object WallpaperVideoCatalog {
     fun search(query: String, sourceFilter: String = "all"): List<WallpaperVideoItem> =
         items.filter { item ->
             (sourceFilter == "all" ||
-                (sourceFilter == "motionbgs" && item.source == "MotionBGS") ||
                 (sourceFilter == "lively" && item.source == "Lively catalogue")) &&
                 item.matches(query)
         }
